@@ -1,4 +1,4 @@
-function train_data(;x_train,y_train,SV,λ,n_epochs=100)
+function flux_training(;x_train,y_train,SV,λ,n_epochs=100)
     q = size(SV,1)
     model = Dense(q, 1)
     ps = Flux.params(model)
@@ -27,4 +27,15 @@ function train_data(;x_train,y_train,SV,λ,n_epochs=100)
     # nccreate(filename, varname, "x", x, "y", y, "time", 1, atts=attribs)
     # ncwrite(Ms, filename, varname)
     return M,loss_e
+end
+
+
+function optim_training(;x_train,y_train,US,λ)
+    q = size(US,2)
+    loss(V) = norm(x_train*V .- y_train) + λ * norm(V)
+    V0 = zeros(q,1)
+    res = optimize(loss, V0, BFGS())
+    Vhat = Optim.minimizer(res)
+    M = US*Vhat
+    return M, loss(Vhat)
 end
