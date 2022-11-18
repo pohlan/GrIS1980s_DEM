@@ -1,6 +1,5 @@
 # 40 time steps in total, 9 files
 
-
 function make_training_data(;rtrain::UnitRange{Int64},     # indices of files used for training
                             tsteps::UnitRange{Int64},      # indices of time steps used for training
                             t_y::Int64                     # timestep used for fitting y-data in I
@@ -21,7 +20,7 @@ function make_training_data(;rtrain::UnitRange{Int64},     # indices of files us
     Data = zeros(nx*ny,nf * length(tsteps))
     for (k, training_file) in enumerate(training_files)
         d = ncread(training_file, "usurf")[:,:,tsteps]
-        data = transpose(reshape(d, nttrain, ny * nx))
+        data = reshape(d, ny*nx, nttrain)
         Data[:,(k - 1 ) * nttrain + 1:k * nttrain] = data
     end
 

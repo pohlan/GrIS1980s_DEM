@@ -1,4 +1,5 @@
-using Flux, Optim, Plots, TSVD, IterTools, Statistics, LinearAlgebra, Compat, Glob, NetCDF
+using Flux, Optim, TSVD, IterTools, Statistics, LinearAlgebra,
+      Compat, Glob, NetCDF, Plots, Printf
 
 include("read_in.jl")
 include("do_training.jl")
@@ -6,7 +7,7 @@ include("do_training.jl")
 Data, I, I_inv, R, nx, ny = make_training_data(rtrain=1:1,tsteps=1:10,t_y=10)
 
 # center the data
-Data_mean = mean(Data, dims=1)
+Data_mean = mean(Data, dims=2)
 Data_centr = Data .- Data_mean
 
 qs = 4:10
@@ -19,7 +20,6 @@ for (i,q) in enumerate(qs)
     # compute the SVD
     U, S, V = tsvd(Data_centr, q)
     US = U * diagm(S)
-
     # prepare training
     x_train = US[repeat(I, 1, q)]
     n_obs, _ = size(x_train)
@@ -27,7 +27,7 @@ for (i,q) in enumerate(qs)
     y_train = reshape(R_centr[I], n_obs, 1)
 
     for (j,λ) in enumerate(λs)
-        println("Training for λ = $λ, q = $q ...")
+        @printf("Training for λ = %1.1e, q = %d ...\n",λ,q)
 
         # do training
         M, loss_e = optim_training(;x_train,y_train,US,λ)
@@ -41,6 +41,13 @@ for (i,q) in enumerate(qs)
     end
 end
 ###########################################
+
+# heatmap(reshape(Ms[1,1,:],nx,ny))
+
+dif = R .- Ms[4,4,:]
+dif_inner = copy(dif); dif_inner[:] .= NaN; dif_inner[I_inv] .= dif[I_inv]
+dif_outer = copy(dif); dif_outer[:] .= NaN; dif_outer[I] .= dif[I]
+heatmap(reshape(dif_outer,nx,ny)')
 
 
 # filename = "dem_R.nc"
