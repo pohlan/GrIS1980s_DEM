@@ -36,6 +36,8 @@ function optim_training(;x_train,y_train,US,λ)
     V0 = zeros(q,1)
     res = optimize(loss, V0, BFGS())
     Vhat = Optim.minimizer(res)
+    total_loss   = loss(Vhat)
+    L2_loss = norm(x_train*Vhat .- y_train)
     M = US*Vhat
-    return M, loss(Vhat)
+    return M, total_loss, L2_loss
 end
