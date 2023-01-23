@@ -1,6 +1,7 @@
 using Flux, Statistics, IterTools, PyPlot
 
-actual(x) = sqrt(x) # 4x^2 + 2
+# actual(x) = sqrt(x)   # Adam(1e-5)
+actual(x) = 4x^2 + 2    # Adam(1e-3)
 
 n_obs = 100
 n_train = Int(n_obs / 2)
@@ -13,7 +14,7 @@ predict = Chain(Dense(1 => n_mid,     leakyrelu),
                 Dense(n_mid => n_mid, leakyrelu),
                 Dense(n_mid=>1))
 loss(x, y) = mean(abs2.(predict(x) .- y))
-opt = Adam(1e-5)   # Descent(1e-5) not efficient, Adam much better!
+opt = Adam(1e-3)   # Descent(1e-5) not efficient, Adam much better!
 data = [(x_train, y_train)]
 train_loader = Flux.DataLoader((x_train, y_train), batchsize=10)
 ps   = Flux.params(predict)
