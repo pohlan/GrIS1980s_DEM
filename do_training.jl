@@ -7,7 +7,7 @@ function flux_training(;x_train,y_train,SV,λ,n_epochs=100)
     opt = Adam(0.1)
 
     loss_0 = loss(x_train, y_train)
-    println("Initial loss: $loss_0")
+    println("  Initial loss: $loss_0")
 
     data = [(x_train, y_train)]
 
@@ -15,7 +15,7 @@ function flux_training(;x_train,y_train,SV,λ,n_epochs=100)
     Flux.train!(loss, ps, ncycle(train_loader, n_epochs), opt)
 
     loss_e = loss(x_train, y_train)
-    println("Final loss: $loss_e")
+    println("  Final loss: $loss_e")
     M = model.weight * SV
 
 
@@ -26,18 +26,17 @@ function flux_training(;x_train,y_train,SV,λ,n_epochs=100)
     #                 "data_min" => 0.0)
     # nccreate(filename, varname, "x", x, "y", y, "time", 1, atts=attribs)
     # ncwrite(Ms, filename, varname)
-    return M,loss_e
+    return M,loss_e,model.weight
 end
 
-
-function optim_training(;x_train,y_train,US,λ)
-    q = size(US,2)
-    loss(V) = norm(x_train*V .- y_train) + λ * norm(V)
-    V0 = zeros(q,1)
-    res = optimize(loss, V0, BFGS())
-    Vhat = Optim.minimizer(res)
-    total_loss   = loss(Vhat)
-    L2_loss = norm(x_train*Vhat .- y_train)
-    M = US*Vhat
-    return M, total_loss, L2_loss
+function optim_training(;x_train,y_train,SV,λ)
+    q       = size(SV,1)
+    loss(U) = norm(U*x_train .- y_train) + λ * norm(U)
+    U0      = zeros(1,q)
+    loss_0  = loss(U0); println("  Initial loss: $loss_0.")
+    res     = optimize(loss, U0, BFGS())
+    Uhat    = Optim.minimizer(res)
+    loss_e  = loss(Uhat); println("  Final loss: $loss_e.")
+    M       = Uhat*SV
+    return M, loss_e, Uhat
 end
