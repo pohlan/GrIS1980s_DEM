@@ -70,3 +70,11 @@ dif_inner = zeros(size(R)); dif_inner[I_intr] .= dif[I_intr]
 dif_outer = zeros(size(R)); dif_outer[Id] .= dif[Id]
 figure()
 p = pcolormesh(dif_rh',cmap="bwr"); colorbar(); p.set_clim(-200,200)
+
+# plot U's vs reconstructed Uhat 
+figure()
+U_, S_, V_ = tsvd(Data_centr,qs[1])
+for i in 1:27
+    plot(U_[i,:])
+end
+plot(Uhats[1][:],lw=3, "black")
