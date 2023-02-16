@@ -5,7 +5,7 @@ if !isfile("data/data1980s_indices.jld2")
     obs_hist = ncread(obs_file_historic, "surface_altitude")
     nx, ny   = size(obs_hist)
     R_hist   = reshape(obs_hist, 1, length(obs_hist))
-    I_marg   = findall(x->x!=-9999, R_hist)
+    I_marg   = findall(x->x!=-9999, R_hist[:])
     bool_intr   = obs_hist.==-9999
     for iy = 1:ny
         ix = 1
@@ -25,13 +25,13 @@ if !isfile("data/data1980s_indices.jld2")
             end
         end
     end
-    I_intr = findall(reshape(bool_intr,1,nx*ny))
+    I_intr = findall(reshape(bool_intr,1,nx*ny)[:])
     jldsave("data/data1980s_indices.jld2"; I_marg, I_intr)
 end
 
-function training_data(;files::UnitRange{Int64},       # indices of files used for training
-                        tsteps::UnitRange{Int64},      # indices of time steps used for training
-                        model_files)
+function read_model_data(;files::UnitRange{Int64},       # indices of files used for training
+                          tsteps,      # indices of time steps used for training
+                          model_files)
     println("Reading in model results...")
     training_files = model_files[files]
     nf = length(training_files)
