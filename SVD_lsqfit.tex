@@ -39,59 +39,71 @@ We want to find the vector $\mathbf{x}_\mathrm{rec}$ of reconstructed surface el
         x_n       
     \end{bmatrix}_{\mathrm{rec}}
 \end{equation}
-Take the SVD of $X$:
+Take the SVD of $X$, truncated to $r$ singular values, where $r<m$:
 \begin{equation}
-    X = U \Sigma V^T
+    X \approx U \Sigma V^T
 \end{equation}
-For a full economy SVD, $U \in \mathbb{R}^{n\times m}$ represents the 'eigenglaciers' of each of the $m$ modes, $\Sigma \in \mathbb{R}^{m\times m}$ is a diagonal matrix of the corresponding singular values, and $V \in \mathbb{R}^{m\times m}$ is a collection of vectors that, for each of the $m$ modelling datasets, assign coefficients to each of the $m$ eigenglacier modes. Thus, if $\mathbf{x}_\mathrm{rec}$ is in the 'hull' of $X$, we can find coefficients comprising a vector $\mathbf{v}_\mathrm{rec}$ such that
+The columns of $U \in \mathbb{R}^{n\times r}$ are the left singular vectors and in this case they represent the 'eigenglaciers' of each of the $r$ modes. The matrix $\Sigma \in \mathbb{R}^{r\times r}$ is a diagonal matrix of the corresponding singular values, and the columns of $V \in \mathbb{R}^{m\times r}$ are the right singular vectors that, for each of the $m$ modelling datasets, assign coefficients to the $r$ eigenglacier modes. Thus, if $\mathbf{x}_\mathrm{rec}$ is in the 'hull' of $X$, we can find coefficients comprising a vector $\mathbf{v}_\mathrm{rec}$ such that
 \begin{equation}
     \mathbf{x}_\mathrm{rec} = U \Sigma \mathbf{v}_\mathrm{rec}
 \end{equation}
-% Since we only know $\mathbf{x}_\mathrm{rec}$ at certain indices, we instead require
-% \begin{equation}
-%     \mathbf{x}_\mathrm{data} = [U \Sigma]_\mathrm{data} \mathbf{v}_\mathrm{rec}
-% \end{equation}
-% where $\mathbf{x}_\mathrm{data}$ is a vector containing all known elements of $\mathbf{x}_\mathrm{rec}$ and $[U \Sigma]_\mathrm{data}$ is a matrix containing the corresponding rows of $U \Sigma$. The number of known data points, i.e. the length of $\mathbf{x}_\mathrm{data}$, is in the order of $\sim 10^5$ and therefore much larger than the number of model datasets $m$.
-It is thus an overdetermined system for which there is no unique solution, but we can describe it as an optimization problem of least squares as
-% \begin{equation} \label{eq:min_prob}
-%     \min_{\mathbf{v_\mathrm{rec}}}    ||\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}||_2^2 + \lambda ||\mathbf{v}_\mathrm{rec}||_2^2
-% \end{equation}
+However, since we do not know all elements of $\mathbf{x}_\mathrm{rec}$ we cannot solve for $\mathbf{v}_\mathrm{rec}$ directly. Instead, we can set up a new problem including only the points in $\mathbf{x}$ where we actually have data:
+\begin{equation}
+    \mathbf{x}_\mathrm{data} = A\mathbf{v}_\mathrm{rec}
+\end{equation}
+where $\mathbf{x}_\mathrm{data} \in \mathbb{R}^d$ is a vector of the the available data (with $d<n$) and the rows of $A\in \mathbb{R}^{d\times r}$ are the corresponding rows of the matrix $U \Sigma$.
+
+The number of known data points is in the order of $d \sim 10^5$ and therefore much larger than $r$, the number of coefficients we want to solve for.
+It is thus an overdetermined system for which we can find the regularized least squares solution
 \begin{equation} \label{eq:min_prob}
-    \min_{\mathbf{v}_\mathrm{rec}}    ||\mathbf{x}_\mathrm{rec}- A \mathbf{v}_\mathrm{rec}||_2^2 + \lambda ||\mathbf{v}_\mathrm{rec}||_2^2
+    \min_{\mathbf{v_\mathrm{rec}}}    ||\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}||_2^2 + \lambda ||\mathbf{v}_\mathrm{rec}||_2^2
 \end{equation}
-where $A=[U \Sigma]_\mathrm{data}$. Taking the gradient of Eq.~\eqref{eq:min_prob} and setting it to zero results in the normal equation
+where $\lambda$ is the regularization parameter. Taking the gradient of Eq.~\eqref{eq:min_prob} and setting it to zero results in the normal equation
 \begin{equation} \label{eq:normal_eq}
-    (A^TA+\lambda I)\hat{\mathbf{v}}_\mathrm{rec} = A^T \mathbf{x}_\mathrm{rec}
+    (A^TA+\lambda I)\hat{\mathbf{v}}_\mathrm{rec} = A^T \mathbf{x}_\mathrm{data}~.
 \end{equation}
-Taking the SVD of A again:
+% Inserting back $A=U\Sigma$:
+% \begin{align}
+%     (\Sigma^T U^T U \Sigma + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= \Sigma^T U^T \mathbf{x}_\mathrm{rec}\\
+%     \label{eq:unitary}
+%     (\Sigma^T \Sigma + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= \Sigma^T U^T \mathbf{x}_\mathrm{rec}
+% \end{align}
+% e do not actually know all the elements of 
+
+
+% The matrix $(\Sigma^T \Sigma + \lambda I)$ is diagonal and thus invertible, so we can directly solve the system:
+% \begin{equation}
+%     \hat{\mathbf{v}}_\mathrm{rec} = (\Sigma^T \Sigma + \lambda I)^{-1} \Sigma^T U^T \mathbf{x}_\mathrm{rec}~.
+% \end{equation}
+% However, 
+
+In order to solve the system analytically, we take a full SVD of $A$
 \begin{equation}
     A = U_A \Sigma_A V_A^T
 \end{equation}
-and inserting it into \eqref{eq:normal_eq} gives
+and insert it into \eqref{eq:normal_eq} to obtain
 \begin{align}
-    (V_A\Sigma_A^T U_A^T U_A \Sigma_A V_A^T + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{rec}\\
+    (V_A\Sigma_A^T U_A^T U_A \Sigma_A V_A^T + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}\\
     \label{eq:unitary}
-    (V_A\Sigma_A^T \Sigma_A V_A^T + V_A \lambda I V_A^T)\hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{rec}\\
-    V_A(\Sigma_A^T \Sigma_A + \lambda I) V_A^T \hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{rec}\\
-    % (\Sigma^T \Sigma + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= \Sigma^T U^T \mathbf{x}_\mathrm{rec}
+    (V_A\Sigma_A^T \Sigma_A V_A^T + V_A \lambda I V_A^T)\hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}\\
+    V_A(\Sigma_A^T \Sigma_A + \lambda I) V_A^T \hat{\mathbf{v}}_\mathrm{rec} &= V_A\Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}\\
 \end{align}
-with $z = V_A^T \hat{\mathbf{v}}_\mathrm{rec}$ we get
+where we used the unitary properties of $U_A$ and $V_A$, i.e. $U_A^T U_A = U_A U_A^T= I$ and $V_A^T V_A = V_A V_A^T= I$.
+Introducing $\mathbf{z} = V_A^T \hat{\mathbf{v}}_\mathrm{rec}$ we get
 \begin{equation}
     (\Sigma_A^T \Sigma_A + \lambda I) \mathbf{z} = \Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}
 \end{equation}
-
-
-
 where $(\Sigma_A^T \Sigma_A + \lambda I)$ is a diagonal matrix. The solution of the system is thus
 \begin{equation}
     \mathbf{z} = (\Sigma_A^T \Sigma_A + \lambda I)^{-1} \Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}~.
 \end{equation}
-$\hat{\mathbf{v}}_\mathrm{rec} = V_A \mathrm{z}$ so 
+Finally, we can substitute this solution into $\hat{\mathbf{v}}_\mathrm{rec} = V_A \mathbf{z}$ to obtain a least squares solution for $\hat{\mathbf{v}}_\mathrm{rec}$:
 \begin{equation}
     \hat{\mathbf{v}}_\mathrm{rec} = V_A (\Sigma^T \Sigma + \lambda I)^{-1} \Sigma^T U^T \mathbf{x}_\mathrm{data}~.
 \end{equation}
 
-For Eq.~\eqref{eq:unitary} to hold, $U$ must be unitary, i.e. $U^TU = U U^T = I$, which is not given for a truncated SVD (resulting in less columns of $U$) or when parts of the rows of $U$ are removed corresponding to grid cells where there is no data in $\mathbf{x}_\mathrm{rec}$. This is the reason for performing a second SVD on $A$.
+
+% For Eq.~\eqref{eq:unitary} to hold, $U$ must be unitary, i.e. $U^TU = U U^T = I$, which is true for a truncated SVD but not when parts of the rows of $U$ are removed corresponding to grid cells where there is no data in $\mathbf{x}_\mathrm{rec}$.
 
 
 
