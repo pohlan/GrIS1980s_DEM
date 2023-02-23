@@ -37,4 +37,5 @@ end
 I_intr = findall(reshape(bool_intr,nx*ny,1)[I_not_ocean] .&& mask_ice_nested) ####### mask = ice, data = no interior of ice sheet
 
 # save
+mkpath("data/")
 jldsave("data/aerodem_data_indices.jld2"; I_not_ocean, I_marg, I_intr)

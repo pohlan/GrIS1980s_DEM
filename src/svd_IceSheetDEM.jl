@@ -1,3 +1,4 @@
+__precompile__(false)
 module svd_IceSheetDEM
 
 using JLD2, NetCDF, Glob
