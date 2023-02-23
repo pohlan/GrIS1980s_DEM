@@ -99,7 +99,7 @@ where $(\Sigma_A^T \Sigma_A + \lambda I)$ is a diagonal matrix. The solution of 
 \end{equation}
 Finally, we can substitute this solution into $\hat{\mathbf{v}}_\mathrm{rec} = V_A \mathbf{z}$ to obtain a least squares solution for $\hat{\mathbf{v}}_\mathrm{rec}$:
 \begin{equation}
-    \hat{\mathbf{v}}_\mathrm{rec} = V_A (\Sigma^T \Sigma + \lambda I)^{-1} \Sigma^T U^T \mathbf{x}_\mathrm{data}~.
+    \hat{\mathbf{v}}_\mathrm{rec} = V_A (\Sigma_A^T \Sigma_A + \lambda I)^{-1} \Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}~.
 \end{equation}
 
 
