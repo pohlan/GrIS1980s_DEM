@@ -1,3 +1,4 @@
+# data files
 *.nc
 *.jld2
 *.txt
@@ -10,3 +11,6 @@
 *.log
 *.pdf
 *.synctex.gz
+
+# Julia
+Manifest.toml
