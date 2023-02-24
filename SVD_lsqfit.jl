@@ -2,6 +2,7 @@ using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, 
 close("all")
 
 # parameters and paths to adjust
+F           = Float32       # Julia default is Float64 but that kills the process for the full training data set if r is too large
 r           = 40            # truncation of the SVD
 λ           = 10^7          # regularization
 res         = "1200"
@@ -11,22 +12,22 @@ model_files = glob("data/usurf_ex_gris_g" * res * "m_v2023_RAGIS_id_*.nc") # 60 
 I_no_ocean, I_data, I_intr = load("data/indices_aerodem_g" * res * "m.jld2","I_not_ocean","I_marg","I_intr")
 
 # load model data
-Data_all, nx, ny = read_model_data(which_files=2:27,tsteps=2:60;model_files)
+Data_all, nx, ny = read_model_data(which_files=1:27,tsteps=1:1;F,model_files)
 # centering
 Data       = Data_all[I_no_ocean, :]   # remove cells where there is ocean, saves half of the space
 Data_mean  = mean(Data, dims=2)
 Data_centr = Data .- Data_mean
 
-# load observations
-obs        = ncread(model_files[1],"usurf")[:,:,1]            # reconstruct a model geometry
-# obs       = ncread("data/aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc", "surface_altitude")   # actual aerodem data
-# obs        = ncread("data/pism_Greenland_" * res * "m_mcb_jpl_v2023_RAGIS_ctrl.nc", "surface")
-obs_flat   = reshape(obs, nx * ny, 1)[I_no_ocean]
-x_data     = obs_flat .- Data_mean
-
 # compute SVD
 println("Computing the SVD..")
 U, Σ, V = tsvd(Data_centr, r)
+
+# load observations
+# obs        = ncread(model_files[1],"usurf")[:,:,1]            # reconstruct a model geometry
+# obs       = ncread("data/aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc", "surface_altitude")   # actual aerodem data
+obs        = ncread("data/pism_Greenland_" * res * "m_mcb_jpl_v2023_RAGIS_ctrl.nc", "surface")
+obs_flat   = F.(reshape(obs, nx * ny, 1)[I_no_ocean])
+x_data     = obs_flat .- Data_mean
 
 # solve the lsqfit problem
 println("Solving the least squares problem..")

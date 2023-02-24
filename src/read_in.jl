@@ -1,5 +1,6 @@
 # function to read in model data
-function read_model_data(;which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
+function read_model_data(;F::DataType=Float64,       # Float32 or Float64
+                          which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
                           tsteps=nothing,            # indices of time steps used for training; e.g.  ""      ""
                           model_files)
     println("Reading in model data...")
@@ -20,11 +21,10 @@ function read_model_data(;which_files=nothing,       # indices of files used for
         error("Time steps out of bound.")
     end
     nt_out = length(tsteps)
-
     # build data matrix
-    Data = zeros(nx*ny, nf*nt_out)
-    for (k, file) in enumerate(files_out)
-        d = ncread(file, "usurf")[:,:,tsteps]
+    Data = zeros(F, nx*ny, nf*nt_out)
+    @showprogress for (k, file) in enumerate(files_out)
+        d = F.(ncread(file, "usurf")[:,:,tsteps])
         data = reshape(d, ny*nx, nt_out)
         Data[:,(k - 1 ) * nt_out + 1:k * nt_out] = data
     end
