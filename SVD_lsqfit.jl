@@ -42,20 +42,19 @@ D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
 v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data[I_data]
 x_rec         = U*diagm(Σ)*v_rec .+ Data_mean
 
+# calculate error and print
 dif                      = zeros(nx*ny)
 dif[I_no_ocean[I_data]] .= (x_rec .- obs_flat)[I_data]
 dif[I_no_ocean[I_intr]] .= (x_rec .- obs_flat)[I_intr]
-@printf("L2 error: %1.1f\n", norm(dif))
-
-# close("all")
-# figure()
-# p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-50,50)
-# title("reconstructed - true")
+@printf("Mean absolute error: %1.1f m\n", mean(abs.(dif)))
+err_mean = mean(abs.(dif[I_no_ocean])*100 ./ obs_flat)
+@printf("Mean abs error in percent: %1.3f %%\n", err_mean)
 
 # save as nc file
 if parsed_args["save"]
+    mkpath("output/")
     println("Saving file..")
-    filename = "data/dem_ragis_r_$r _lambda_$λ.nc"
+    filename = "output/dem_ragis_r_$r _lambda_$λ.nc"
     varname  = "usurf"
     attribs  = Dict("units"   => "m",
                     "data_min" => 0.0)
@@ -69,4 +68,9 @@ if parsed_args["save"]
     end
     nccreate(filename, varname, "x", x, "y", y, "time", 1, atts=attribs)
     ncwrite(reshape(data_rec,nx,ny,1), filename, varname)
+
+    figure()
+    p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-50,50)
+    title("reconstructed - true")
+    savefig(filename[1:end-3]*".jpg")
 end
