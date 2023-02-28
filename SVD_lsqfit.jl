@@ -46,7 +46,7 @@ x_rec         = U*diagm(Σ)*v_rec .+ Data_mean
 # calculate error and print
 dif                      = zeros(nx*ny)
 dif[I_no_ocean[I_data]] .= (x_rec .- obs_flat)[I_data]
-if !startswith(obs_file, "data/aerodem")
+if !startswith(obs_file, filepath*"aerodem")
     dif[I_no_ocean[I_intr]] .= (x_rec .- obs_flat)[I_intr]
 end
 @printf("Mean absolute error: %1.1f m\n", mean(abs.(dif)))

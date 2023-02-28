@@ -19,9 +19,9 @@ for res in resolutions
     R        = reshape(obs, length(obs))[I_not_ocean]
 
     # get indices where there is data and ice, with respect to non-ocean-mask
-    I_marg    = findall(R .!= -9999 .&& mask_ice_nested)
+    I_marg    = findall(R .!= -9999 .&& R .!= 0.0 .&& mask_ice_nested)
     # get indices of the interior where there is ice and but no data, with respect to non-ocean-mask
-    bool_intr = obs.==-9999
+    bool_intr = (obs.==-9999 .|| obs .== 0.0)
     for iy = 1:ny
         ix = 1
         while obs[ix,iy] .== -9999
