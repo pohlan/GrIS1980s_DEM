@@ -17,7 +17,7 @@ function parse_commandline()
             arg_type = Int
             default  = nothing
         "--res"
-            help     = "fesolution in m, currently available at '1200' or '1800'"
+            help     = "resolution in m, currently available at '1200' or '1800'"
             arg_type = String
             default  = "1200"
         "--filepath"

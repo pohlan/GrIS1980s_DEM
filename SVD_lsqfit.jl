@@ -13,8 +13,8 @@ F        = Float32 # Julia default is Float64 but that kills the process for the
 I_no_ocean, I_data, I_intr = load("data/indices_aerodem_g" * res * "m.jld2","I_not_ocean","I_marg","I_intr")
 
 # load model data
-model_files = glob(joinpath(filepath,"usurf_ex_gris_g" * res * "m_v2023_RAGIS_id_*.nc")) # 60 time steps in total, 27 files
-Data_all, nx, ny = read_model_data(which_files=1:1,tsteps=1:20;F,model_files)
+model_files = glob(joinpath(filepath,"usurf_ex_gris_g" * res * "*_id_*YM.nc"))
+Data_all, nx, ny = read_model_data(;F,model_files)
 # centering
 Data       = Data_all[I_no_ocean, :]   # remove cells where there is ocean, saves half of the space
 Data_mean  = mean(Data, dims=2)
@@ -29,8 +29,9 @@ else
 end
 # load observations
 # obs        = ncread(model_files[1],"usurf")[:,:,1]            # reconstruct a model geometry
-# obs       = ncread(filepath * "aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc", "surface_altitude")   # actual aerodem data
-obs        = ncread(filepath * "pism_Greenland_" * res * "m_mcb_jpl_v2023_RAGIS_ctrl.nc", "surface")
+# obs_file = filepath * "aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc"; obs = ncread(obs_file, "surface_altitude")
+obs_file = filepath * "pism_Greenland_" * res * "m_mcb_jpl_v2023_RAGIS_ctrl.nc"; obs = ncread(obs_file, "surface")
+    
 obs_flat   = F.(reshape(obs, nx * ny, 1)[I_no_ocean])
 x_data     = obs_flat .- Data_mean
 
@@ -45,16 +46,18 @@ x_rec         = U*diagm(Σ)*v_rec .+ Data_mean
 # calculate error and print
 dif                      = zeros(nx*ny)
 dif[I_no_ocean[I_data]] .= (x_rec .- obs_flat)[I_data]
-dif[I_no_ocean[I_intr]] .= (x_rec .- obs_flat)[I_intr]
+if !startswith(obs_file, "data/aerodem")
+    dif[I_no_ocean[I_intr]] .= (x_rec .- obs_flat)[I_intr]
+end
 @printf("Mean absolute error: %1.1f m\n", mean(abs.(dif)))
 err_mean = mean(abs.(dif[I_no_ocean])*100 ./ obs_flat)
-@printf("Mean abs error in percent: %1.3f %%\n", err_mean)
+@printf("Mean abs error relative to true elevation: %1.3f %%\n", err_mean)
 
 # save as nc file
 if parsed_args["save"]
     mkpath("output/")
     println("Saving file..")
-    filename = "output/dem_ragis_r_$r _lambda_$λ.nc"
+    filename = "output/rec_" * obs_file[6:13] * "_r_$r"*"_lambda_$λ"*"_g$res.nc"
     varname  = "usurf"
     attribs  = Dict("units"   => "m",
                     "data_min" => 0.0)
