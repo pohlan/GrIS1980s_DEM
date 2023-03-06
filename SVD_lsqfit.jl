@@ -1,7 +1,7 @@
 using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, JLD2, TSVD
 
 # retrieve command line arguments
-parsed_args = parse_commandline()
+parsed_args = parse_commandline(ARGS)
 r        = parsed_args["r"]        # truncation of the SVD
 λ        = parsed_args["λ"]        # regularization
 res      = parsed_args["res"]      # resolution
@@ -29,9 +29,9 @@ else
 end
 # load observations
 # obs        = ncread(model_files[1],"usurf")[:,:,1]            # reconstruct a model geometry
-# obs_file = filepath * "aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc"; obs = ncread(obs_file, "surface_altitude")
-obs_file = filepath * "pism_Greenland_" * res * "m_mcb_jpl_v2023_RAGIS_ctrl.nc"; obs = ncread(obs_file, "surface")
-    
+obs_file = filepath * "aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc"; obs = ncread(obs_file, "surface_altitude")
+# obs_file = filepath * "bedmachine_" * res *  ".nc"; obs = ncread(obs_file, "surface_altitude")
+
 obs_flat   = F.(reshape(obs, nx * ny, 1)[I_no_ocean])
 x_data     = obs_flat .- Data_mean
 

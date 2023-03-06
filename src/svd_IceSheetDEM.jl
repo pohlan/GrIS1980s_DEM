@@ -5,7 +5,7 @@ using JLD2, NetCDF, Glob, ProgressMeter, ArgParse
 
 export read_model_data, parse_commandline
 
-function parse_commandline()
+function parse_commandline(args)
     s = ArgParseSettings()
     @add_arg_table s begin
         "--λ", "--lambda"
@@ -34,7 +34,7 @@ function parse_commandline()
         #     arg_type = DataType
         #     default  = Float32
     end
-    return parse_args(s)
+    return parse_args(args,s)
 end
 
 include("read_in.jl")
