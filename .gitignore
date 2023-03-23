@@ -4,6 +4,7 @@
 *.txt
 *.tif
 *.jpg
+data/
 
 # latex
 *.aux
