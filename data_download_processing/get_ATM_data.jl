@@ -1,17 +1,19 @@
 using DelimitedFiles, ProgressMeter, Glob, DataFrames, CSV, PyCall, Dates
 import ArchGDAL as AG
 
+path = "../data/"
+
 ## 1.) Download with python script from https://nsidc.org/data/data-access-tool/BLATM2/versions/1
 pyinclude(fname) = (PyCall.pyeval_(read(fname, String), PyCall.pynamespace(Main), PyCall.pynamespace(Main), PyCall.Py_file_input, fname); nothing) # to be able to run an entire python script
 pyinclude("nsidc-download_BLATM2.001_2023-03-19.py")
 # move the files to a separate folder
-mkpath("data/ATM_raw")
+mkpath(path*"ATM_raw")
 fs = glob("BLATM2_*")
-mv.(fs, "data/ATM_raw/".*fs, force=true)
+mv.(fs, path*"ATM_raw/".*fs, force=true)
 
 
 ## 2.) merge all flight files into one
-files = glob("data/ATM_raw/BLATM2_*_nadir2seg")
+files = glob(path*"ATM_raw/BLATM2_*_nadir2seg")
 # appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
 function merge_files(files)
     d_final = DataFrame()
@@ -32,16 +34,16 @@ function merge_files(files)
 end
 d_final = merge_files(files)
 # save
-CSV.write("data/ATM_nadir2seg_all.csv", d_final)
+CSV.write(path*"ATM_nadir2seg_all.csv", d_final)
 
 
 ## 3.) create regualar grid from scattered data using gdal_grid
 ### 3a) create a .vrt file with metadata for the csv file
-open("data/ATM_nadir2seg_all.vrt", "w") do io
+open(path*"ATM_nadir2seg_all.vrt", "w") do io
     print(io,
 "<OGRVRTDataSource>
     <OGRVRTLayer name=\"ATM_nadir2seg_all\">
-        <SrcDataSource>data/ATM_nadir2seg_all.csv</SrcDataSource>
+        <SrcDataSource>"*path*"ATM_nadir2seg_all.csv</SrcDataSource>
         <SrcLayer>ATM_nadir2seg_all</SrcLayer>
         <LayerSRS>EPSG:4326</LayerSRS>
         <GeometryType>wkbPoint</GeometryType>
@@ -52,7 +54,7 @@ open("data/ATM_nadir2seg_all.vrt", "w") do io
 end
 ### 3b) run gdal_grid
 # nodata=-999.0 is important, otherwise gdalwarp will interpret the zeros as data
-dataset   = AG.read("data/ATM_nadir2seg_all.vrt")
+dataset   = AG.read(path*"ATM_nadir2seg_all.vrt")
 options   = ["-a", "invdist:radius1=0.05:radius2=0.05:min_points=1:nodata=-9999.0",
              "-outsize", "1000", "1000",
              "-zfield", "x4",
@@ -79,7 +81,7 @@ function get_options(;grid)
     return options
 end
 for grid in [1200 1800]
-    AG.unsafe_gdalwarp([grid_data], get_options(;grid); dest="data/ATM_g$grid.nc")
+    AG.unsafe_gdalwarp([grid_data], get_options(;grid); dest=path*"ATM_g$grid.nc")
 end
 
 
@@ -88,22 +90,22 @@ end
 ##     ATM elevation    = elevation       - WGS84 Ellipsoid
 ##     ATM corrected    = ATM elevation   - bedmachine geoid
 
-model_dataset = AG.read("data/usurf_ex_gris_g1200m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc")
-geoid_orig    = AG.read("NETCDF:data/BedMachineGreenland-v5.nc:geoid")
+model_dataset = AG.read(path*"usurf_ex_gris_g1200m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc")
+geoid_orig    = AG.read("NETCDF:"*path*"BedMachineGreenland-v5.nc:geoid")
 for grid in [1200 1800]
     # reproject bedmachine geoid on model geometry
-    geoid_file         = "data/bedm_geoid_g$grid.nc"
+    geoid_file         = path*"bedm_geoid_g$grid.nc"
     AG.unsafe_gdalwarp([geoid_orig], get_options(;grid); dest=geoid_file)
     # apply correction
     geoid              = AG.read(AG.getband(AG.read(geoid_file),1))
-    ATM                = AG.read(AG.getband(AG.read("data/ATM_g$grid.nc"),1))
+    ATM                = AG.read(AG.getband(AG.read(path*"ATM_g$grid.nc"),1))
     ATM_corrected      = -9999.0 * ones(size(ATM))
     idx                = findall(ATM .!= 0)
     ATM_corrected[idx] = ATM[idx] - geoid[idx]
 
     # create netcdf file
     AG.create(
-        "data/ATM_geoid_corrected_g$grid.nc",
+        path*"ATM_geoid_corrected_g$grid.nc",
         driver = AG.getdriver(model_dataset),
         width  = AG.width(model_dataset),
         height = AG.height(model_dataset),
