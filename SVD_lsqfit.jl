@@ -57,7 +57,7 @@ if parsed_args["save"]
     mkpath("output/")
     println("Saving file..")
     logλ = Int(round(log(10, λ)))
-    filename = "output/rec_lambda_1e$λ"*"_g$res.nc"
+    filename = "output/rec_lambda_1e$logλ"*"_g$res.nc"
     varname  = "usurf"
     data_rec = zeros(nx*ny)
     data_rec[I_no_ocean] = x_rec
