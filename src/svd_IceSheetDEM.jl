@@ -3,7 +3,7 @@ module svd_IceSheetDEM
 
 using JLD2, NetCDF, Glob, ProgressMeter, ArgParse
 
-export read_model_data, parse_commandline
+export read_model_data, parse_commandline, get_indices
 
 function parse_commandline(args)
     s = ArgParseSettings()
@@ -11,36 +11,31 @@ function parse_commandline(args)
         "--λ", "--lambda"
             help     = "regularization parameter for the least squares problem"
             arg_type = Float64
-            default  = 0.
-        "--r", "--trunc"
-            help     = "number of modes that should be kept in the SVD truncation"
-            arg_type = Int
-            default  = nothing
+            default  = 1e5
         "--res"
             help     = "resolution in m, currently available at '1200' or '1800'"
             arg_type = String
             default  = "1200"
-        "--filepath"
+        "--train_folder"
             help     = "folder where the training data 'usurf_*' is stored"
             arg_type = String
             default  = "data/"
+        "--obs"
+            help     = "file of observations that the SVD is fitted to"
+            arg_type = String
+            default  = "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc"
+        "--obs_band_name"
+            help     = "name of the surface elevation band in the netcdf file"
+            arg_type = String
+            default  = "surface_altitude"
         "--save"
             help     = "save the output in an .nc file (option takes no argument)"
             action   = :store_true
-        # doesn't currently work if one wants to pass an actual argument, for --F "Float32" it gives the error
-        # invalid argument: Float32 (conversion to type DataType failed; you may need to overload ArgParse.parse_item;
-        # "--F"
-        #     help     = "Precision, Julia default is Float64 but that kills the process for the full training data set if r is too large"
-        #     arg_type = DataType
-        #     default  = Float32
     end
     return parse_args(args,s)
 end
 
 include("read_in.jl")
-
-if !all(isfile.(["data/indices_aerodem_g1200m.jld2", "data/indices_aerodem_g1800m.jld2"]))
-    include("save_indices.jl")
-end
+include("save_indices.jl")
 
 end # module svd_IceSheetDEM

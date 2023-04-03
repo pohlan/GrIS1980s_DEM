@@ -53,8 +53,8 @@ end
 ### 3b) run gdal_grid
 # nodata=-999.0 is important, otherwise gdalwarp will interpret the zeros as data
 dataset   = AG.read("data/ATM_nadir2seg_all.vrt")
-options   = ["-a", "invdist:radius1=0.05:radius2=0.05:min_points=1:nodata=-999.0",
-             "-outsize", "111", "222",
+options   = ["-a", "invdist:radius1=0.05:radius2=0.05:min_points=1:nodata=-9999.0",
+             "-outsize", "1000", "1000",
              "-zfield", "x4",
              "-l", "ATM_nadir2seg_all"]
 grid_data = AG.unsafe_gdalgrid(dataset, options)
@@ -97,7 +97,7 @@ for grid in [1200 1800]
     # apply correction
     geoid              = AG.read(AG.getband(AG.read(geoid_file),1))
     ATM                = AG.read(AG.getband(AG.read("data/ATM_g$grid.nc"),1))
-    ATM_corrected      = -999.0 * ones(size(ATM))
+    ATM_corrected      = -9999.0 * ones(size(ATM))
     idx                = findall(ATM .!= 0)
     ATM_corrected[idx] = ATM[idx] - geoid[idx]
 

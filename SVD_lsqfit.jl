@@ -1,39 +1,38 @@
-using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, JLD2, TSVD
+using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD
+import ArchGDAL as AG
 
 # retrieve command line arguments
 parsed_args = parse_commandline(ARGS)
-r        = parsed_args["r"]        # truncation of the SVD
-λ        = parsed_args["λ"]        # regularization
-res      = parsed_args["res"]      # resolution
-filepath = parsed_args["filepath"]
-  
+λ           = parsed_args["λ"]        # regularization
+res         = parsed_args["res"]      # resolution
+filepath    = parsed_args["train_folder"]
+obs_file    = parsed_args["obs"]
+band_name   = parsed_args["obs_band_name"]
+
 F        = Float32 # Julia default is Float64 but that kills the process for the full training data set if r is too large
 
+# load observations
+obs = ncread(obs_file, band_name)
+
 # load masks
-I_no_ocean, I_data, I_intr = load("data/indices_aerodem_g" * res * "m.jld2","I_not_ocean","I_marg","I_intr")
+I_no_ocean, I_data, I_intr = get_indices(obs, res)
 
 # load model data
 model_files = glob(joinpath(filepath,"usurf_ex_gris_g" * res * "*_id_*YM.nc"))
 Data_all, nx, ny = read_model_data(;F,model_files)
-# centering
+
+# centering model data
 Data       = Data_all[I_no_ocean, :]   # remove cells where there is ocean, saves half of the space
 Data_mean  = mean(Data, dims=2)
 Data_centr = Data .- Data_mean
 
-# compute SVD
-println("Computing the SVD..")
-if r === nothing
-    U, Σ, V = svd(Data_centr)      # full SVD
-else
-    U, Σ, V = tsvd(Data_centr, r)
-end
-# load observations
-# obs        = ncread(model_files[1],"usurf")[:,:,1]            # reconstruct a model geometry
-obs_file = filepath * "aerodem_g" * res * "m_geoid_corrected_1978_1987_mean.nc"; obs = ncread(obs_file, "surface_altitude")
-# obs_file = filepath * "bedmachine_" * res *  ".nc"; obs = ncread(obs_file, "surface_altitude")
-
+# centering observations with model mean
 obs_flat   = F.(reshape(obs, nx * ny, 1)[I_no_ocean])
 x_data     = obs_flat .- Data_mean
+
+# compute SVD
+println("Computing the SVD..")
+U, Σ, V = svd(Data_centr)
 
 # solve the lsqfit problem
 println("Solving the least squares problem..")
@@ -57,23 +56,29 @@ err_mean = mean(abs.(dif[I_no_ocean])*100 ./ obs_flat)
 if parsed_args["save"]
     mkpath("output/")
     println("Saving file..")
-    filename = "output/rec_" * obs_file[6:13] * "_r_$r"*"_lambda_$λ"*"_g$res.nc"
+    logλ = Int(round(log(10, λ)))
+    filename = "output/rec_lambda_1e$λ"*"_g$res.nc"
     varname  = "usurf"
-    attribs  = Dict("units"   => "m",
-                    "data_min" => 0.0)
-    x    = ncread(model_files[1], "x")
-    y    = ncread(model_files[1], "y")
-    time = ncread(model_files[1], "time")
     data_rec = zeros(nx*ny)
     data_rec[I_no_ocean] = x_rec
-    if isfile(filename)
-        run(`rm $filename`)
+    data_matrix = reshape(data_rec,nx,ny)
+    data_matrix = data_matrix[:,end:-1:1]  # a bit of a hack; turn Greenland 'upside down' so that it is correct in the final file
+    model_dataset = AG.read(obs_file)
+    AG.create(
+        filename,
+        driver = AG.getdriver(model_dataset),
+        width  = AG.width(model_dataset),
+        height = AG.height(model_dataset),
+        nbands = 1,
+        dtype  = Float32
+    ) do raster
+        AG.write!(raster, data_matrix, 1)
+        AG.setgeotransform!(raster, AG.getgeotransform(model_dataset))
+        AG.setproj!(raster, AG.getproj(model_dataset))
     end
-    nccreate(filename, varname, "x", x, "y", y, "time", 1, atts=attribs)
-    ncwrite(reshape(data_rec,nx,ny,1), filename, varname)
 
-    figure()
-    p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-50,50)
+    figure(figsize=(14,16))
+    p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-200,200)
     title("reconstructed - true")
     savefig(filename[1:end-3]*".jpg")
 end
