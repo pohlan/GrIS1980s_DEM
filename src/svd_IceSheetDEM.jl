@@ -12,6 +12,10 @@ function parse_commandline(args)
             help     = "regularization parameter for the least squares problem"
             arg_type = Float64
             default  = 1e5
+        "--r"
+            help     = "truncation of SVD"
+            arg_type = Int
+            default  = 10
         "--res"
             help     = "resolution in m, currently available at '1200' or '1800'"
             arg_type = String

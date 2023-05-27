@@ -8,6 +8,7 @@ res         = parsed_args["res"]      # resolution
 filepath    = parsed_args["train_folder"]
 obs_file    = parsed_args["obs"]
 band_name   = parsed_args["obs_band_name"]
+r           = parsed_args["r"]
 
 F        = Float32 # Julia default is Float64 but that kills the process for the full training data set if r is too large
 
@@ -57,7 +58,7 @@ if parsed_args["save"]
     mkpath("output/")
     println("Saving file..")
     logλ = Int(round(log(10, λ)))
-    filename = "output/rec_lambda_1e$logλ"*"_g$res.nc"
+    filename = "output/rec_lambda_1e$logλ"*"_g$res"*"_r$r.nc"
     varname  = "usurf"
     data_rec = zeros(nx*ny)
     data_rec[I_no_ocean] = x_rec
@@ -76,6 +77,8 @@ if parsed_args["save"]
         AG.setgeotransform!(raster, AG.getgeotransform(model_dataset))
         AG.setproj!(raster, AG.getproj(model_dataset))
     end
+    fn_compressed = filename[1:end-3] * "_compressed.nc"
+    run(`gdal_translate -co "COMPRESS=DEFLATE" $filename $fn_compressed`)
 
     figure(figsize=(14,16))
     p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-200,200)
