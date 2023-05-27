@@ -1,5 +1,8 @@
-using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD
+using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD, ImageFiltering
 import ArchGDAL as AG
+
+ARGS = ["--save", "--lambda", "1e6", "--obs", "data/aerodem_filtered_g1200m_geoid.nc", "--r", "80",
+        "--obs_band_name", "surface"]
 
 # retrieve command line arguments
 parsed_args = parse_commandline(ARGS)
@@ -13,7 +16,12 @@ r           = parsed_args["r"]
 F        = Float32 # Julia default is Float64 but that kills the process for the full training data set if r is too large
 
 # load observations
-obs = ncread(obs_file, band_name)
+obs_orig = ncread(obs_file, band_name)
+
+# get indices for elevation < 400 m --> force aerodem there
+ixx = 0 .< obs_orig .< 400
+obs = copy(obs_orig)
+obs[ixx] .= 0
 
 # load masks
 I_no_ocean, I_data, I_intr = get_indices(obs, res)
@@ -63,6 +71,8 @@ if parsed_args["save"]
     data_rec = zeros(nx*ny)
     data_rec[I_no_ocean] = x_rec
     data_matrix = reshape(data_rec,nx,ny)
+    data_matrix[ixx] .= obs_orig[ixx]
+    data_matrix[data_matrix .< 0.] .= 0.
     data_matrix = data_matrix[:,end:-1:1]  # a bit of a hack; turn Greenland 'upside down' so that it is correct in the final file
     model_dataset = AG.read(obs_file)
     AG.create(
