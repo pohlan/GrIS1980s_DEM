@@ -1,5 +1,7 @@
 # svd_IceSheetDEM
 
+[![CI](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml/badge.svg)](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml)
+
 ## Installation / setup
 In the shell:
 ```
