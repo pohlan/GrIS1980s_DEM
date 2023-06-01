@@ -20,3 +20,4 @@ PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
 
 [compat]
 ImageFiltering = "0.7"
+Glob = "1"
