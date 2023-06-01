@@ -1,7 +1,7 @@
 using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD, ImageFiltering
 
-ARGS = ["--save", "--lambda", "1e5", "--obs", "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc", "--r", "377",
-        "--obs_band_name", "surface_altitude"]
+ARGS = ["--save", "--lambda", "1e5", "--obs", "data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g1200.nc", "--r", "377",
+        "--obs_band_name", "Band1"]
 # 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 
 # retrieve command line arguments

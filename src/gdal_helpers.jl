@@ -35,12 +35,19 @@ out = gdalwarp("data/input.nc"; grid=1200, dest="data/output.nc")
 ```
 """
 function gdalwarp(path::String; grid::Real, kwargs...)
-
     ds = AG.read(path) do source
         AG.gdalwarp([source], get_options(;grid); kwargs...) do warped
            band = AG.getband(warped, 1)
            AG.read(band)
        end
+    end
+    return ds
+end
+function gdalwarp(path::Vector{String}; grid::Real, kwargs...)
+    source = AG.read.(path)
+    ds = AG.gdalwarp(source, get_options(;grid); kwargs...) do warped
+         band = AG.getband(warped, 1)
+         AG.read(band)
     end
     return ds
 end
