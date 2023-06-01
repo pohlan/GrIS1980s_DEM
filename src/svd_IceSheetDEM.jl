@@ -1,7 +1,7 @@
 __precompile__(false)
 module svd_IceSheetDEM
 
-using JLD2, NetCDF, Glob, ProgressMeter, ArgParse
+using NetCDF, Glob, ProgressMeter, ArgParse
 
 export read_model_data, parse_commandline, get_indices
 export shortread, gdalwarp, save_netcdf, get_options
