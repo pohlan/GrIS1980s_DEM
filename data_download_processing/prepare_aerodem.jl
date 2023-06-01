@@ -1,11 +1,7 @@
-using Downloads, Glob, NetCDF
-import ArchGDAL as AG
-
-using Cascadia, Gumbo, HTTP
-using DataStructures: OrderedDict
-using DataFrames
-
 using svd_IceSheetDEM
+
+using Cascadia, Gumbo, HTTP, DataFrames, Downloads
+using DataStructures: OrderedDict
 
 dest_path = "data/aerodem_raw/"
 mkpath(dest_path)
