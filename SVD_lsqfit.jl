@@ -1,8 +1,8 @@
 using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD, ImageFiltering
-import ArchGDAL as AG
 
-ARGS = ["--save", "--lambda", "1e6", "--obs", "data/aerodem_filtered_g1200m_geoid.nc", "--r", "80",
-        "--obs_band_name", "surface"]
+ARGS = ["--save", "--lambda", "1e5", "--obs", "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc", "--r", "377",
+        "--obs_band_name", "surface_altitude"]
+# 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 
 # retrieve command line arguments
 parsed_args = parse_commandline(ARGS)
@@ -61,37 +61,31 @@ end
 err_mean = mean(abs.(dif[I_no_ocean])*100 ./ obs_flat)
 @printf("Mean abs error relative to true elevation: %1.3f %%\n", err_mean)
 
-# save as nc file
+# retrieve matrix of reconstructed DEM
+dem_rec             = zeros(nx*ny)
+dem_rec[I_no_ocean] = x_rec
+dem_rec_mat         = reshape(dem_rec,nx,ny)
+
+# set values at < 400 m elevation (ixx) equal to aerodem
+dem_rec_mat[ixx]   .= obs_orig[ixx]
+# set very small values to zero as they are most likely ocean
+dem_rec_mat[dem_rec_mat .< 5.] .= 0.
+
+# smooth out (lots of jumps at data gaps where aerodem is enforced in adjacent pixels)
+dem_rec_mat[dem_rec_mat .< 5.0] .= 0.
+dem_smooth = mapwindow(median, dem_rec_mat, (5,5))
+
 if parsed_args["save"]
+    # save as nc file
     mkpath("output/")
     println("Saving file..")
     logλ = Int(round(log(10, λ)))
     filename = "output/rec_lambda_1e$logλ"*"_g$res"*"_r$r.nc"
-    varname  = "usurf"
-    data_rec = zeros(nx*ny)
-    data_rec[I_no_ocean] = x_rec
-    data_matrix = reshape(data_rec,nx,ny)
-    data_matrix[ixx] .= obs_orig[ixx]
-    data_matrix[data_matrix .< 0.] .= 0.
-    data_matrix = data_matrix[:,end:-1:1]  # a bit of a hack; turn Greenland 'upside down' so that it is correct in the final file
-    model_dataset = AG.read(obs_file)
-    AG.create(
-        filename,
-        driver = AG.getdriver(model_dataset),
-        width  = AG.width(model_dataset),
-        height = AG.height(model_dataset),
-        nbands = 1,
-        dtype  = Float32
-    ) do raster
-        AG.write!(raster, data_matrix, 1)
-        AG.setgeotransform!(raster, AG.getgeotransform(model_dataset))
-        AG.setproj!(raster, AG.getproj(model_dataset))
-    end
-    fn_compressed = filename[1:end-3] * "_compressed.nc"
-    run(`gdal_translate -co "COMPRESS=DEFLATE" $filename $fn_compressed`)
-
+    dem_smooth = dem_smooth[:,end:-1:1]  # a bit of a hack; turn Greenland 'upside down' so that it is correct in the final file
+    save_netcdf(dem_smooth; dest=filename, sample_path=obs_file)
+    # plot and save difference between reconstruction and observations
     figure(figsize=(14,16))
     p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-200,200)
-    title("reconstructed - true")
+    title("reconstructed - observations")
     savefig(filename[1:end-3]*".jpg")
 end

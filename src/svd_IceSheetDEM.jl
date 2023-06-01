@@ -4,6 +4,7 @@ module svd_IceSheetDEM
 using JLD2, NetCDF, Glob, ProgressMeter, ArgParse
 
 export read_model_data, parse_commandline, get_indices
+export shortread, gdalwarp, save_netcdf, get_options
 
 function parse_commandline(args)
     s = ArgParseSettings()
@@ -41,5 +42,6 @@ end
 
 include("read_in.jl")
 include("save_indices.jl")
+include("gdal_helpers.jl")
 
 end # module svd_IceSheetDEM
