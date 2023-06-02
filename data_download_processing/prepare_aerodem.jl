@@ -68,13 +68,16 @@ for url in [url_DEMs, url_reliablt_mask]
 end
 
 # gdalwarp
-grid = 1200
-aero     = gdalwarp(dest_path.*aerodem_files; grid, dest=dest_path*"merged_aerodem_g$grid.nc")
-rel_mask = gdalwarp(dest_path.*     rm_files; grid, dest=dest_path*"merged_rm_g$grid.nc")
+grid = 150
+cut_shp = "data/gris-imbie-1980/gris-outline-imbie-1980.shp"
+merged_aero_dest = dest_path*"merged_aerodem_g$grid.nc"
+merged_rm_dest   = dest_path*"merged_rm_g$grid.nc"
+aero     = gdalwarp(dest_path.*aerodem_files; grid, cut_shp, dest=merged_aero_dest)
+rel_mask = gdalwarp(dest_path.*     rm_files; grid, cut_shp, dest=merged_rm_dest)
 
 # filter for observations where reliability value is low
 aero_rm_filt = copy(aero)
-aero_rm_filt[rel_mask .< 50] .= 0.0  # only keep values with reliability of at least 30
+aero_rm_filt[rel_mask .< 40] .= 0.0  # only keep values with reliability of at least xx
 
 # apply geoid correction
 geoid                   = shortread("data/bedm_geoid_g$grid.nc")
@@ -84,6 +87,10 @@ aero_rm_geoid_corr[idx] = aero_rm_filt[idx] - geoid[idx]
 aero_rm_geoid_corr[aero_rm_geoid_corr .< 0.0] .= 0.0
 
 # save as netcdf
-sample_path = "data/usurf_ex_gris_g1200m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc"
-dest        = dest_path*"aerodem_rm-filtered_geoid-corr_g$grid.nc"
+sample_path = merged_aero_dest
+dest        = dest_path*"aerodem_rm-filtered_geoid-corr_g$(grid).nc"
 save_netcdf(aero_rm_geoid_corr; dest, sample_path)
+
+# move to different resolution
+# grid = 1200
+# gdalwarp(dest; grid, srcnodata="0.0", dest=dest_path*"aerodem_rm-filtered_geoid-corr_g$(grid).nc")

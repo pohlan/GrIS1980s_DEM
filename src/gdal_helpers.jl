@@ -3,14 +3,13 @@ import ArchGDAL as AG
 shortread(file) = AG.read(AG.getband(AG.read(file),1))
 
 """
-    get_options(; grid, x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)
+    get_options(; grid, cut_shp="", x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)
 Returns a vector of Strings that can be used as an input for gdalwarp
 """
-function get_options(;grid, x_min = - 678650,
-                            y_min = -3371600,
-                            x_max =   905350,
-                            y_max = - 635600)
-
+function get_options(;grid, cut_shp = "", srcnodata="", x_min = - 678650,
+                                                        y_min = -3371600,
+                                                        x_max =   905350,
+                                                        y_max = - 635600)
     options = ["-overwrite",
                "-t_srs", "EPSG:3413",
                "-r", "average",
@@ -19,8 +18,14 @@ function get_options(;grid, x_min = - 678650,
                "-co", "ZLEVEL=2",
                "-dstnodata", "0",
                "-te", "$x_min", "$y_min", "$x_max", "$y_max",  # y_max and y_min flipped otherwise GDAL is reversing the Y-dimension
-               "-tr", "$grid", "$grid"
+               "-tr", "$grid", "$grid",
                ]
+    if !isempty(cut_shp)
+        append!(options, ["-cutline", cut_shp])
+    end
+    if !isempty(srcnodata)
+        append!(options, ["-srcnodata", srcnodata])
+    end
     return options
 end
 
@@ -34,20 +39,27 @@ taken from https://discourse.julialang.org/t/help-request-using-archgdal-gdalwar
 out = gdalwarp("data/input.nc"; grid=1200, dest="data/output.nc")
 ```
 """
-function gdalwarp(path::String; grid::Real, kwargs...)
+function gdalwarp(path::String; grid::Real, cut_shp="", srcnodata="", kwargs...)
     ds = AG.read(path) do source
-        AG.gdalwarp([source], get_options(;grid); kwargs...) do warped
+        AG.gdalwarp([source], get_options(;grid, cut_shp, srcnodata); kwargs...) do warped
            band = AG.getband(warped, 1)
            AG.read(band)
        end
     end
     return ds
 end
-function gdalwarp(path::Vector{String}; grid::Real, kwargs...)
+function gdalwarp(path::Vector{String}; grid::Real, cut_shp="", srcnodata="", kwargs...)
     source = AG.read.(path)
-    ds = AG.gdalwarp(source, get_options(;grid); kwargs...) do warped
-         band = AG.getband(warped, 1)
-         AG.read(band)
+    ds = AG.gdalwarp(source, get_options(;grid, srcnodata)) do warped1
+        if !isempty(cut_shp)
+            AG.gdalwarp([warped1], get_options(;grid, cut_shp, srcnodata); kwargs...) do warped2
+                band = AG.getband(warped2, 1)
+                AG.read(band)
+            end
+        else
+            band = AG.getband(warped1, 1)
+            AG.read(band)
+        end
     end
     return ds
 end
