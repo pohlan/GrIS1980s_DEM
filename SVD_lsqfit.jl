@@ -72,7 +72,6 @@ dem_rec_mat[ixx]   .= obs_orig[ixx]
 dem_rec_mat[dem_rec_mat .< 5.] .= 0.
 
 # smooth out (lots of jumps at data gaps where aerodem is enforced in adjacent pixels)
-dem_rec_mat[dem_rec_mat .< 5.0] .= 0.
 dem_smooth = mapwindow(median, dem_rec_mat, (5,5))
 
 if parsed_args["save"]

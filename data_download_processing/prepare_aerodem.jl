@@ -69,7 +69,7 @@ end
 
 # gdalwarp
 grid = 150
-cut_shp = "data/gris-imbie-1980/gris-outline-imbie-1980.shp"
+cut_shp = "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp"
 merged_aero_dest = dest_path*"merged_aerodem_g$grid.nc"
 merged_rm_dest   = dest_path*"merged_rm_g$grid.nc"
 aero     = gdalwarp(dest_path.*aerodem_files; grid, cut_shp, dest=merged_aero_dest)
