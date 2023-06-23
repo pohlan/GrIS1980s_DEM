@@ -91,6 +91,13 @@ sample_path = merged_aero_dest
 dest        = dest_path*"aerodem_rm-filtered_geoid-corr_g$(grid).nc"
 save_netcdf(aero_rm_geoid_corr; dest, sample_path)
 
+# save netcdf for imbie mask
+# ones_m = trues(size(aero))
+# fname = "ones_preparing_mask.nc"
+# save_netcdf(ones_m; dest=fname, sample_path)
+# gdalwarp(fname; grid, cut_shp, dest="imbie_mask_g$(grid).nc")
+# run(`rm $fname`)
+
 # move to different resolution
 # grid = 1200
 # gdalwarp(dest; grid, srcnodata="0.0", dest=dest_path*"aerodem_rm-filtered_geoid-corr_g$(grid).nc")

@@ -1,6 +1,9 @@
 using svd_IceSheetDEM, NetCDF, Statistics, LinearAlgebra, Glob, PyPlot, Printf, TSVD, ImageFiltering
 
-ARGS = ["--save", "--lambda", "1e5", "--obs", "data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g1200.nc", "--r", "377",
+ARGS = ["--save",
+        "--lambda", "1e5",
+        "--obs", "data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g1200.nc",
+        "--r", "377",
         "--obs_band_name", "Band1"]
 # 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 
@@ -24,7 +27,7 @@ obs = copy(obs_orig)
 obs[ixx] .= 0
 
 # load masks
-I_no_ocean, I_data, I_intr = get_indices(obs, res)
+I_no_ocean, I_obs = get_indices(obs, res)
 
 # load model data
 model_files = glob(joinpath(filepath,"usurf_ex_gris_g" * res * "*_id_*YM.nc"))
@@ -41,19 +44,19 @@ x_data     = obs_flat .- Data_mean
 
 # compute SVD
 println("Computing the SVD..")
-U, Σ, V = svd(Data_centr)
+U, Σ, V = tsvd(Data_centr, r)
 
 # solve the lsqfit problem
 println("Solving the least squares problem..")
 UΣ            = U*diagm(Σ)
-U_A, Σ_A, V_A = svd(UΣ[I_data,:])
+U_A, Σ_A, V_A = svd(UΣ[I_obs,:])
 D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
-v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data[I_data]
+v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data[I_obs]
 x_rec         = U*diagm(Σ)*v_rec .+ Data_mean
 
 # calculate error and print
 dif                      = zeros(nx*ny)
-dif[I_no_ocean[I_data]] .= (x_rec .- obs_flat)[I_data]
+dif[I_no_ocean[I_obs]] .= (x_rec .- obs_flat)[I_obs]
 if !startswith(obs_file, filepath*"aerodem")
     dif[I_no_ocean[I_intr]] .= (x_rec .- obs_flat)[I_intr]
 end
