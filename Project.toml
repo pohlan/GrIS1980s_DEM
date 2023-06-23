@@ -12,9 +12,11 @@ Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DelimitedFiles = "8bb1440f-4735-579b-a4ab-409b98df4dab"
 Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 NetCDF = "30363a11-5582-574a-97bb-aa9a979735b9"
 ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 PyCall = "438e738f-606a-5dbb-bf0a-cddfbfd45ab0"
+TSVD = "9449cd9e-2762-5aa3-a617-5413e99d722e"
 
 [compat]
 ArchGDAL = "0.10"

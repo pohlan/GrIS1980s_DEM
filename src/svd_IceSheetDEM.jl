@@ -42,5 +42,6 @@ end
 
 include("read_in.jl")
 include("gdal_helpers.jl")
+include("rsvd.jl")
 
 end # module svd_IceSheetDEM
