@@ -1,3 +1,5 @@
+using NetCDF, Glob, ProgressMeter
+
 # function to read in model data
 function read_model_data(;F::DataType=Float64,       # Float32 or Float64
                           which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
@@ -29,4 +31,17 @@ function read_model_data(;F::DataType=Float64,       # Float32 or Float64
         Data[:,(k - 1 ) * nt_out + 1:k * nt_out] = data
     end
     return Data, nx, ny
+end
+
+"""
+Get indices of cells with observations
+"""
+function get_indices(obs, res)
+    # load imbie mask
+    imbie_mask = ncread("imbie_mask_g$(res).nc", "Band1")
+    no_ocean_mask   = findall((vec(obs) .> 0.0) .|| (vec(imbie_mask) .== 1))
+    # get indices where there is data and ice, with respect to ice_mask
+    R          = obs[no_ocean_mask]  # vector
+    I_obs      = findall(R .> 0.0)
+    return no_ocean_mask, I_obs
 end
