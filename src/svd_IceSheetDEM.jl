@@ -5,6 +5,7 @@ using ArgParse
 
 export read_model_data, parse_commandline, get_indices
 export shortread, gdalwarp, save_netcdf, get_options
+export solve_lsqfit
 
 function parse_commandline(args)
     s = ArgParseSettings()
@@ -43,5 +44,6 @@ end
 include("read_in.jl")
 include("gdal_helpers.jl")
 include("rsvd.jl")
+include("opt_solving.jl")
 
 end # module svd_IceSheetDEM
