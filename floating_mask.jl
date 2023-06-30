@@ -1,34 +1,37 @@
 using svd_IceSheetDEM
 import ArchGDAL as AG
 
+# grid
+gr = 1200
+
 # load datasets
-aeroDEM    = shortread("data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g1200.nc")
-surfaceDEM = shortread("output/rec_lambda_1e5_g1200_r377.nc")
-bedDEM     = shortread("data/bedm_bed_g1200.nc")
-bedm_mask  = shortread("data/bedm_mask_g1200.nc")
+aeroDEM    = shortread("data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g$(gr).nc")
+surfaceDEM = shortread("output/rec_lambda_1e5_g$(gr)_r377.nc")
+bedDEM     = shortread("data/bedm_bed_g$(gr).nc")
+bedm_mask  = shortread("data/bedm_mask_g$(gr).nc")
+ice_mask   = (surfaceDEM .> 0.0) .&& (surfaceDEM .> bedDEM)
 
 # calculate floating mask
 ρw            = 1030
 ρi            = 917
 Pw            = - ρw * bedDEM
 Pi            = ρi * (surfaceDEM - bedDEM)
-ice_rec       = surfaceDEM .> 0
-floating_mask = (Pw .> Pi)  .&& ice_rec   # floating where water pressure > ice pressure at the
+floating_mask = (Pw .> Pi) .&& (ice_mask)  # floating where water pressure > ice pressure at the bed
 
 # calculate mask
 new_mask = zeros(Int, size(bedm_mask))
-new_mask[ice_rec] .= 2
+new_mask[ice_mask] .= 2
 new_mask[bedm_mask .== 1] .= 1 # bedrock
 new_mask[floating_mask]   .= 3
 
 # calculate ice thickness
 h_ice = zeros(size(surfaceDEM))
-h_ice[ice_rec] .= surfaceDEM[ice_rec] - bedDEM[ice_rec]
+h_ice[ice_mask] .= surfaceDEM[ice_mask] - bedDEM[ice_mask]
 h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
 # save to netcdf file
 template_path = "data/aerodem_raw/aerodem_rm-filtered_geoid-corr_g1200.nc"
-dest = "testmachine.nc"
+dest = "output/bedmachine1980_reconstructed_test.nc"
 template_dataset = AG.read(template_path)
     AG.create(
         dest,
