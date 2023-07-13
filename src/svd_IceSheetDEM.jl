@@ -19,25 +19,14 @@ function parse_commandline(args)
             help     = "truncation of SVD"
             arg_type = Int
             default  = 10
-        "--res"
-            help     = "resolution in m, currently available at '1200' or '1800'"
-            arg_type = String
-            default  = "1200"
         "--train_folder"
             help     = "folder where the training data 'usurf_*' is stored"
             arg_type = String
-            default  = "data/"
-        "--obs"
-            help     = "file of observations that the SVD is fitted to"
+            default  = "data/training_data_it0_1200/"
+        "--imbie_path"
+            help     = "folder where imbie shp file is stored"
             arg_type = String
-            default  = "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc"
-        "--obs_band_name"
-            help     = "name of the surface elevation band in the netcdf file"
-            arg_type = String
-            default  = "surface_altitude"
-        "--save"
-            help     = "save the output in an .nc file (option takes no argument)"
-            action   = :store_true
+            default  = "data/gris-imbie-1980/"
     end
     return parse_args(args,s)
 end

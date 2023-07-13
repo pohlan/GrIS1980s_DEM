@@ -1,4 +1,4 @@
-using Printf, Statistics, LinearAlgebra, TSVD, HDF5, ImageFiltering, PyPlot
+using Printf, Statistics, LinearAlgebra, TSVD, HDF5, ImageFiltering, PyPlot, NetCDF
 import ArchGDAL as AG
 
 function solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_path, obs_file)
