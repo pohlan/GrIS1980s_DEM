@@ -36,9 +36,9 @@ end
 """
 Get indices of cells with observations
 """
-function get_indices(obs::Matrix{T}, res::String) where T<:Real
+function get_indices(obs::Matrix{T}, mask_path::String, mask_name="Band1") where T<:Real
     # load imbie mask
-    imbie_mask    = ncread("imbie_mask_g$(res).nc", "Band1")
+    imbie_mask    = ncread(mask_path, mask_name)
     no_ocean_mask = findall((vec(obs) .> 0.0) .|| (vec(imbie_mask) .== 1))
     # get indices where there is data and ice, with respect to ice_mask
     R      = obs[no_ocean_mask]  # vector

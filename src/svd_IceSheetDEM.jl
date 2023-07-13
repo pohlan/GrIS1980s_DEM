@@ -5,6 +5,7 @@ using ArgParse
 
 export read_model_data, parse_commandline, get_indices
 export shortread, gdalwarp, save_netcdf, get_options
+export create_aerodem, create_bedmachine_grid, create_imbie_mask
 export solve_lsqfit
 
 function parse_commandline(args)
