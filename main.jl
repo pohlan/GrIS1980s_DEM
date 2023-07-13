@@ -2,6 +2,8 @@
 
 using svd_IceSheetDEM
 
+const F = Float32 # Julia default is Float64 but that kills the process for the full training data set if r is too large
+
 imbie_path         = "data/gris-imbie-1980/"
 aerodem_path       = "data/aerodem/"
 bedmachine_path    = "data/bedmachine/"
@@ -35,7 +37,7 @@ end
 # 4.) make sure that the imbie shp file is downloaded and get a netcdf mask of the right grid
 imbie_mask = imbie_path * "imbie_mask_g$(gr).nc"
 if !isfile(imbie_path * "gris-outline-imbie-1980.shp")
-    @error "shape file of imbie outline not downloaded"
+    @error "shape file of imbie outline not downloaded or not in a local folder data/gris-imbie-1980/"
 end
 if !isfile(imbie_mask)
     create_imbie_mask(gr; imbie_path, sample_path=aerodem_g150)
@@ -47,9 +49,11 @@ ARGS = ["--save",
         "--lambda", "1e5",
         "--r", "377"]
 # 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
-include("SVD_lsqfit.jl")
-rec_file = solve_it(ARGS, gr, imbie_mask, training_data_path, obs_file)
+# retrieve command line arguments
+parsed_args = parse_commandline(ARGS)
+λ           = F(parsed_args["λ"])     # regularization
+r           = parsed_args["r"]
+rec_file = solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_path, obs_file)
 
 # 5.) calculate the floating mask
-include("floating_mask.jl")
-create_reconstructed_bedmachine(obs_file, rec_file, bedmachine_file)
+create_reconstructed_bedmachine(obs_file, rec_file, bedmachine_file, template_path)

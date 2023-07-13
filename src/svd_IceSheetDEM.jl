@@ -3,10 +3,10 @@ module svd_IceSheetDEM
 
 using ArgParse
 
-export read_model_data, parse_commandline, get_indices
-export shortread, gdalwarp, save_netcdf, get_options
+export parse_commandline
+export shortread, gdalwarp
 export create_aerodem, create_bedmachine_grid, create_imbie_mask
-export solve_lsqfit
+export solve_lsqfit, create_reconstructed_bedmachine
 
 function parse_commandline(args)
     s = ArgParseSettings()
@@ -45,6 +45,6 @@ end
 include("read_in.jl")
 include("gdal_helpers.jl")
 include("rsvd.jl")
-include("opt_solving.jl")
+include("reconstruction_routines.jl")
 
 end # module svd_IceSheetDEM
