@@ -4,10 +4,10 @@ using svd_IceSheetDEM
 
 const F = Float32 # Julia default is Float64 but that kills the process for the full training data set if r is too large
 
-ARGS = ["--lambda", "1e5",
-        "--r", "377",
-        "--imbie_path", "data/gris-imbie-1980/",
-        "--train_folder", "data/training_data_it0_1200/"]
+# ARGS = ["--lambda", "1e5",
+#         "--r", "377",
+#         "--imbie_path", "data/gris-imbie-1980/",
+#         "--train_folder", "data/training_data_it0_1200/"]
 parsed_args = parse_commandline(ARGS)
 
 imbie_path         = parsed_args["imbie_path"]
