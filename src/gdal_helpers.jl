@@ -186,7 +186,7 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(aerodem_path, imbie_shp_path, bedmachine_path)
+function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
     grid      = 150
     raw_path  = aerodem_path*"raw/"
     mkpath(raw_path)
@@ -209,11 +209,10 @@ function create_aerodem(aerodem_path, imbie_shp_path, bedmachine_path)
 
     # gdalwarp
     println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
-    cut_shp = imbie_shp_path*"gris-outline-imbie-1980_updated.shp"
     merged_aero_dest = aerodem_path*"merged_aerodem_g$grid.nc"
     merged_rm_dest   = aerodem_path*"merged_rm_g$grid.nc"
-    aero     = gdalwarp(aerodem_files; grid, cut_shp, dest=merged_aero_dest)
-    rel_mask = gdalwarp(     rm_files; grid, cut_shp, dest=merged_rm_dest)
+    aero     = gdalwarp(aerodem_files; grid, imbie_shp_file, dest=merged_aero_dest)
+    rel_mask = gdalwarp(     rm_files; grid, imbie_shp_file, dest=merged_rm_dest)
 
     # filter for observations where reliability value is low
     aero_rm_filt = copy(aero)
@@ -234,7 +233,7 @@ function create_aerodem(aerodem_path, imbie_shp_path, bedmachine_path)
     return
 end
 
-function create_imbie_mask(grid; imbie_path, sample_path)
+function create_imbie_mask(grid; imbie_path, imbie_shp_file, sample_path)
     # a bit ugly and cumbersome, due to the unability to resolve two issues:
     # 1) cut_shp doesn't work wih too large grids and if src file doesn't correspond to grid size
     # 2) the ArchGDAL gdalwarp function doesn't take Matrices as an input (or at least I haven't figured out how)
@@ -245,8 +244,7 @@ function create_imbie_mask(grid; imbie_path, sample_path)
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
     save_netcdf(ones_m; dest=fname_ones, sample_path)
-    cut_shp = imbie_path * "gris-outline-imbie-1980_updated.shp"
-    gdalwarp(fname_ones; grid=150, cut_shp, dest=fname_mask)
+    gdalwarp(fname_ones; grid=150, imbie_shp_file, dest=fname_mask)
     gdalwarp(fname_mask; grid, dest=imbie_path*"imbie_mask_g$(grid).nc")
     run(`rm $fname_ones`)
     run(`rm $fname_mask`)

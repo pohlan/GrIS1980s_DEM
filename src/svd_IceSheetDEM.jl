@@ -19,14 +19,14 @@ function parse_commandline(args)
             help     = "truncation of SVD"
             arg_type = Int
             default  = 10
-        "--train_folder"
-            help     = "folder where the training data 'usurf_*' is stored"
+        "--training_data"
+            help     = "training files, e.g. train_folder/usurf*.nc"
+            nargs    = '*'
+            required = true
+        "--imbie_shp_file"
+            help     = "shape file outlining the ice"
             arg_type = String
-            default  = "data/training_data_it0_1200/"
-        "--imbie_path"
-            help     = "folder where imbie shp file is stored"
-            arg_type = String
-            default  = "data/gris-imbie-1980/"
+            required = true
     end
     return parse_args(args,s)
 end

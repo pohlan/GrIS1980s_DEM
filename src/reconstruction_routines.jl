@@ -1,7 +1,7 @@
 using Printf, Statistics, LinearAlgebra, TSVD, HDF5, ImageFiltering, PyPlot, NetCDF
 import ArchGDAL as AG
 
-function solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_path, obs_file)
+function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     # load observations
     obs_orig = ncread(obs_file, "Band1")
 
@@ -14,8 +14,7 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_path, obs_file)
     I_no_ocean, I_obs = get_indices(obs, imbie_mask)
 
     # load model data
-    model_files = glob(training_data_path * "usurf_ex_gris_g$(gr)*YM.nc")
-    Data_all, nx, ny = read_model_data(;F,model_files, which_files=1:2)
+    Data_all, nx, ny = read_model_data(;F,model_files)
 
     # # solve least-squares problem
     # dem_rec, dif, err_mean = solve_lsqfit(Data_all, obs, λ, r, I_no_ocean, I_obs)
