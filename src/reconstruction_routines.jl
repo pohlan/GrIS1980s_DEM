@@ -29,7 +29,11 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
 
     # compute SVD
     println("Computing the SVD..")
-    U, Σ, _ = svd(Data_centr)
+    if r < min(size(Data_centr)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd
+        U, Σ, _ = tsvd(Data_centr, r)
+    else
+        U, Σ, _ = svd(Data_centr)
+    end
 
     # solve the lsqfit problem
     println("Solving the least squares problem..")
