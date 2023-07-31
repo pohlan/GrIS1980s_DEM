@@ -26,7 +26,6 @@ function parse_commandline(args)
         "--imbie_shp_file"
             help     = "shape file outlining the ice"
             arg_type = String
-            required = true
     end
     return parse_args(args,s)
 end

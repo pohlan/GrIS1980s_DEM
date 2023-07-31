@@ -1,7 +1,7 @@
 using Printf, Statistics, LinearAlgebra, TSVD, HDF5, ImageFiltering, PyPlot, NetCDF
 import ArchGDAL as AG
 
-function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
+function prepare_problem(obs_file, imbie_mask, model_files, F)
     # load observations
     obs_orig = ncread(obs_file, "Band1")
 
@@ -16,9 +16,10 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     # load model data
     Data_all, nx, ny = read_model_data(;F,model_files)
 
-    # # solve least-squares problem
-    # dem_rec, dif, err_mean = solve_lsqfit(Data_all, obs, λ, r, I_no_ocean, I_obs)
+    return  Data_all, obs, I_no_ocean, I_obs, nx, ny, ixx, obs_orig
+end
 
+function solve_problem(Data_all, obs, I_no_ocean, I_obs, nx, ny, r, λ, F)
     # centering model data
     Data       = Data_all[I_no_ocean, :]  # remove cells where there is ocean, saves half of the space
     Data_mean  = mean(Data, dims=2)
@@ -29,7 +30,7 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
 
     # compute SVD
     println("Computing the SVD..")
-    if r < min(size(Data_centr)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd
+    if r < min(size(Data_centr)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
         U, Σ, _ = tsvd(Data_centr, r)
     else
         U, Σ, _ = svd(Data_centr)
@@ -48,6 +49,13 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- obs_flat[I_obs]
     err_mean         = mean(abs.(dif[I_no_ocean[I_obs]]))
     @printf("Mean absolute error: %1.1f m\n", err_mean)
+
+    return x_rec, err_mean, dif
+end
+
+function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
+    Data_all, obs, I_no_ocean, I_obs, nx, ny, ixx, obs_orig = prepare_problem(obs_file, imbie_mask, model_files, F)
+    x_rec, err_mean, dif                                    = solve_problem(Data_all, obs, I_no_ocean, I_obs, nx, ny, r, λ, F)
 
     # retrieve matrix of reconstructed DEM
     dem_rec             = zeros(F, nx,ny)

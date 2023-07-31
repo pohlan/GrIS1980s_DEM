@@ -46,10 +46,12 @@ if !isfile(aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
 end
 
 # 4.) make sure that the imbie shp file is downloaded and get a netcdf mask of the right grid
-imbie_mask = imbie_path * "imbie_mask_g$(gr).nc"
-if !isfile(imbie_shp_file)
-    @error "imbie shape file not found at " * imbie_shp_file
+if isnothing(imbie_shp_file)
+    error("no imbie shape file provided")
+elseif !isfile(imbie_shp_file)
+    error("imbie shape file not found at " * imbie_shp_file)
 end
+imbie_mask = imbie_path * "imbie_mask_g$(gr).nc"
 if !isfile(imbie_mask)
     create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path=aerodem_g150)
 end
