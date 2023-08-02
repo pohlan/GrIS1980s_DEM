@@ -4,7 +4,7 @@ module svd_IceSheetDEM
 using ArgParse
 
 export parse_commandline
-export shortread, gdalwarp
+export archgdal_read, gdalwarp
 export create_aerodem, create_bedmachine_grid, create_imbie_mask
 export solve_lsqfit, create_reconstructed_bedmachine
 

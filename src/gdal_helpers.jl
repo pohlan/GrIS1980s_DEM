@@ -2,14 +2,14 @@ import ArchGDAL as AG
 using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NetCDF
 using DataStructures: OrderedDict
 
-shortread(file) = AG.read(AG.getband(AG.read(file),1))
+archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 
 
 """
-    get_options(; grid, cut_shp="", x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)
+    get_options(; gr, cut_shp="", x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)
 Returns a vector of Strings that can be used as an input for gdalwarp
 """
-function get_options(;grid, cut_shp = "", srcnodata="", dstnodata="0", x_min = - 678650,
+function get_options(;gr, cut_shp = "", srcnodata="", dstnodata="0", x_min = - 678650,
                                                                       y_min = -3371600,
                                                                       x_max =   905350,
                                                                       y_max = - 635600)
@@ -20,7 +20,7 @@ function get_options(;grid, cut_shp = "", srcnodata="", dstnodata="0", x_min = -
                "-co", "COMPRESS=DEFLATE",
                "-co", "ZLEVEL=2",
                "-te", "$x_min", "$y_min", "$x_max", "$y_max",  # y_max and y_min flipped otherwise GDAL is reversing the Y-dimension
-               "-tr", "$grid", "$grid",
+               "-tr", "$gr", "$gr",
                ]
     if !isempty(cut_shp)
         append!(options, ["-cutline", cut_shp])
@@ -35,29 +35,29 @@ function get_options(;grid, cut_shp = "", srcnodata="", dstnodata="0", x_min = -
 end
 
 """
-    gdalwarp(path; grid, kwargs...)
+    gdalwarp(path; gr, kwargs...)
 
 taken from https://discourse.julialang.org/t/help-request-using-archgdal-gdalwarp-for-resampling-a-raster-dataset/47039
 
 # Example
 ```
-out = gdalwarp("data/input.nc"; grid=1200, dest="data/output.nc")
+out = gdalwarp("data/input.nc"; gr=1200, dest="data/output.nc")
 ```
 """
-function gdalwarp(path::String; grid::Real, cut_shp="", srcnodata="", kwargs...)
+function gdalwarp(path::String; gr::Real, cut_shp="", srcnodata="", kwargs...)
     ds = AG.read(path) do source
-        AG.gdalwarp([source], get_options(;grid, cut_shp, srcnodata); kwargs...) do warped
+        AG.gdalwarp([source], get_options(;gr, cut_shp, srcnodata); kwargs...) do warped
            band = AG.getband(warped, 1)
            AG.read(band)
        end
     end
     return ds
 end
-function gdalwarp(path::Vector{String}; grid::Real, cut_shp="", srcnodata="", kwargs...)
+function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", kwargs...)
     source = AG.read.(path)
-    ds = AG.gdalwarp(source, get_options(;grid, srcnodata)) do warped1
+    ds = AG.gdalwarp(source, get_options(;gr, srcnodata)) do warped1
         if !isempty(cut_shp)
-            AG.gdalwarp([warped1], get_options(;grid, cut_shp, srcnodata); kwargs...) do warped2
+            AG.gdalwarp([warped1], get_options(;gr, cut_shp, srcnodata); kwargs...) do warped2
                 band = AG.getband(warped2, 1)
                 AG.read(band)
             end
@@ -118,7 +118,7 @@ function save_netcdf(layers::Vector{Matrix}, layernames::Vector{String}, dest, t
     return
 end
 
-function create_bedmachine_grid(grid; bedmachine_path, template_path)
+function create_bedmachine_grid(gr, bedmachine_path, template_file)
     # check if bedmachine is there already, otherwise download
     original = bedmachine_path*"BedMachineGreenland-v5.nc"
     if !isfile(original)
@@ -129,16 +129,16 @@ function create_bedmachine_grid(grid; bedmachine_path, template_path)
 
     println("Using gdalwarp to project bedmachine on model grid..")
     # gdalwarp
-    layernames = ["mask", "geoid", "bed"]
+    layernames = ["mask", "geoid", "bed", "surface", "thickness"]
     fieldvals  = Matrix[]
     for fn in layernames
-        new = gdalwarp("NETCDF:"*original*":"*fn;  grid)
-        push!(fieldvals, new)
+        new = gdalwarp("NETCDF:"*original*":"*fn;  gr)
+        push!(fieldvals, new[:,end:-1:1])  # flip y-axis due to behaviour of ArchGDAL
     end
 
     # save as netcdf
-    dest = bedmachine_path * "bedmachine_g$(grid).nc"
-    save_netcdf(fieldvals, layernames, dest, template_path)
+    dest = bedmachine_path * "bedmachine_g$(gr).nc"
+    save_as_bedmachine(dest, template_file, fieldvals, layernames, attribute_template_file=original)
 
     return
 end
@@ -187,7 +187,7 @@ function get_table_from_html(input::AbstractString)
 end
 
 function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
-    grid      = 150
+    gr      = 150
     raw_path  = aerodem_path*"raw/"
     mkpath(raw_path)
 
@@ -209,17 +209,17 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
 
     # gdalwarp
     println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
-    merged_aero_dest = aerodem_path*"merged_aerodem_g$grid.nc"
-    merged_rm_dest   = aerodem_path*"merged_rm_g$grid.nc"
-    aero     = gdalwarp(aerodem_files; grid, imbie_shp_file, dest=merged_aero_dest)
-    rel_mask = gdalwarp(     rm_files; grid, imbie_shp_file, dest=merged_rm_dest)
+    merged_aero_dest = aerodem_path*"merged_aerodem_g$gr.nc"
+    merged_rm_dest   = aerodem_path*"merged_rm_g$gr.nc"
+    aero     = gdalwarp(aerodem_files; gr, imbie_shp_file, dest=merged_aero_dest)
+    rel_mask = gdalwarp(     rm_files; gr, imbie_shp_file, dest=merged_rm_dest)
 
     # filter for observations where reliability value is low
     aero_rm_filt = copy(aero)
     aero_rm_filt[rel_mask .< 40] .= 0.0  # only keep values with reliability of at least xx
     # apply geoid correction
     geoid_g150 = bedmachine_path * "geoid_g150.nc"
-    geoid      = gdalwarp("NETCDF:"*bedmachine_path*"BedMachineGreenland-v5.nc:geoid";  grid, dest = geoid_g150)
+    geoid      = gdalwarp("NETCDF:"*bedmachine_path*"BedMachineGreenland-v5.nc:geoid";  gr, dest = geoid_g150)
 
     idx                     = findall(aero_rm_filt .!= 0.0)
     aero_rm_geoid_corr      = zeros(size(aero_rm_filt))
@@ -228,24 +228,24 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
 
     # save as netcdf
     sample_path = merged_aero_dest
-    dest        = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(grid).nc"
+    dest        = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
     save_netcdf(aero_rm_geoid_corr; dest, sample_path)
     return
 end
 
-function create_imbie_mask(grid; imbie_path, imbie_shp_file, sample_path)
+function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     # a bit ugly and cumbersome, due to the unability to resolve two issues:
     # 1) cut_shp doesn't work wih too large grids and if src file doesn't correspond to grid size
     # 2) the ArchGDAL gdalwarp function doesn't take Matrices as an input (or at least I haven't figured out how)
     #    need to give a filename as argument
     println("Creating imbie mask netcdf..")
-    sample = shortread(sample_path)
+    sample = archgdal_read(sample_path)
     ones_m = ones(size(sample))
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
     save_netcdf(ones_m; dest=fname_ones, sample_path)
-    gdalwarp(fname_ones; grid=150, imbie_shp_file, dest=fname_mask)
-    gdalwarp(fname_mask; grid, dest=imbie_path*"imbie_mask_g$(grid).nc")
+    gdalwarp(fname_ones; gr=150, imbie_shp_file, dest=fname_mask)
+    gdalwarp(fname_mask; gr, dest=imbie_path*"imbie_mask_g$(gr).nc")
     run(`rm $fname_ones`)
     run(`rm $fname_mask`)
     return

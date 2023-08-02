@@ -59,12 +59,12 @@ options   = ["-a", "invdist:radius1=0.05:radius2=0.05:min_points=1:nodata=-9999.
              "-zfield", "x4",
              "-l", "ATM_nadir2seg_all"]
 # run gdalgrid and gdalwarp
-grid      = 1200
+gr      = 1200
 ATM = AG.read(path*"ATM_nadir2seg_all.vrt") do source
     # from flight lines to grid
     AG.gdalgrid(source, options) do gridded
     # from arbitrary grid to model grid
-        AG.gdalwarp([gridded],get_options(;grid); dest=path*"ATM_g$grid.nc") do warped
+        AG.gdalwarp([gridded],get_options(;gr); dest=path*"ATM_g$gr.nc") do warped
             band = AG.getband(warped,1)
             AG.read(band)
         end
@@ -79,12 +79,12 @@ end
 ##     ATM elevation    = elevation       - WGS84 Ellipsoid
 ##     ATM corrected    = ATM elevation   - bedmachine geoid
 
-geoid              = shortread(path*"bedm_geoid_g$grid.nc")
+geoid              = archgdal_read(path*"bedm_geoid_g$gr.nc")
 ATM_corrected      = -9999.0 * ones(size(ATM))
 idx                = findall(ATM .!= 0)
 ATM_corrected[idx] = ATM[idx] - geoid[idx]
 
 
 ## 5.) create netcdf file
-sample_path   = path*"usurf_ex_gris_g$(grid)m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc"
-save_netcdf(ATM_corrected; dest=path*"ATM_geoid_corrected_g$grid.nc", sample_path)
+sample_path   = path*"usurf_ex_gris_g$(gr)m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc"
+save_netcdf(ATM_corrected; dest=path*"ATM_geoid_corrected_g$gr.nc", sample_path)

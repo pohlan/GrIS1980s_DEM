@@ -1,4 +1,4 @@
-using Printf, Statistics, LinearAlgebra, TSVD, HDF5, ImageFiltering, PyPlot, NetCDF
+using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, PyPlot, NetCDF, NCDatasets
 import ArchGDAL as AG
 
 function prepare_problem(obs_file, imbie_mask, model_files, F)
@@ -86,14 +86,75 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     return filename
 end
 
-function create_reconstructed_bedmachine(obs_file, rec_file, bedmachine_file, template_path)
+function save_as_bedmachine(dest::String, spatial_template_file::String,
+                            layers::Vector{T}, layernames::Vector{String};
+                            reconstruction=false, attribute_template_file="") where T <: AbstractMatrix
+
+    function get_attr(ds::NCDataset, field::String)
+        # for the reconstructed bedmachine, some of the attribute info needs to be modified
+        sources_rec = Dict("surface"   => "svd reconstruction",
+                           "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
+                           "thickness" => "computed from surface and bed",
+                           "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
+                           )
+        long_name_mask_rec = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
+
+        # create dictionary of attributes
+        var_attr = NCDatasets.OrderedDict()
+
+        for k in filter(x -> !in(x, ["_FillValue"]), keys(ds[field].attrib))  # fillvalue can easily throw errors (https://docs.juliahub.com/NCDatasets/lxvtD/0.10.3/issues/#Defining-the-attributes-_FillValue,-add_offset,-scale_factor,-units-and-calendar)
+            push!(var_attr, k => ds[field].attrib[k])
+        end
+        if reconstruction  # reconstructed bedmachine,
+            var_attr["source"] => sources_rec[field]
+            var_attr["long_name"] => long_name_mask_rec
+        end
+        return var_attr
+    end
+
+    # load template datasets
+    spt_template  = NCDataset(spatial_template_file)
+    attr_template = isempty(attribute_template_file) ? spt_template : NCDataset(attribute_template_file)
+
+    # get mapping and coordinates from template
+    crs  = spt_template["mapping"]
+    tx   = spt_template["x"]
+    ty   = spt_template["y"]
+
+    # make sure the template has the same size as layers
+    nx, ny = size(layers[1])
+    @assert (nx, ny) == (length(tx), length(ty))
+
+    # write fields and their attributes
+    rm(dest, force=true) # NCDataset(..., "c") cannot be done twice in the same Julia session (Permission denied error); if attempted, the file gets corrupted and needs to be deleted
+    ds  = NCDataset(dest, "c")
+    defDim(ds, "x", nx)
+    defDim(ds, "y", ny)
+    for (field, data) in zip(layernames, layers)
+        defVar(ds, field, data, ("x", "y"), attrib = get_attr(attr_template, field))
+    end
+    m = "mapping"
+    if haskey(ds[layernames[1]].attrib, "polar_stereographic")
+        m = "polar_stereographic"
+    end
+    defVar(ds, m, Char, (), attrib = crs.attrib)
+    defVar(ds, "x", tx[:], ("x",), attrib = tx.attrib)
+    defVar(ds, "y", ty[:], ("y",), attrib = ty.attrib)
+
+    # global attributes
+    gr = spt_template["x"][2] - spt_template["x"][1]
+    ds.attrib["spacing in m"] = "$gr"
+
+    close(ds)
+
+    return
+end
+
+function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     # load datasets
-    aeroDEM    = shortread(obs_file)
-    surfaceDEM = shortread(rec_file)
-    fid = h5open(bedmachine_file)
-    bedDEM = read(fid["bed"])[:,end:-1:1]
-    bedm_mask = read(fid["mask"])[:,end:-1:1]
-    close(fid)
+    surfaceDEM = ncread(rec_file, "Band1")
+    bedDEM = ncread(bedmachine_file, "bed")
+    bedm_mask = ncread(bedmachine_file, "mask")
     ice_mask   = (surfaceDEM .> 0.0) .&& (surfaceDEM .> bedDEM)
 
     # calculate floating mask
@@ -104,7 +165,7 @@ function create_reconstructed_bedmachine(obs_file, rec_file, bedmachine_file, te
     floating_mask = (Pw .> Pi) .&& (ice_mask)  # floating where water pressure > ice pressure at the bed
 
     # calculate mask
-    new_mask = zeros(Int, size(bedm_mask))
+    new_mask = zeros(typeof(bedm_mask[1,1]), size(bedm_mask))
     new_mask[ice_mask] .= 2
     new_mask[bedm_mask .== 1] .= 1 # bedrock
     new_mask[floating_mask]   .= 3
@@ -116,27 +177,10 @@ function create_reconstructed_bedmachine(obs_file, rec_file, bedmachine_file, te
 
     # save to netcdf file
     dest = "output/bedmachine1980_reconstructed.nc"
-    template_dataset = AG.read(template_path)
-        AG.create(
-            dest,
-            driver = AG.getdriver(template_dataset),
-            width  = AG.width(template_dataset),
-            height = AG.height(template_dataset),
-            nbands = 4,
-            dtype  = Float32,
-            options = ["-co", "COMPRESS=DEFLATE", "-co", "ZLEVEL=6"] # reduces the file size
-        ) do raster
-            AG.write!(raster, surfaceDEM, 1)
-            AG.write!(raster, bedDEM, 2)
-            AG.write!(raster, h_ice, 3)
-            AG.write!(raster, new_mask, 4)
-            AG.setgeotransform!(raster, AG.getgeotransform(template_dataset))
-            AG.setproj!(raster, AG.getproj(template_dataset))
-        end
+    layers = [surfaceDEM, bedDEM, h_ice, new_mask]
+    layernames = ["surface", "bed", "thickness", "mask"]
 
-    # couldn't figure out how to name a layer with ArchGDAL
-    for (n, varb) in enumerate(["surface", "bed", "thickness", "mask"])
-        run(`ncrename -v $("Band"*string(n)),$varb $dest`)
-    end
+    save_as_bedmachine(dest, bedmachine_file, layers, layernames, reconstruction=true)
+
     return
 end
