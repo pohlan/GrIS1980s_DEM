@@ -87,4 +87,8 @@ ATM_corrected[idx] = ATM[idx] - geoid[idx]
 
 ## 5.) create netcdf file
 sample_path   = path*"usurf_ex_gris_g$(gr)m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc"
-save_netcdf(ATM_corrected; dest=path*"ATM_geoid_corrected_g$gr.nc", sample_path)
+attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
+                                     "standard_name" => "surface_altitude",
+                                     "units" => "m")
+                   )
+save_netcdf(path*"ATM_geoid_corrected_g$gr.nc", sample_path, [ATM_corrected], [layername], attributes)

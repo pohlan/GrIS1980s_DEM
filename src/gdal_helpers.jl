@@ -1,5 +1,5 @@
 import ArchGDAL as AG
-using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NetCDF
+using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NCDatasets
 using DataStructures: OrderedDict
 
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
@@ -69,6 +69,19 @@ function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", kwar
     return ds
 end
 
+function get_attr(ds::NCDataset, layernames::Vector{String})
+    # create dictionary of attributes
+    attributes = Dict()
+    for l in layernames
+        var_attr = NCDatasets.OrderedDict()
+        for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue can easily throw errors (https://docs.juliahub.com/NCDatasets/lxvtD/0.10.3/issues/#Defining-the-attributes-_FillValue,-add_offset,-scale_factor,-units-and-calendar)
+            push!(var_attr, att => ds[l].attrib[att])
+        end
+        push!(attributes, l => var_attr)
+    end
+    return attributes
+end
+
 """
     save_netcdf(A::Matrix; dest::String, sample_path::String)
 
@@ -76,70 +89,60 @@ end
 - dest:         destination where netcdf should be saved
 - sample_path:  path of netcdf file that properties should be copied from
 """
-function save_netcdf(A::Matrix; dest::String, sample_path::String, )
-    sample_dataset = AG.read(sample_path)
-    AG.create(
-        dest,
-        driver = AG.getdriver(sample_dataset),
-        width  = AG.width(sample_dataset),
-        height = AG.height(sample_dataset),
-        nbands = 1,
-        dtype  = Float32,
-        options = ["-co", "COMPRESS=DEFLATE"] # reduces the file size
-    ) do raster
-        AG.write!(raster, A, 1)
-        AG.setgeotransform!(raster, AG.getgeotransform(sample_dataset))
-        AG.setproj!(raster, AG.getproj(sample_dataset))
-    end
-end
-function save_netcdf(layers::Vector{Matrix}, layernames::Vector{String}, dest, template_path)
-    # save to netcdf file
-    template_dataset = AG.read(template_path)
-        AG.create(
-            dest,
-            driver = AG.getdriver(template_dataset),
-            width  = AG.width(template_dataset),
-            height = AG.height(template_dataset),
-            nbands = length(layers),
-            dtype  = Float32,
-            options = ["-co", "COMPRESS=DEFLATE", "-co", "ZLEVEL=6"] # reduces the file size
-        ) do raster
-            for (i, vals) in enumerate(layers)
-                AG.write!(raster, vals, i)
-            end
-            AG.setgeotransform!(raster, AG.getgeotransform(template_dataset))
-            AG.setproj!(raster, AG.getproj(template_dataset))
-        end
+function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict)  where T <: AbstractMatrix
+    template  = NCDataset(spatial_template_file)
+    m    = haskey(template, "mapping") ? "mapping" : "polar_stereographic"
+    crs  = template[m]
+    tx   = template["x"]
+    ty   = template["y"]
 
-    # rename layers in bash (don't know how to do it in ArchGDAL directly)
-    for (i, ln) in enumerate(layernames)
-        run(`ncrename -v $("Band"*string(i)),$ln $dest`)
+    # make sure the template has the same size as layers
+    nx, ny = size(layers[1])
+    @assert (nx, ny) == (length(tx), length(ty))
+
+    # write fields and their attributes
+    rm(dest, force=true) # NCDataset(..., "c") cannot be done twice in the same Julia session (Permission denied error); if attempted, the file gets corrupted and needs to be deleted
+    ds  = NCDataset(dest, "c")
+    defDim(ds, "x", nx)
+    defDim(ds, "y", ny)
+    for (field, data) in zip(layernames, layers)
+        println(data[1,1])
+        defVar(ds, field, data, ("x", "y"), attrib = attributes[field])
     end
-    return
+    defVar(ds, m, Char, (), attrib = crs.attrib)
+    defVar(ds, "x", tx[:], ("x",), attrib = tx.attrib)
+    defVar(ds, "y", ty[:], ("y",), attrib = ty.attrib)
+
+    # global attributes
+    gr = template["x"][2] - template["x"][1]
+    ds.attrib["spacing in m"] = "$gr"
+
+    close(ds)
 end
 
-function create_bedmachine_grid(gr, bedmachine_path, template_file)
+function create_bedmachine_grid(gr, bedmachine_path, spatial_template_file)
     # check if bedmachine is there already, otherwise download
-    original = bedmachine_path*"BedMachineGreenland-v5.nc"
-    if !isfile(original)
+    bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
+    if !isfile(bedmachine_original)
         println("Downloading bedmachine..")
         url_bedm = "https://n5eil01u.ecs.nsidc.org/ICEBRIDGE/IDBMG4.005/1993.01.01/BedMachineGreenland-v5.nc"
-        Downloads.download(url_bedm, original)
+        Downloads.download(url_bedm, bedmachine_original)
     end
 
-    println("Using gdalwarp to project bedmachine on model grid..")
     # gdalwarp
+    println("Using gdalwarp to project bedmachine on model grid..")
     layernames = ["mask", "geoid", "bed", "surface", "thickness"]
     fieldvals  = Matrix[]
     for fn in layernames
-        new = gdalwarp("NETCDF:"*original*":"*fn;  gr)
+        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr)
         push!(fieldvals, new[:,end:-1:1])  # flip y-axis due to behaviour of ArchGDAL
     end
 
     # save as netcdf
     dest = bedmachine_path * "bedmachine_g$(gr).nc"
-    save_as_bedmachine(dest, template_file, fieldvals, layernames, attribute_template_file=original)
-
+    attr_template = NCDataset(bedmachine_original)
+    attributes = get_attr(attr_template, layernames)
+    save_netcdf(dest, spatial_template_file, fieldvals, layernames, attributes)
     return
 end
 
@@ -211,16 +214,17 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
     println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
     merged_aero_dest = aerodem_path*"merged_aerodem_g$gr.nc"
     merged_rm_dest   = aerodem_path*"merged_rm_g$gr.nc"
-    aero     = gdalwarp(aerodem_files; gr, imbie_shp_file, dest=merged_aero_dest)
-    rel_mask = gdalwarp(     rm_files; gr, imbie_shp_file, dest=merged_rm_dest)
+    gdalwarp(aerodem_files; gr, cut_shp=imbie_shp_file, dest=merged_aero_dest)
+    gdalwarp(     rm_files; gr, cut_shp=imbie_shp_file, dest=merged_rm_dest)
 
     # filter for observations where reliability value is low
-    aero_rm_filt = copy(aero)
+    aero_rm_filt = ncread(merged_aero_dest, "Band1")
+    rel_mask     = ncread(merged_rm_dest, "Band1")
     aero_rm_filt[rel_mask .< 40] .= 0.0  # only keep values with reliability of at least xx
     # apply geoid correction
     geoid_g150 = bedmachine_path * "geoid_g150.nc"
-    geoid      = gdalwarp("NETCDF:"*bedmachine_path*"BedMachineGreenland-v5.nc:geoid";  gr, dest = geoid_g150)
-
+    gdalwarp("NETCDF:"*bedmachine_path*"BedMachineGreenland-v5.nc:geoid";  gr, dest = geoid_g150)
+    geoid  = ncread(geoid_g150, "Band1")
     idx                     = findall(aero_rm_filt .!= 0.0)
     aero_rm_geoid_corr      = zeros(size(aero_rm_filt))
     aero_rm_geoid_corr[idx] = aero_rm_filt[idx] - geoid[idx]
@@ -229,7 +233,13 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
     # save as netcdf
     sample_path = merged_aero_dest
     dest        = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-    save_netcdf(aero_rm_geoid_corr; dest, sample_path)
+    layername   = "surface"
+    attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
+                                         "standard_name" => "surface_altitude",
+                                         "units" => "m")
+                        )
+    save_netcdf(dest, sample_path, [aero_rm_geoid_corr], [layername], attributes)
+
     return
 end
 
@@ -243,8 +253,9 @@ function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     ones_m = ones(size(sample))
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
-    save_netcdf(ones_m; dest=fname_ones, sample_path)
-    gdalwarp(fname_ones; gr=150, imbie_shp_file, dest=fname_mask)
+    layername   = "mask"
+    save_netcdf(fname_ones, sample_path, [ones_m], [layername], Dict(layername => ""))
+    gdalwarp(fname_ones; gr=150, cut_shp=imbie_shp_file, dest=fname_mask)
     gdalwarp(fname_mask; gr, dest=imbie_path*"imbie_mask_g$(gr).nc")
     run(`rm $fname_ones`)
     run(`rm $fname_mask`)

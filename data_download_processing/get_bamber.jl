@@ -18,4 +18,9 @@ bamber_corrected[idx] = bamb[idx] - geoid[idx]
 # create netcdf file
 dest = "data/bamber_geoid_corrected_g$gr.nc"
 sample_path = "data/usurf_ex_gris_g1200m_v2023_RAGIS_id_0_1980-1-1_2020-1-1_YM.nc"
-save_netcdf(bamber_corrected; dest, sample_path)
+layername   = "surface"
+attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
+                                     "standard_name" => "surface_altitude",
+                                     "units" => "m")
+                   )
+save_netcdf(dest, sample_path, [bamber_corrected], [layername], attributes)

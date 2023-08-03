@@ -74,9 +74,13 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     println("Saving file..")
     logλ = Int(round(log(10, λ)))
     filename = "output/rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"
-    dem_smooth = dem_smooth[:,end:-1:1]  # a bit of a hack; turn Greenland 'upside down' so that it is correct in the final file
-    save_netcdf(dem_smooth; dest=filename, sample_path=obs_file)
-
+    dem_smooth = dem_smooth
+    layername   = "surface"
+    attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
+                                         "standard_name" => "surface_altitude",
+                                         "units" => "m")
+                        )
+    save_netcdf(filename, obs_file, [dem_smooth], [layername], attributes)
     # plot and save difference between reconstruction and observations
     figure(figsize=(14,16))
     p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-200,200)
@@ -86,75 +90,11 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     return filename
 end
 
-function save_as_bedmachine(dest::String, spatial_template_file::String,
-                            layers::Vector{T}, layernames::Vector{String};
-                            reconstruction=false, attribute_template_file="") where T <: AbstractMatrix
-
-    function get_attr(ds::NCDataset, field::String)
-        # for the reconstructed bedmachine, some of the attribute info needs to be modified
-        sources_rec = Dict("surface"   => "svd reconstruction",
-                           "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
-                           "thickness" => "computed from surface and bed",
-                           "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
-                           )
-        long_name_mask_rec = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
-
-        # create dictionary of attributes
-        var_attr = NCDatasets.OrderedDict()
-
-        for k in filter(x -> !in(x, ["_FillValue"]), keys(ds[field].attrib))  # fillvalue can easily throw errors (https://docs.juliahub.com/NCDatasets/lxvtD/0.10.3/issues/#Defining-the-attributes-_FillValue,-add_offset,-scale_factor,-units-and-calendar)
-            push!(var_attr, k => ds[field].attrib[k])
-        end
-        if reconstruction  # reconstructed bedmachine,
-            var_attr["source"] => sources_rec[field]
-            var_attr["long_name"] => long_name_mask_rec
-        end
-        return var_attr
-    end
-
-    # load template datasets
-    spt_template  = NCDataset(spatial_template_file)
-    attr_template = isempty(attribute_template_file) ? spt_template : NCDataset(attribute_template_file)
-
-    # get mapping and coordinates from template
-    crs  = spt_template["mapping"]
-    tx   = spt_template["x"]
-    ty   = spt_template["y"]
-
-    # make sure the template has the same size as layers
-    nx, ny = size(layers[1])
-    @assert (nx, ny) == (length(tx), length(ty))
-
-    # write fields and their attributes
-    rm(dest, force=true) # NCDataset(..., "c") cannot be done twice in the same Julia session (Permission denied error); if attempted, the file gets corrupted and needs to be deleted
-    ds  = NCDataset(dest, "c")
-    defDim(ds, "x", nx)
-    defDim(ds, "y", ny)
-    for (field, data) in zip(layernames, layers)
-        defVar(ds, field, data, ("x", "y"), attrib = get_attr(attr_template, field))
-    end
-    m = "mapping"
-    if haskey(ds[layernames[1]].attrib, "polar_stereographic")
-        m = "polar_stereographic"
-    end
-    defVar(ds, m, Char, (), attrib = crs.attrib)
-    defVar(ds, "x", tx[:], ("x",), attrib = tx.attrib)
-    defVar(ds, "y", ty[:], ("y",), attrib = ty.attrib)
-
-    # global attributes
-    gr = spt_template["x"][2] - spt_template["x"][1]
-    ds.attrib["spacing in m"] = "$gr"
-
-    close(ds)
-
-    return
-end
-
 function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     # load datasets
-    surfaceDEM = ncread(rec_file, "Band1")
-    bedDEM = ncread(bedmachine_file, "bed")
-    bedm_mask = ncread(bedmachine_file, "mask")
+    surfaceDEM = ncread(rec_file, "surface")
+    bedDEM     = ncread(bedmachine_file, "bed")
+    bedm_mask  = ncread(bedmachine_file, "mask")
     ice_mask   = (surfaceDEM .> 0.0) .&& (surfaceDEM .> bedDEM)
 
     # calculate floating mask
@@ -176,11 +116,22 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    dest = "output/bedmachine1980_reconstructed.nc"
-    layers = [surfaceDEM, bedDEM, h_ice, new_mask]
-    layernames = ["surface", "bed", "thickness", "mask"]
-
-    save_as_bedmachine(dest, bedmachine_file, layers, layernames, reconstruction=true)
+    dest        = "output/bedmachine1980_reconstructed.nc"
+    layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
+    layernames  = ["surface", "bed", "thickness", "mask"]
+    template    = NCDataset(bedmachine_file)
+    attributes  = get_attr(template, layernames)
+    # overwrite some attributes
+    sources_rec = Dict("surface"   => "svd reconstruction",
+                           "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
+                           "thickness" => "computed from surface and bed",
+                           "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
+                           )
+    for l in layernames
+        attributes[l]["source"] = sources_rec[l]
+    end
+    attributes["mask"]["long_name"] = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
+    save_netcdf(dest, bedmachine_file, layers, layernames, attributes)
 
     return
 end
