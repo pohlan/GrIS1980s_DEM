@@ -1,4 +1,4 @@
-using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, PyPlot, NetCDF, NCDatasets
+using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, Plots, NetCDF, NCDatasets
 import ArchGDAL as AG
 
 function prepare_problem(obs_file, imbie_mask, model_files, F)
@@ -73,7 +73,7 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
     mkpath("output/")
     println("Saving file..")
     logλ = Int(round(log(10, λ)))
-    filename = "output/rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"
+    filename = r < min(size(Data_all)...)-100 ? "output/rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc" : "output/rec_lambda_1e$logλ"*"_g$gr"*"_fullsvd.nc"
     dem_smooth = dem_smooth
     layername   = "surface"
     attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
@@ -82,10 +82,8 @@ function solve_lsqfit(F, λ, r, gr, imbie_mask, model_files, obs_file)
                         )
     save_netcdf(filename, obs_file, [dem_smooth], [layername], attributes)
     # plot and save difference between reconstruction and observations
-    figure(figsize=(14,16))
-    p = pcolormesh(reshape(dif,nx,ny)',cmap="bwr"); colorbar(label="[m]"); p.set_clim(-200,200)
-    title("reconstructed - observations")
-    savefig(filename[1:end-3]*".jpg")
+    heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
+    savefig(filename[1:end-3]*".pdf")
 
     return filename
 end
