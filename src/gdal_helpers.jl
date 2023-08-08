@@ -106,7 +106,9 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
     defDim(ds, "x", nx)
     defDim(ds, "y", ny)
     for (field, data) in zip(layernames, layers)
-        println(data[1,1])
+        if !haskey(attributes[field], "grid_mapping")       # without the grid_mapping attribute gdalwarp doesn't work!
+            push!(attributes[field], "grid_mapping" => m)
+        end
         defVar(ds, field, data, ("x", "y"), attrib = attributes[field])
     end
     defVar(ds, m, Char, (), attrib = crs.attrib)
@@ -254,10 +256,11 @@ function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
     layername   = "mask"
-    save_netcdf(fname_ones, sample_path, [ones_m], [layername], Dict(layername => ""))
+    attributes = Dict(layername => Dict())
+    save_netcdf(fname_ones, sample_path, [ones_m], [layername], attributes)
     gdalwarp(fname_ones; gr=150, cut_shp=imbie_shp_file, dest=fname_mask)
     gdalwarp(fname_mask; gr, dest=imbie_path*"imbie_mask_g$(gr).nc")
-    run(`rm $fname_ones`)
-    run(`rm $fname_mask`)
+    rm(fname_ones, force=true)
+    rm(fname_mask, force=true)
     return
 end
