@@ -19,66 +19,46 @@ julia> ]               # takes you to the command line of the package manager
 (svd_IceSheetDEM) pkg> instantiate
 ```
 ## Files
-- `SVD_lsqfit.jl`: Solves the least square fit problem, see below how to run it
-- `SVD_lsqfit.tex`: tex file deriving the least squares solution applied in the .jl script
-- `lambda_vs_error.jl`: Plots the mean absolute error of the reconstruction with respect to the input data against different values of the regularization parameter lambda (in order to find a suitable lambda). Not the best approach since it is compared to the data that already went into the least square solution, but unfortunately there is no other validation data available.
-- `data_download_processing/`: files to rejproject DEMs to model grid, apply geoid corrections etc. as well as downloading routine for ATM data
+- `main.jl`: Downloads the required data and performs preprocessing steps (only the first time). Then it solves the least square fit problem and saves a netcdf in the same format as a bedmachine file.
+- `SVD_lsqfit.tex`: tex file deriving the least squares solution
+- `params_vs_error.jl`: Plots the mean absolute error of the reconstruction with respect to the input data against different values of a certain parameter (L-curve approach). The parameter can either be the regularization parameter, the number of ensembles in the training data or the truncation of the SVD. Note that this is not the best approach since it is compared to the data that already went into the least square solution, but unfortunately there is no other validation data available.
+- `data_download_processing/`: retrieving ATM and bamber data, maybe needed at a later point
 
 ## Run the script from the shell
-The `SVD_lsqfit.jl` can be run directly from the shell with
-```
-$ julia --project SVD_lsqfit.jl
-```
-It comes with the following options for command line arguments:
+The `main.jl` can be run directly from the shell with the following command line arguments:
 
 ```
-$ julia --project SVD_lsqfit.jl --help
+$ juliap main.jl --help
 
-usage: SVD_lsqfit.jl [--λ Λ] [--r R] [--res RES] [--filepath FILEPATH]
-                     [--save] [-h]
+usage: main.jl [--λ Λ] [--r R] --training_data [TRAINING_DATA...]
+               [--imbie_shp_file IMBIE_SHP_FILE] [-h]
 
 optional arguments:
   --λ, --lambda Λ       regularization parameter for the least squares
                         problem (type: Float64, default: 100000.0)
-  --res RES             resolution in m, currently available at '1200'
-                        or '1800' (default: "1200")
-  --train_folder TRAIN_FOLDER
-                        folder where the training data 'usurf_*' is
-                        stored (default: "data/")
-  --obs OBS             file of observations that the SVD is fitted to
-                        (default:
-                        "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc")
-  --obs_band_name OBS_BAND_NAME
-                        name of the surface elevation band in the
-                        netcdf file (default: "surface_altitude")
-  --save                save the output in an .nc file (option takes
-                        no argument)
+  --r R                 truncation of SVD, default is a full SVD
+                        (type: Int64, default: 5076944270305263616)
+  --training_data [TRAINING_DATA...]
+                        training files, e.g. train_folder/usurf*.nc
+  --imbie_shp_file IMBIE_SHP_FILE
+                        shape file outlining the ice
   -h, --help            show this help message and exit
 ```
-So without specifying any arguments it will be run without regularization (λ=0), doing the full SVD (r=nothing) and a resolution of 1200 m (res="1200"). It will also assume that all data is saved in a folder `data/` and it won't save any output. To change that, run it for instance with:
+By default it will thus run with regularization λ=1e5 and a full SVD (which happens when r is larger than the matrix size). The training data and imbie shape files always have to be provided locally and their paths have to be passed as a commandline argument, e.g.:
 ```
-$ julia --project SVD_lsqfit.jl --res "1800" --save
+$ julia --project main.jl --training_data training_data/usurf_*.nc --imbie_shp_file imbie_data/gris-outline-imbie-1980_updated.shp
 ```
 
 
-## Run the script interactively in the REPL:
+## Run the script interactively in the REPL
+
+To change the command line arguments from within the REPL, uncomment the following section in `main.jl` and modify it for the desired parameters:
+
+https://github.com/pohlan/svd_IceSheetDEM/blob/4c36cb9a2046b1a6dfc8f6a7891a7da86403b645/main.jl#L7-L12
+
+Then run
+
 ```
 $ julia --project
-julia> include("SVD_lsqfit.jl")
+julia> include("main.jl")
 ```
-To change the command line arguments from within the REPL, modify the ARGS variable within Julia:
-```
-$ julia --project
-julia> ARGS = ["--save", "--λ", "500"] # don't forget the "--"!
-julia> include("SVD_lsqfit.jl")
-
-# check which arguments it ran with
-julia> parse_commandline(ARGS)
-Dict{String, Any} with 6 entries:
-  "obs"           => "data/aerodem_g1200m_geoid_corrected_1978_1987_mean.nc"
-  "obs_band_name" => "surface_altitude"
-  "λ"             => 500.0
-  "res"           => "1200"
-  "save"          => true
-  "train_folder"  => "data/"
-  ```
