@@ -1,10 +1,10 @@
 # data files / output
-*.nc
 *.jld2
 *.txt
 *.tif
 *.jpg
 data/
+output/
 
 # latex
 *.aux

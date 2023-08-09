@@ -94,6 +94,10 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     bedDEM     = ncread(bedmachine_file, "bed")
     bedm_mask  = ncread(bedmachine_file, "mask")
     ice_mask   = (surfaceDEM .> 0.0) .&& (surfaceDEM .> bedDEM)
+    
+    # retrieve grid size
+    x          = ncread(rec_file, "x")
+    gr         = Int(x[2] - x[1])
 
     # calculate floating mask
     ρw            = 1030
@@ -114,17 +118,17 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    dest        = "output/bedmachine1980_reconstructed.nc"
+    dest        = "output/bedmachine1980_reconstructed_g$(gr).nc"
     layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
     layernames  = ["surface", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)
     attributes  = get_attr(template, layernames)
     # overwrite some attributes
     sources_rec = Dict("surface"   => "svd reconstruction",
-                           "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
-                           "thickness" => "computed from surface and bed",
-                           "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
-                           )
+                       "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
+                       "thickness" => "computed from surface and bed",
+                       "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
+                       )
     for l in layernames
         attributes[l]["source"] = sources_rec[l]
     end

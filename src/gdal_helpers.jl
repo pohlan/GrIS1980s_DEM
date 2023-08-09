@@ -89,7 +89,7 @@ end
 - dest:         destination where netcdf should be saved
 - sample_path:  path of netcdf file that properties should be copied from
 """
-function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict)  where T <: AbstractMatrix
+function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict)  where T <: AbstractArray
     template  = NCDataset(spatial_template_file)
     m    = haskey(template, "mapping") ? "mapping" : "polar_stereographic"
     crs  = template[m]
@@ -196,7 +196,10 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
     raw_path  = aerodem_path*"raw/"
     mkpath(raw_path)
 
-    if isempty(raw_path)
+    aerodem_files = glob(raw_path * "aerodem_*.tif")
+    rm_files     = glob(raw_path * "rm_*.tif")
+
+    if isempty(aerodem_files)
         # Download
         println("Downloading aerodem tif files, this may take a few minutes...")
         url_DEMs          = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/DEM/"
@@ -208,9 +211,6 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
             Downloads.download.(url .* missing_files, raw_path .* missing_files)
         end
     end
-
-    aerodem_files = glob(raw_path * "aerodem_*.tif")
-    rm_files     = glob(raw_path * "rm_*.tif")
 
     # gdalwarp
     println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")

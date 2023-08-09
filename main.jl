@@ -33,7 +33,14 @@ if !isfile(bedmachine_file)
     create_bedmachine_grid(gr, bedmachine_path, template_file)
 end
 
-# 3.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
+# 3.) make sure the imbie shp file is available
+if isnothing(imbie_shp_file)
+    error("no imbie shape file provided")
+elseif !isfile(imbie_shp_file)
+    error("imbie shape file not found at " * imbie_shp_file)
+end
+
+# 4.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
 aerodem_g150 = aerodem_path * "aerodem_rm-filtered_geoid-corr_g150.nc"
 obs_file     = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
 if !isfile(aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
@@ -45,19 +52,14 @@ if !isfile(aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
     gdalwarp(aerodem_g150; gr, srcnodata="0.0", dest=obs_file)
 end
 
-# 4.) make sure that the imbie shp file is downloaded and get a netcdf mask of the right grid
-if isnothing(imbie_shp_file)
-    error("no imbie shape file provided")
-elseif !isfile(imbie_shp_file)
-    error("imbie shape file not found at " * imbie_shp_file)
-end
+# 5.) get a netcdf mask from the imbie shp file
 imbie_mask = imbie_path * "imbie_mask_g$(gr).nc"
 if !isfile(imbie_mask)
     create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path=aerodem_g150)
 end
 
 
-# 4.) run the svd solve_lsqfit
+# 6.) run the svd solve_lsqfit
 
 # 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 # retrieve command line arguments
