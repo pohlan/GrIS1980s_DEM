@@ -124,6 +124,7 @@ end
 
 function create_bedmachine_grid(gr, bedmachine_path, spatial_template_file)
     # check if bedmachine is there already, otherwise download
+    mkpath(bedmachine_path)
     bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
     if !isfile(bedmachine_original)
         println("Downloading bedmachine..")
@@ -251,6 +252,7 @@ function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     # 2) the ArchGDAL gdalwarp function doesn't take Matrices as an input (or at least I haven't figured out how)
     #    need to give a filename as argument
     println("Creating imbie mask netcdf..")
+    mkpath(imbie_path)
     sample = archgdal_read(sample_path)
     ones_m = ones(size(sample))
     fname_ones = "temp1.nc"
