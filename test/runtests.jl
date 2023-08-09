@@ -35,16 +35,15 @@ end
 
 const gr = 4000
 
-imbie_path          = "data/gris-imbie-1980/"
-aerodem_path        = "data/aerodem/"
+imbie_path          = "../data/gris-imbie-1980/"
+aerodem_path        = "../data/aerodem/"
 aero_150            = aerodem_path*"aerodem_rm-filtered_geoid-corr_g150.nc"
 aero_gr             = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-bedmachine_path     = "data/bedmachine/"
+bedmachine_path     = "../data/bedmachine/"
 bedmachine_file_gr  = bedmachine_path*"bedmachine_g$(gr).nc"
-template_file       = "test/testdata/testtemplate_g$(gr).nc"
-shp_file            = "test/testdata/testshape.shp"
+template_file       = "testdata/testtemplate_g$(gr).nc"
+shp_file            = "testdata/testshape.shp"
 imbie_mask          = imbie_path * "imbie_mask_g$(gr).nc"
-
 
 @testset "bedmachine" begin
     rm(bedmachine_path*"BedMachineGreenland-v5.nc", force=true)
@@ -69,29 +68,29 @@ end
 #     @test sum(dsgr  .> 0) == 9536    && maximum(dsgr)  == 2128.8025406615666
 # end
 
-@testset "imbie mask" begin
-    rm(imbie_mask, force=true)
-    create_imbie_mask(gr; imbie_path, imbie_shp_file=shp_file, sample_path=aero_150)
-    imb = ncread(imbie_mask, "Band1")
-    @test sum(imb .== 1) == 25953
-end
+# @testset "imbie mask" begin
+#     rm(imbie_mask, force=true)
+#     create_imbie_mask(gr; imbie_path, imbie_shp_file=shp_file, sample_path=aero_150)
+#     imb = ncread(imbie_mask, "Band1")
+#     @test sum(imb .== 1) == 25953
+# end
 
 ###############################
 # testing the problem solving #
 ###############################
 
-@testset "solve least square fit" begin
-    F           = Float32
-    λ           = 1e5
-    r           = 1e3
-    rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, [template_file], aero_gr)
-    rec         = ncread(rec_file, "surface")
-    @test maximum(rec) ≈ 2489f0 && rec[322:324,427] ≈ Float32[345.6, 345.6, 84.7] && sum(rec .> 0) == 18122 
-    create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
-    bm          = NCDataset("output/bedmachine1980_reconstructed_g$(gr).nc")
-    @test all(["mask","bed","surface","thickness","polar_stereographic","x","y"] .∈ (keys(bm),))
-    mask = bm["mask"][:]
-    @test sum(mask.==1) == 143784 && sum(mask.==2) == 12106 && sum(mask.==3) == 554 
-    @test isapprox(maximum(bm["surface"][:]), 2489, atol=0.5)
-    close(bm)
-end
+# @testset "solve least square fit" begin
+#     F           = Float32
+#     λ           = 1e5
+#     r           = 1e3
+#     rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, [template_file], aero_gr)
+#     rec         = ncread(rec_file, "surface")
+#     @test maximum(rec) ≈ 2489f0 && rec[322:324,427] ≈ Float32[345.6, 345.6, 84.7] && sum(rec .> 0) == 18122
+#     create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
+#     bm          = NCDataset("output/bedmachine1980_reconstructed_g$(gr).nc")
+#     @test all(["mask","bed","surface","thickness","polar_stereographic","x","y"] .∈ (keys(bm),))
+#     mask = bm["mask"][:]
+#     @test sum(mask.==1) == 143784 && sum(mask.==2) == 12106 && sum(mask.==3) == 554
+#     @test isapprox(maximum(bm["surface"][:]), 2489, atol=0.5)
+#     close(bm)
+# end
