@@ -35,29 +35,27 @@ end
 
 const gr = 4000
 
-imbie_path          = "data/gris-imbie-1980/"
-aerodem_path        = "data/aerodem/"
+imbie_path          = "../data/gris-imbie-1980/"
+aerodem_path        = "../data/aerodem/"
 aero_150            = aerodem_path*"aerodem_rm-filtered_geoid-corr_g150.nc"
 aero_gr             = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-bedmachine_path     = "data/bedmachine/"
+bedmachine_path     = "../data/bedmachine/"
 bedmachine_file_gr  = bedmachine_path*"bedmachine_g$(gr).nc"
-template_file       = "test/testdata/testtemplate_g$(gr).nc"
-shp_file            = "test/testdata/testshape.shp"
+template_file       = "testdata/testtemplate_g$(gr).nc"
+shp_file            = "testdata/testshape.shp"
 imbie_mask          = imbie_path * "imbie_mask_g$(gr).nc"
 
-println(readdir("testdata/"))
-
-# @testset "bedmachine" begin
-#     rm(bedmachine_path*"BedMachineGreenland-v5.nc", force=true)
-#     create_bedmachine_grid(gr, bedmachine_path, template_file)
-#     ds = NCDataset(bedmachine_file_gr)
-#     @test all(["mask","geoid","bed","surface","thickness"] .∈ (keys(ds),))
-#     mask = ds["mask"][:]
-#     @test sum(mask.==1) .== 144181 && sum(mask.==2) .== 111489 && sum(mask.==3) .== 536 && sum(mask.==4) .== 6450
-#     @test maximum(ds["geoid"][:]) == 64 && minimum(ds["geoid"][:]) == 0
-#     @test maximum(ds["bed"][:]) == 3106.2961f0 && minimum(ds["bed"][:]) == -5521.8154f0
-#     close(ds)
-# end
+@testset "bedmachine" begin
+    rm(bedmachine_path*"BedMachineGreenland-v5.nc", force=true)
+    create_bedmachine_grid(gr, bedmachine_path, template_file)
+    ds = NCDataset(bedmachine_file_gr)
+    @test all(["mask","geoid","bed","surface","thickness"] .∈ (keys(ds),))
+    mask = ds["mask"][:]
+    @test sum(mask.==1) .== 144181 && sum(mask.==2) .== 111489 && sum(mask.==3) .== 536 && sum(mask.==4) .== 6450
+    @test maximum(ds["geoid"][:]) == 64 && minimum(ds["geoid"][:]) == 0
+    @test maximum(ds["bed"][:]) == 3106.2961f0 && minimum(ds["bed"][:]) == -5521.8154f0
+    close(ds)
+end
 
 # @testset "aerodem" begin
 #     rm(aero_150, force=true)
