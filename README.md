@@ -18,6 +18,20 @@ $ julia --project      # --project directly activates the environment
 julia> ]               # takes you to the command line of the package manager
 (svd_IceSheetDEM) pkg> instantiate
 ```
+## Requirements
+
+### 1) Local files
+All training data and a shape file outlining the ice must be available locally.
+### 2) Earthdata login
+Downloading the data requires earthdata credentials. To provide this information, one can create a file called .netcr in the home folder containing the following:
+```
+machine urs.earthdata.nasa.gov
+login myusername
+password abcd123
+```
+replacing `myusername` with the actual username and `abcd123` with the password.
+
+
 ## Files
 - `main.jl`: Downloads the required data and performs preprocessing steps (only the first time). Then it solves the least square fit problem and saves a netcdf in the same format as a bedmachine file.
 - `SVD_lsqfit.tex`: tex file deriving the least squares solution
