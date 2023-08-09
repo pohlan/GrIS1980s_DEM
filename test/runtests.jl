@@ -45,7 +45,7 @@ template_file       = "test/testdata/testtemplate_g$(gr).nc"
 shp_file            = "test/testdata/testshape.shp"
 imbie_mask          = imbie_path * "imbie_mask_g$(gr).nc"
 
-@test isfile(template_file)
+println(pwd())
 
 
 # @testset "bedmachine" begin
