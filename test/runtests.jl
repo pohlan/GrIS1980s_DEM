@@ -45,8 +45,7 @@ template_file       = "test/testdata/testtemplate_g$(gr).nc"
 shp_file            = "test/testdata/testshape.shp"
 imbie_mask          = imbie_path * "imbie_mask_g$(gr).nc"
 
-println(pwd())
-
+println(readdir("testdata/"))
 
 # @testset "bedmachine" begin
 #     rm(bedmachine_path*"BedMachineGreenland-v5.nc", force=true)
