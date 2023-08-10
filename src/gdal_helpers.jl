@@ -192,26 +192,26 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
+function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path, kw="")
     gr      = 150
     raw_path  = aerodem_path*"raw/"
     mkpath(raw_path)
 
-    aerodem_files = glob(raw_path * "aerodem_*.tif")
-    rm_files     = glob(raw_path * "rm_*.tif")
-
-    if isempty(aerodem_files)
+    if isempty(readdir(raw_path))
         # Download
         println("Downloading aerodem tif files, this may take a few minutes...")
         url_DEMs          = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/DEM/"
         url_reliablt_mask = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/ReliabilityMask/"
         for url in [url_DEMs, url_reliablt_mask]
             df = get_table_from_html(url)
-            tif_files = df.Name[endswith.(df.Name, ".tif") .&& .!occursin.("carey", df.Name)]
+            tif_files = df.Name[endswith.(df.Name, ".tif") .&& .!occursin.("carey", df.Name) .&& occursin.(kw, df.Name)]
             missing_files = tif_files[.!isfile.(tif_files)]
             Downloads.download.(url .* missing_files, raw_path .* missing_files)
         end
     end
+
+    aerodem_files = glob(raw_path * "aerodem_*.tif")
+    rm_files      = glob(raw_path * "rm_*.tif")
 
     # gdalwarp
     println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
