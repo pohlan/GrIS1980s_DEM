@@ -42,7 +42,7 @@ replacing `myusername` with the actual username and `abcd123` with the password.
 The `main.jl` can be run directly from the shell with the following command line arguments:
 
 ```
-$ juliap main.jl --help
+$ julia --project main.jl --help
 
 usage: main.jl [--λ Λ] [--r R] --training_data [TRAINING_DATA...]
                [--imbie_shp_file IMBIE_SHP_FILE] [-h]
