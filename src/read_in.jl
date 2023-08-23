@@ -1,4 +1,4 @@
-using NetCDF, Glob, ProgressMeter
+using NetCDF, NCDatasets, ProgressMeter
 
 # function to read in model data
 function read_model_data(;F::DataType=Float32,       # Float32 or Float64
@@ -7,7 +7,7 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
                           model_files)
     println("Reading in model data...")
 
-    # determine indices for files and time steps
+    # determine indices for files
     if which_files === nothing
         which_files = 1:length(model_files)
     elseif which_files[end] > length(model_files)
@@ -15,20 +15,37 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     end
     files_out  = model_files[which_files]
     nf         = length(files_out)
-    d          = ncread(files_out[1], "usurf")
-    nx, ny, nt = size(d)
-    if tsteps === nothing
-        tsteps = 1:nt
-    elseif tsteps[end] > nt
-        error("Time steps out of bound.")
+
+    # determine total number of time steps
+    nts = []
+    for f in files_out
+        ds   = NCDataset(f)
+        nt_f = size(ds["usurf"], 3)
+        push!(nts, nt_f)
+        close(ds)
     end
-    nt_out = length(tsteps)
+    if isnothing(tsteps)
+        nttot = sum(nts)
+    elseif all(length(tsteps) .<= nts)
+        nttot = length(tsteps)*nf
+    else
+        error("Time steps out of bound for at least one file.")
+    end
+
+    # determine number of cells in x and y direction
+    ds = NCDataset(files_out[1])
+    nx, ny = size(ds["usurf"])[1:2]
+    close(ds)
     # build data matrix
-    Data = zeros(F, nx*ny, nf*nt_out)
+    Data = zeros(F, nx*ny, nttot)
+    ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        d = F.(ncread(file, "usurf")[:,:,tsteps])
-        data = reshape(d, ny*nx, nt_out)
-        Data[:,(k - 1 ) * nt_out + 1:k * nt_out] = data
+        d = F.(ncread(file, "usurf"))
+        ts = isnothing(tsteps) ? (1:size(d, 3)) : tsteps
+        nt_out = length(ts)
+        data = reshape(d[:,:,ts], ny*nx, nt_out)
+        Data[:, ntcount+1 : ntcount+nt_out] = data
+        ntcount += nt_out
     end
     return Data, nx, ny
 end
