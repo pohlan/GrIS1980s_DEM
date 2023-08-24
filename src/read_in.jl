@@ -4,7 +4,8 @@ using NetCDF, NCDatasets, ProgressMeter
 function read_model_data(;F::DataType=Float32,       # Float32 or Float64
                           which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
                           tsteps=nothing,            # indices of time steps used for training; e.g.  ""      ""
-                          model_files)
+                          model_files,
+                          I_no_ocean)
     println("Reading in model data...")
 
     # determine indices for files
@@ -37,14 +38,14 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     nx, ny = size(ds["usurf"])[1:2]
     close(ds)
     # build data matrix
-    Data = zeros(F, nx*ny, nttot)
+    Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        d = F.(ncread(file, "usurf"))
+        d = ncread(file, "usurf")
         ts = isnothing(tsteps) ? (1:size(d, 3)) : tsteps
         nt_out = length(ts)
-        data = reshape(d[:,:,ts], ny*nx, nt_out)
-        Data[:, ntcount+1 : ntcount+nt_out] = data
+        data = reshape(d, ny*nx, nt_out)
+        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,ts]
         ntcount += nt_out
     end
     return Data, nx, ny
