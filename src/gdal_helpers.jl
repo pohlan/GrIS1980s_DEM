@@ -1,5 +1,5 @@
 import ArchGDAL as AG
-using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NCDatasets
+using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NCDatasets, Glob
 using DataStructures: OrderedDict
 
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
