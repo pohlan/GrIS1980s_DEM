@@ -27,6 +27,10 @@ function parse_commandline(args)
         "--imbie_shp_file"
             help     = "shape file outlining the ice"
             arg_type = String
+        "--do_figure"
+            help     = "whether or not to plot the difference of the reconstructed elevations to aerodem data (plotting and saving requires a bit of extra memory)"
+            arg_type = Bool
+            default  = false
     end
     return parse_args(args,s)
 end

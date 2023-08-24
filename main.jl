@@ -65,7 +65,8 @@ end
 # retrieve command line arguments
 λ           = F(parsed_args["λ"])     # regularization
 r           = parsed_args["r"]
-rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_files, obs_file)
+do_figure   = parsed_args["do_figure"]
+rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_files, obs_file, do_figure)
 
 # 5.) calculate the floating mask
 create_reconstructed_bedmachine(rec_file, bedmachine_file)
