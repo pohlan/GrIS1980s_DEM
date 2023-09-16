@@ -1,4 +1,5 @@
-using svd_IceSheetDEM, NetCDF, Interpolations, GeoStats, GaussianRandomFields, StatsBase
+using svd_IceSheetDEM, NetCDF, Interpolations, GeoStats, StatsBase
+using ParallelRandomFields.grf2D_CUDA
 import Plots, StatsPlots
 import LsqFit as LF
 
@@ -40,7 +41,7 @@ obs_ATM = ncread("data/ATM/ATM_geoid_corrected_g600.nc", "surface")
 
 
 # calculate difference between reconstruction and observations (where available)
-idx_0 = findall(vec(rec .!= 0) .&& vec(obs_aero .!= 0) .&& vec(mask .!= 1.0) .&& vec(rec .!= obs_aero))
+idx_0 = findall(vec(rec .!= 0) .&& vec(obs_aero .!= 0) .&& vec(mask .!= 1.0) .&& vec(abs.(rec .- obs_aero)) .> 0.1)
 idx_1 = findall(vec(rec .!= 0) .&& vec(obs_ATM .> 3000) .&& vec(mask .!= 1.0) .&& vec(obs_aero .== 0))
 
 # obs = obs_aero
@@ -157,7 +158,7 @@ Plots.plot(
 nx, ny = size(rec)
 X = repeat(x, 1, ny)
 X_data = reshape(X, nx*ny, 1)[idx]
-Y = repeat(y, nx, 1)
+Y = repeat(y', nx, 1)
 Y_data = reshape(Y, nx*ny, 1)[idx]
 table = (Z = z_dh, )
 coords = [(first(X_data[i]), first(Y_data[i])) for i in 1:length(X_data)]
@@ -165,67 +166,52 @@ coords = [(first(X_data[i]), first(Y_data[i])) for i in 1:length(X_data)]
 # compute empirical variogram
 data = georef(table, coords)
 U = data |> UniqueCoords()
-gamma = EmpiricalVariogram(U, :Z; estimator=:matheron, nlags=700) #, maxlag=8e3)
 
-Plots.scatter(gamma.abscissa, gamma.ordinate)
-
-# fit the function for GaussianRandomFields manually
-function make_custom_γ(Cor_fct...)
-    n = length(Cor_fct)
-    function custom_variogram(x, params)
-        i_not_defined = findall(params .<= 0)
-        params[i_not_defined] .= eps()
-        # ep1 = Cor_fct[1](params[1], σ=params[2])
-        # ep2 = Cor_fct[2](params[3], σ=params[4])
-        # γ  = n .- GaussianRandomFields.apply.(ep1, x) .- GaussianRandomFields.apply.(ep2, x) # x = distance
-
-        γ = 0
-        for (i, f) in enumerate(Cor_fct)
-            ep = f(params[(i-1)*2+1], σ=params[i*2])
-            γ = γ .+ GaussianRandomFields.apply.(ep, x)
-        end
+gamma = EmpiricalVariogram(U, :Z; estimator=:matheron, nlags=1000)
+GeoStats.varioplot(gamma)  # same as: import WGLMakie as Mke; Mke.plot(gamma)
 
 
-        return γ
-    end
-    return custom_variogram
+# fit the function for ParallelRandomFields manually
+function custom_var(x, params)
+    γ1 = params[1]^2 .- (params[1]^2 .* exp.(-sqrt(3) * x./params[2]))
+    γ2 = params[3]^2 .- (params[3]^2 .* exp.(-sqrt(3) * x./params[4]))
+    return γ1 + γ2
 end
+ff = LF.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [1.5, 4e4, 1.0, 1e4])
 
-custom_model = make_custom_γ(GaussianRandomFields.Exponential, GaussianRandomFields.Exponential)
-
-i_fit = findall(gamma.ordinate .!= 0) # .&& gamma.abscissa .< 1e6)           # some have values 0 at random distances, not sure why...
-ff = LF.curve_fit(custom_model, gamma.abscissa[i_fit], 1 .- gamma.ordinate[i_fit], [1e4, 1.0, 4e6, 1.0])
-
-Plots.plot([0; gamma.abscissa[i_fit]], custom_model([0; gamma.abscissa[i_fit]], ff.param))
-Plots.scatter!(gamma.abscissa[i_fit], 1 .- gamma.ordinate[i_fit])
+v1 = GeoStats.fit(ExponentialVariogram, gamma)
+Plots.scatter(gamma.abscissa, gamma.ordinate)
+Plots.plot!(gamma.abscissa, v1.(gamma.abscissa), label="GeoStat fit")
+Plots.plot!(gamma.abscissa, custom_var(gamma.abscissa, ff.param), label="LsqFit")
 
 
-Plots.plot!([0; gamma.abscissa[i_fit]], GaussianRandomFields.apply.(Exponential(ff.param[1], σ=ff.param[2]), [0; gamma.abscissa[i_fit]]))
-Plots.plot!([0; gamma.abscissa[i_fit]], GaussianRandomFields.apply.(Exponential(ff.param[3], σ=ff.param[4]), [0; gamma.abscissa[i_fit]]))
+# ParallelRandomFields
+lx = x[end] - x[1]
+ly = y[end] - y[1]
+k_m = 100.0
+nh  = 50000
 
+# first random field
+sf = ff.param[1]
+rn = ff.param[2]
+cl = (rn, rn)
+rf1 = generate_grf2D(lx, ly, sf, cl, k_m, nh, nx, ny, cov_typ="expon", do_viz=true)
 
-cov1 = CovarianceFunction(2, Exponential(ff.param[1], σ=ff.param[2]))
-pts = range(0, step=900, length=101) # 1001 is the number of points
-ptsy = range(0, step=900, length=1001) # 1001 is the number of points
-grf = GaussianRandomField(cov1, Spectral(), pts, ptsy, n=5)
-Plots.heatmap(grf)
+# second random field
+sf = ff.param[3]
+rn = ff.param[4]
+cl = (rn, rn)
+rf2 = generate_grf2D(lx, ly, sf, cl, k_m, nh, nx, ny, cov_typ="expon", do_viz=true)
 
-# coarse_grid = round(ff.param[3], sigdigits=2)
-coarse_grid = ff.param[1] / 5
-tmpf = "coarse.nc"
-coarse = gdalwarp(obs_aero_file; gr=coarse_grid, dest=tmpf)
-idx_c = findall(vec(coarse .> 0.0))
-nx_c, ny_c = size(coarse)
-x_coarse = ncread(tmpf, "x")
-X_c = repeat(x_coarse, 1, ny_c)
-X_data_c = sort(reshape(X_c, nx_c*ny_c)[idx_c])
-y_coarse = ncread(tmpf, "y")
-Y_c = repeat(y_coarse, 1, nx_c)
-Y_data_c = sort(reshape(Y_c, nx_c*ny_c)[idx_c])
+rftot = Array(rf1 .+ rf2)
 
+# compute empirical variogram
+table2 = (Z = vec(rftot)[idx], )
+data = georef(table2, coords)
+U = data |> UniqueCoords()
 
+gamma2 = EmpiricalVariogram(U, :Z; estimator=:matheron, nlags=1000)
+Plots.scatter(gamma2.abscissa, gamma2.ordinate)
+Plots.plot!(gamma.abscissa, custom_var(gamma.abscissa, ff.param), label="LsqFit")
 
-cov = CovarianceFunction(2, Exponential(ff.param[3], σ=ff.param[4]))
-grf = GaussianRandomField(cov, Spectral(), X_data_c, Y_data_c)
-Plots.heatmap(grf)
-
+# GeoStats.varioplot(gamma2)
