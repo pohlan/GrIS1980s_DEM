@@ -144,6 +144,9 @@ bias_dh  = lin_interp_bias.(obs[idx])
 ### standardized, bias-corrected dh
 z_dh = (dh  .- bias_dh ) ./ σ_dh
 
+# normalize to std 1 (nmad doesn't do that)
+z_dh ./= std(z_dh)
+
 # plots after standardization
 z_dh_binned, Z_dh_bin_centers = bin_equal_sample_size(obs[idx], z_dh, nsamples)
 StatsPlots.violin(z_dh_binned, linewidth=0.5, color=:darkblue, legend=:false, fillalpha=0.6, ylabel="elevation difference [m]")
@@ -173,16 +176,16 @@ GeoStats.varioplot(gamma)  # same as: import WGLMakie as Mke; Mke.plot(gamma)
 
 # fit the function for ParallelRandomFields manually
 function custom_var(x, params)
-    γ1 = params[1]^2 .- (params[1]^2 .* exp.(-sqrt(3) * x./params[2]))
-    γ2 = params[3]^2 .- (params[3]^2 .* exp.(-sqrt(3) * x./params[4]))
+    γ1 = params[1]^2 .* (1 .-  exp.(-sqrt(2) * x./params[2]))
+    γ2 = params[3]^2 .* (1 .-  exp.(-sqrt(2) * x./params[4]))
     return γ1 + γ2
 end
-ff = LF.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [1.5, 4e4, 1.0, 1e4])
+ff = LF.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [0.5, 1e4, 0.5, 1e3])
 
 v1 = GeoStats.fit(ExponentialVariogram, gamma)
 Plots.scatter(gamma.abscissa, gamma.ordinate)
 Plots.plot!(gamma.abscissa, v1.(gamma.abscissa), label="GeoStat fit")
-Plots.plot!(gamma.abscissa, custom_var(gamma.abscissa, ff.param), label="LsqFit")
+Plots.plot!([0; gamma.abscissa], custom_var([0; gamma.abscissa], ff.param), label="LsqFit")
 
 
 # ParallelRandomFields
@@ -212,6 +215,6 @@ U = data |> UniqueCoords()
 
 gamma2 = EmpiricalVariogram(U, :Z; estimator=:matheron, nlags=1000)
 Plots.scatter(gamma2.abscissa, gamma2.ordinate)
-Plots.plot!(gamma.abscissa, custom_var(gamma.abscissa, ff.param), label="LsqFit")
+Plots.plot!([0; gamma2.abscissa], custom_var([0; gamma2.abscissa], ff.param), label="LsqFit")
 
 # GeoStats.varioplot(gamma2)
