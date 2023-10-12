@@ -21,16 +21,16 @@ end
 
 function solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F)
     # centering model data
-    Data_mean  = mean(Data_ice, dims=2)
-    Data_ice  .= Data_ice .- Data_mean
+    Data_mean   = mean(Data_ice, dims=2)
+    Data_centr  = Data_ice .- Data_mean
     # centering observations with model mean
     x_data     = obs_flat_I .- Data_mean[I_obs]
 
     # compute SVD
     println("Computing the SVD..")
-    B = svd(Data_ice)
-    if r < min(size(Data_ice)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
-        # U, Σ, _ = tsvd(Data_ice, r)
+    B = svd(Data_centr)
+    if r < min(size(Data_centr)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
+        # U, Σ, _ = tsvd(Data_centr, r)
         @views U = B.U[:,1:r]
         @views Σ = B.S[1:r]
     else
@@ -48,7 +48,7 @@ function solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F
 
     # calculate error and print
     dif                     = zeros(F, nx,ny)
-    dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- obs_flat_I
+    dif[I_no_ocean[I_obs]] .= obs_flat_I .- x_rec[I_obs]
     err_mean         = mean(abs.(dif[I_no_ocean[I_obs]]))
     @printf("Mean absolute error: %1.1f m\n", err_mean)
 

@@ -27,7 +27,7 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     end
     if isnothing(tsteps)
         nttot = sum(nts)
-    elseif all(length(tsteps) .<= nts)
+    elseif all(maximum(tsteps) .<= nts)
         nttot = length(tsteps)*nf
     else
         error("Time steps out of bound for at least one file.")
@@ -41,11 +41,11 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        d = ncread(file, "usurf")
-        ts = isnothing(tsteps) ? (1:size(d, 3)) : tsteps
+        ts = isnothing(tsteps) ? (1:nts[k]) : tsteps
+        d  = ncread(file, "usurf")[:,:,ts]
         nt_out = length(ts)
         data = reshape(d, ny*nx, nt_out)
-        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,ts]
+        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
         ntcount += nt_out
     end
     return Data, nx, ny
