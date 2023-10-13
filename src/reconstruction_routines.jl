@@ -22,29 +22,28 @@ end
 function solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F)
     # centering model data
     Data_mean   = mean(Data_ice, dims=2)
-    Data_centr  = Data_ice .- Data_mean
+    Data_ice  .= Data_ice .- Data_mean
     # centering observations with model mean
     x_data     = obs_flat_I .- Data_mean[I_obs]
 
     # compute SVD
     println("Computing the SVD..")
-    B = svd(Data_centr)
-    if r < min(size(Data_centr)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
-        # U, Σ, _ = tsvd(Data_centr, r)
+    B = svd(Data_ice)
+    if r < min(size(Data_ice)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
+        # U, S, _ = tsvd(Data_ice, r)
         @views U = B.U[:,1:r]
-        @views Σ = B.S[1:r]
+        @views S = B.S[1:r]
     else
         U = B.U
-        Σ = B.S
+        S = B.S
     end
 
     # solve the lsqfit problem
     println("Solving the least squares problem..")
-    UΣ            = U*diagm(Σ)
-    U_A, Σ_A, V_A = svd(UΣ[I_obs,:])
-    D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
-    v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
-    x_rec         = U*diagm(Σ)*v_rec .+ Data_mean
+    A      = svd(U[I_obs,:]*Diagonal(S))
+    D      = 1 ./ (S.^2 .+ λ)
+    v_rec  = A.V * Diagonal(D) * transpose(Diagonal(A.S)) * transpose(A.U) * x_data
+    x_rec  = U*Diagonal(S)*v_rec .+ Data_mean
 
     # calculate error and print
     dif                     = zeros(F, nx,ny)
