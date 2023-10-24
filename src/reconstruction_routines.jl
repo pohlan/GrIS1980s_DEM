@@ -1,4 +1,4 @@
-using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, Plots, NetCDF, NCDatasets
+using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, Plots, NetCDF, NCDatasets, Arpack
 import ArchGDAL as AG
 
 function prepare_problem(obs_file, imbie_mask, model_files, F)
@@ -28,22 +28,15 @@ function solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F
 
     # compute SVD
     println("Computing the SVD..")
-    B = svd(Data_ice)
-    if r < min(size(Data_ice)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
-        # U, S, _ = tsvd(Data_ice, r)
-        @views U = B.U[:,1:r]
-        @views S = B.S[1:r]
-    else
-        U = B.U
-        S = B.S
-    end
+    # U,S,_ = svds(Data_ice, nsv = r)[1]
+    U,S,_ = svd(Data_ice)
 
     # solve the lsqfit problem
     println("Solving the least squares problem..")
     A      = svd(U[I_obs,:]*Diagonal(S))
-    D      = 1 ./ (S.^2 .+ λ)
-    v_rec  = A.V * Diagonal(D) * transpose(Diagonal(A.S)) * transpose(A.U) * x_data
-    x_rec  = U*Diagonal(S)*v_rec .+ Data_mean
+    D      = transpose(Diagonal(A.S))*Diagonal(A.S) + λ*I
+    v_rec  = A.V * D^(-1) * transpose(Diagonal(A.S)) * transpose(A.U) * x_data
+    x_rec  = U*Diagonal(S)*v_rec.+ Data_mean
 
     # calculate error and print
     dif                     = zeros(F, nx,ny)
