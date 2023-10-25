@@ -31,6 +31,7 @@ TSVD = "9449cd9e-2762-5aa3-a617-5413e99d722e"
 [compat]
 ArchGDAL = "0.10"
 ArgParse = "1"
+Arpack = "0.5"
 CSV = "0.10"
 Cascadia = "1"
 DataFrames = "1"
