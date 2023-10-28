@@ -1,7 +1,3 @@
-import ArchGDAL as AG
-using Downloads, Cascadia, Gumbo, HTTP, DataFrames, NCDatasets, Glob
-using DataStructures: OrderedDict
-
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 
 
@@ -242,7 +238,6 @@ function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path, kw="")
                                          "units" => "m")
                         )
     save_netcdf(dest, sample_path, [aero_rm_geoid_corr], [layername], attributes)
-
     return
 end
 
@@ -264,5 +259,89 @@ function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     gdalwarp(fname_mask; gr, dest=imbie_path*"imbie_mask_g$(gr).nc")
     rm(fname_ones, force=true)
     rm(fname_mask, force=true)
+    return
+end
+
+function get_nc_from_flightlines(src_files, bedm_file, dest_file; correct_geoid=false)
+    # merge all flight files into one
+    # appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
+    function merge_files(src_files)
+        d_final = DataFrame()
+        @showprogress for (n,f) in enumerate(src_files)
+            startstring = "19"*split(f,"_")[3]
+            starttime   = DateTime(startstring, dateformat"yyyymmdd")
+            d           = readdlm(f)
+            d_new       = DataFrame(d,:auto)
+            d_new.x1    = starttime .+ Dates.Second.(Int.(round.(d[:,1])))
+            d_new.x12   = d[:,3] .- 360
+            if n == 1
+                d_final = d_new
+            else
+                append!(d_final, d_new)
+            end
+        end
+        return d_final
+    end
+    pt_data = merge_files(src_files)
+
+    # load geoid and coordinates of grid to project on
+    x      = ncread(bedm_file, "x")
+    y      = ncread(bedm_file, "y")
+    dx     = x[2]-x[1]
+    dy     = y[2]-y[1]
+    nx, ny = length(x), length(y)
+
+    # transform atm coordinates
+    coords = [[pt_data[i,3], pt_data[i,2]] for i in eachindex(pt_data[:,2])]
+    coords_proj = AG.reproject(coords, ProjString("+proj=longlat +datum=WGS84 +no_defs"), EPSG(3413))  # hard-coded source and target coordinate systems
+    x_proj = first.(coords_proj)
+    y_proj = last.(coords_proj)
+
+    # reproject on grid using moving average weighted by inverse distance    
+    println("Projecting flight line values on model grid...")        
+    r_inv     = zeros(Float32, nx, ny)
+    grid_data = zeros(Float32, nx, ny)
+    npts      = zeros(Int, nx, ny)
+    n = 1
+    for (xp, yp, zp) in zip(x_proj, y_proj, pt_data[:,4])
+        rx, ix = findmin(abs.(xp .- x))
+        ry, iy = findmin(abs.(yp .- y))
+        r = sqrt(rx^2 + ry^2)
+        if abs(xp - x[ix]) < 0.5dx && abs(yp - y[iy]) < 0.5dy
+            npts[ix,iy] += 1
+            r_inv[ix,iy] += 1 / r
+            grid_data[ix,iy] += zp / r
+        end
+        n += 1
+    end
+    i_z            = grid_data .!= 0
+    grid_data[i_z] = grid_data[i_z] ./ r_inv[i_z]
+
+    # correct for geoid
+    if correct_geoid
+        geoid = ncread(bedm_file, "geoid")
+        grid_data[i_z] -= geoid[i_z]
+    end
+
+    # save as netcdf file
+    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))   
+    return
+end
+
+function create_atm_grid(atm_path, atm_file, ATM_download_file, bedm_file)
+    raw_path  = atm_path*"raw/"
+    mkpath(raw_path)
+
+    if isempty(readdir(raw_path))
+        # Download with python script from https://nsidc.org/data/data-access-tool/BLATM2/versions/1
+        pyinclude(ATM_download_file)   # ToDo: change location of this file?
+    end
+
+    # move the files to a separate folder
+    fs = glob("BLATM2_*")
+    mv.(fs, raw_path.*fs, force=true)
+
+    files     = glob(raw_path*"BLATM2_*_nadir2seg")
+    get_nc_from_flightlines(files, bedm_file, atm_file; correct_geoid=true)
     return
 end

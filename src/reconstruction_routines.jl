@@ -1,6 +1,3 @@
-using Printf, Statistics, LinearAlgebra, TSVD, ImageFiltering, Plots, NetCDF, NCDatasets
-import ArchGDAL as AG
-
 function prepare_problem(obs_file, imbie_mask, model_files, F)
     # load observations
     obs = ncread(obs_file, "Band1")

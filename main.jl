@@ -16,8 +16,14 @@ parsed_args = parse_commandline(ARGS)
 imbie_path          = "data/gris-imbie-1980/"
 aerodem_path        = "data/aerodem/"
 bedmachine_path     = "data/bedmachine/"
+atm_path            = "data/atm/"
+download_path       = "data_download_processing/"     # ToDo: change this folder?
 training_data_files = parsed_args["training_data"]
 imbie_shp_file      = parsed_args["imbie_shp_file"]
+
+# ---------------------- #
+# Part A: reconstruction #
+# ---------------------- #
 
 # 1.) make sure the training data set is not empty
 @assert !isempty(training_data_files)
@@ -68,5 +74,18 @@ r           = parsed_args["r"]
 do_figure   = parsed_args["do_figure"]
 rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_files, obs_file, do_figure)
 
-# 5.) calculate the floating mask
+# 5.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)
+
+
+# ------------------------------------------------------------------------------- #
+# Part B: error analysis                                                          #
+#   goal -> getting a distribution of reconstructed DEMs representing uncertainty #
+# ------------------------------------------------------------------------------- #
+
+# 1.) get ATM data
+atm_file          = atm_path*"ATM_elevation_geoid_corrected_g$(gr).nc"
+atm_download_file = download_path*"nsidc-download_BLATM2.001_2023-03-19.py"
+if !isfile(atm_file)
+    create_atm_grid(atm_path, atm_file, ATM_download_file, bedm_file)
+end

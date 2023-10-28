@@ -1,96 +1,80 @@
-using svd_IceSheetDEM, DelimitedFiles, ProgressMeter, Glob, DataFrames, CSV, PyCall, Dates
-import ArchGDAL as AG
-
-atm_path  = "data/ATM/"
-
-## 1.) Download with python script from https://nsidc.org/data/data-access-tool/BLATM2/versions/1
-pyinclude(fname) = (PyCall.pyeval_(read(fname, String), PyCall.pynamespace(Main), PyCall.pynamespace(Main), PyCall.Py_file_input, fname); nothing) # to be able to run an entire python script
-pyinclude("nsidc-download_BLATM2.001_2023-03-19.py")
-# move the files to a separate folder
-mkpath(path*"ATM_raw")
-fs = glob("BLATM2_*")
-mv.(fs, path*"ATM_raw/".*fs, force=true)
+using svd_IceSheetDEM, Glob
 
 
-## 2.) merge all flight files into one
-files = glob(path*"ATM_raw/BLATM2_*_nadir2seg")
-# appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
-function merge_files(files)
-    d_final = DataFrame()
-    @showprogress for (n,f) in enumerate(files)
-        startstring = "19"*split(f,"_")[3]
-        starttime   = DateTime(startstring, dateformat"yyyymmdd")
-        d           = readdlm(f)
-        d_new       = DataFrame(d,:auto)
-        d_new.x1    = starttime .+ Dates.Second.(Int.(round.(d[:,1])))
-        d_new.x12   = d[:,3] .- 360
-        if n == 1
-            d_final = d_new
-        else
-            append!(d_final, d_new)
-        end
-    end
-    return d_final
-end
-d_final = merge_files(files)
-# save
-CSV.write(path*"ATM_nadir2seg_all.csv", d_final)
+# different method for testing that it's the same result
+
+# rec = ncread("output/bedmachine1980_reconstructed_g600.nc", "surface")
+# x   = ncread("output/bedmachine1980_reconstructed_g600.nc", "x")
+# y   = ncread("output/bedmachine1980_reconstructed_g600.nc", "y")
+# dx  = x[2]-x[1]
+# dy  = y[2]-y[1]
+# geoid = ncread("data/bedmachine/bedmachine_g600.nc", "geoid")
+
+# sc = CSV.read("data/ATM/ATM_nadir2seg_all.csv", DataFrame)
+# coords = [[sc[i,3], sc[i,2]] for i in eachindex(sc[:,2])]
+# coords_proj = AG.reproject(coords, ProjString("+proj=longlat +datum=WGS84 +no_defs"), EPSG(3413))
+# x_proj = first.(coords_proj)
+# y_proj = last.(coords_proj)
+
+# npts = zeros(Int, size(rec))
+# atm_grid = zeros(Float32, size(rec))
+# z_val = zeros(Float32, size(rec))
+# idxs = findall(rec .!= 0.0)
+# @showprogress for ci in idxs[1:10000]
+#     ix, iy = ci.I
+#     pts_in_reach = findall((abs.(x[ix] .- x_proj) .< 0.5dx) .&& (abs.(y[iy] .- y_proj) .< 0.5dy))
+#     npts[ix,iy] = length(pts_in_reach)
+#     if npts[ix,iy] >= 3
+#         rs = sqrt.((x_proj[pts_in_reach].-x[ix]).^2 .+ (y_proj[pts_in_reach].-y[iy]).^2)
+#         z_val[ix,iy] = sum(sc[pts_in_reach,4] ./ rs)  /  sum(1 ./ rs) - geoid[ix,iy]
+#     end
+# end
 
 
-## 3.) create regular grid from scattered data using gdal
-# create a .vrt file with metadata for the csv file
-open(atm_path*"ATM_nadir2seg_all.vrt", "w") do io
-    print(io,
-"<OGRVRTDataSource>
-    <OGRVRTLayer name=\"ATM_nadir2seg_all\">
-        <SrcDataSource>"*atm_path*"ATM_nadir2seg_all.csv</SrcDataSource>
-        <SrcLayer>ATM_nadir2seg_all</SrcLayer>
-        <LayerSRS>EPSG:4326</LayerSRS>
-        <GeometryType>wkbPoint</GeometryType>
-        <GeometryField encoding=\"PointFromColumns\" x=\"x12\" y=\"x2\" z=\"x4\"/>
-    </OGRVRTLayer>
-</OGRVRTDataSource>
-")
-end
-# define options for gdalgrid
-# nodata=-999.0 is important, otherwise gdalwarp will interpret the zeros as data
-options   = ["-a", "invdist:radius1=0.05:radius2=0.05:min_points=1:nodata=-9999.0",
-             "-outsize", "1000", "1000",
-             "-zfield", "x4",
-             "-l", "ATM_nadir2seg_all"]
-# run gdalgrid and gdalwarp
-gr      = 600
-ATM = AG.read(atm_path*"ATM_nadir2seg_all.vrt") do source
-    # from flight lines to grid
-    AG.gdalgrid(source, options) do gridded
-    # from arbitrary grid to model grid
-        AG.gdalwarp([gridded],svd_IceSheetDEM.get_options(;gr); dest=atm_path*"ATM_g$gr.nc") do warped
-            band = AG.getband(warped,1)
-            AG.read(band)
-        end
-    end
-end
-# note about weird behaviour of ArchGDAL:
-# the ATM matrix is upside down when plotted but will be flipped back when saving it to a netcdf further down
 
 
-## 4.) correct for geoid
-##     bedmachine geoid = Eigen-6C4 Geoid - WGS84 Ellipsoid
-##     ATM elevation    = elevation       - WGS84 Ellipsoid
-##     ATM corrected    = ATM elevation   - bedmachine geoid
-bedm_path = "data/bedmachine/"
-geoid              = ncread(bedm_path*"bedmachine_g$(gr).nc", "geoid")
-ATM_corrected      = -9999.0 * ones(size(ATM))
-idx                = findall(ATM .!= 0)
-ATM_corrected[idx] = ATM[idx] - geoid[:,end:-1:1][idx]
 
 
-## 5.) create netcdf file
-training_path = "data/training_data_it0_$(gr)/"
-sample_path   = training_path*"usurf_ex_gris_g$(gr)m_v2023_GIMP_id_0_1980-1-1_2020-1-1_YM.nc"
-layername = "surface"
-attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
-                                     "standard_name" => "surface_altitude",
-                                     "units" => "m")
-                   )
-svd_IceSheetDEM.save_netcdf(atm_path*"ATM_geoid_corrected_g$gr.nc", sample_path, [ATM_corrected[:,end:-1:1]], [layername], attributes)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# dhdt_files = String[]
+# for (root, dirs, files) in walkdir("data/ATM/dh_dt/")
+#     for file in files
+#         if startswith(file, "IDHDT4") && endswith(file, ".csv")
+#             println(joinpath(root, file)) # path to files
+#             push!(dhdt_files, joinpath(root, file))
+#         end
+#     end
+# end
+# csv_mosaic_to_one_netcdf(atm_path, dhdt_files, "dhdt_all")
+
+# r((lat1, lon1), (lat2, lon2)) = 6.378e3^2*(2 - 2*cos(lat1)*cos(lat2)*cos(lon1-lon2) - 2*sin(lat1)*sin(lat2))
+
+# function plot_it()
+#     Pl.figure()
+#     for endyr in 1998:2018   #["1998", "2002", "2003", "2007", "2009"]
+#         for startyr in 1993:1994
+#             fi = findall(occursin.("$endyr-$startyr", dhdt_files))
+#             if !isempty(fi)
+#                 dhdt = CSV.read(dhdt_files[fi], DataFrame)
+#                 Pl.scatter(dhdt[:,2],dhdt[:,1],5,dhdt[:,4],cmap="bwr", clim=(-1,1))
+#                 println("$endyr-$startyr")
+#             end
+#         end
+#     end
+#     Pl.colorbar()
+#     Pl.savefig("scatter_all.jpg")
+# end
+# plot_it()

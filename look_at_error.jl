@@ -106,22 +106,22 @@ nmad = StatsBase.mad.(dh_binned)
 # linear interpolation
 lin_interp = linear_interpolation(bin_centers, nmad, extrapolation_bc=Interpolations.Line())
 # curve fitting
-@. linear_model(x,p) = p[1] + x*p[2]
-fit_lin = LF.curve_fit(linear_model, bin_centers, nmad, [-4.5,0.015])
-@. exp_model(x,p) = p[1]*exp(x*p[2])
-fit = LF.curve_fit(exp_model, bin_centers, nmad, [15.,7e-4])
+@. x_inv_model(x,p) = p[1] + 1/x*p[2]
+fit_xinv = LF.curve_fit(x_inv_model, bin_centers, nmad, [-40, 1e5])
+@. exp_model(x,p) = p[1]*exp(-x*p[2])
+fit_exp = LF.curve_fit(exp_model, bin_centers, nmad, [500.,1e-3])
 #plot
 x_obs = minimum(obs[idx]):10:maximum(obs[idx])
 Plots.plot(x_obs, lin_interp.(x_obs), color=:grey, ylabel="NMAD [m]", label="linear interpolation")
-Plots.plot!(x_obs, exp_model(x_obs, fit.param), label="exponential fit")
-Plots.plot!(x_obs, linear_model(x_obs, fit_lin.param), label="linear fit")
+Plots.plot!(x_obs, x_inv_model(x_obs, fit_xinv.param), label="y = p1 + p2/x")
+Plots.plot!(x_obs, exp_model(x_obs, fit_exp.param), label="exponential fit")
 Plots.scatter!(bin_centers, nmad, xlabel="elevation [m]", ylabel="nmad", label="samples")
 
 ## choose a model for sigma
-# σ_dh = exp_model(obs[idx], fit.param)
-# σ_dh = linear_model(obs[idx], fit_lin.param)
+# σ_dh = x_inv_model(obs[idx], fit_xinv.param)
+# σ_dh = exp_model(obs[idx], fit_exp.param)
 σ_dh = lin_interp.(obs[idx])
-
+# σ_dh[σ_dh .<= 0.] .= 0.003
 
 
 ### bias
@@ -130,16 +130,16 @@ bias_bin = median.(dh_binned)
 
 ## model the bias as a function of elevation
 lin_interp_bias = linear_interpolation(bin_centers, bias_bin, extrapolation_bc=Interpolations.Line())
-@. bias_model(x,p) = -p[1]*exp(x*p[2])
-fit_bias = LF.curve_fit(bias_model, bin_centers, bias_bin, [0.0,6e-4])
+@. bias_exp_model(x,p) = p[1]*exp(-x*p[2])
+fit_bias = LF.curve_fit(bias_exp_model, bin_centers, bias_bin, [1e3,1e-3])
 Plots.plot(x_obs, lin_interp_bias.(x_obs), color=:grey, ylabel="NMAD [m]", label="linear interpolation")
-Plots.plot!(x_obs, bias_model(x_obs, fit_bias.param), label="exponential fit")
+Plots.plot!(x_obs, bias_exp_model(x_obs, fit_bias.param), label="exponential fit")
 Plots.scatter!(bin_centers, bias_bin, xlabel="elevation [m]", ylabel="bias = mean difference", label="samples")
 
 ## chose a model for bias
 # bias_dh  = bias_model(obs[idx], fit_bias.param)
 bias_dh  = lin_interp_bias.(obs[idx])
-
+# bias_dh[bias_dh .< σ_dh] .= 0.0
 
 ### standardized, bias-corrected dh
 z_dh = (dh  .- bias_dh ) ./ σ_dh
