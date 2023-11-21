@@ -1,5 +1,3 @@
-using NetCDF, NCDatasets, ProgressMeter
-
 # function to read in model data
 function read_model_data(;F::DataType=Float32,       # Float32 or Float64
                           which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
@@ -27,10 +25,8 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     end
     if isnothing(tsteps)
         nttot = sum(nts)
-    elseif all(maximum(tsteps) .<= nts)
-        nttot = length(tsteps)*nf
     else
-        error("Time steps out of bound for at least one file.")
+        nttot = sum(min.(nts, length(tsteps)))
     end
 
     # determine number of cells in x and y direction
@@ -41,10 +37,16 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        ts = isnothing(tsteps) ? (1:nts[k]) : tsteps
-        d  = ncread(file, "usurf")[:,:,ts]
+        d = ncread(file, "usurf")
+        if isnothing(tsteps)
+            ts = 1:size(d,3)
+        elseif minimum(tsteps) > size(d,3)
+            continue
+        else
+            ts = tsteps[1]:min(tsteps[end], size(d, 3))
+        end
         nt_out = length(ts)
-        data = reshape(d, ny*nx, nt_out)
+        data = reshape(d[:,:,ts], ny*nx, nt_out)
         @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
         ntcount += nt_out
     end
@@ -54,12 +56,13 @@ end
 """
 Get indices of cells with observations
 """
-function get_indices(obs::Matrix{T}, mask_path::String, mask_name="Band1") where T<:Real
+function get_indices(obs::Matrix{T}, imbie_path::String, bedm_path::String, mask_name="Band1") where T<:Real
     # load imbie mask
-    imbie_mask    = ncread(mask_path, mask_name)
-    no_ocean_mask = findall((vec(obs) .> 0.0) .|| (vec(imbie_mask) .== 1))
+    imbie_mask = ncread(imbie_path, mask_name)
+    grimp_mask = ncread(bedm_path, "mask")
+    ice_mask   = findall( (vec(grimp_mask) .!= 1) .&& vec(imbie_mask) .> 0.0)
     # get indices where there is data and ice, with respect to ice_mask
-    R      = obs[no_ocean_mask]  # vector
-    I_obs         = findall(R .> 0.0)
-    return no_ocean_mask, I_obs
+    R          = obs[ice_mask]  # vector
+    I_obs      = findall(R .> 0.0)
+    return ice_mask, I_obs
 end
