@@ -8,18 +8,12 @@ const F = Float32 # Julia default is Float64 but that kills the process for the 
 # ARGS = [
 #         "--lambda", "1e5",
 #         "--r", "377",
-#         "--imbie_shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
 #         "--training_data", readdir("data/training_data_it0_1200", join=true)...]
 
-parsed_args = parse_commandline(ARGS)
-
-imbie_path          = "data/gris-imbie-1980/"
-aerodem_path        = "data/aerodem/"
-bedmachine_path     = "data/bedmachine/"
-atm_path            = "data/atm/"
-download_path       = "data_download_processing/"     # ToDo: change this folder?
+parsed_args         = parse_commandline(ARGS)
 training_data_files = parsed_args["training_data"]
-imbie_shp_file      = parsed_args["imbie_shp_file"]
+shp_file            = parsed_args["shp_file"]
 
 # ---------------------- #
 # Part A: reconstruction #
@@ -34,36 +28,19 @@ x = ncread(template_file, "x")
 const gr = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
 
 # 2.) move all the necessary bedmachine layers to the right grid (downloads the bedmachine-v5 if not available)
-bedmachine_file = bedmachine_path * "bedmachine_g$(gr).nc"
-if !isfile(bedmachine_file)
-    create_bedmachine_grid(gr, bedmachine_path, template_file)
-end
+bedmachine_file = create_bedmachine_grid(gr, template_file)
+bedmachine_path = splitdir(bedmachine_file)[1]
 
 # 3.) make sure the imbie shp file is available
-if isnothing(imbie_shp_file)
-    error("no imbie shape file provided")
-elseif !isfile(imbie_shp_file)
-    error("imbie shape file not found at " * imbie_shp_file)
+if !isfile(shp_file)
+    error("shape file not found at " * shp_file)
 end
 
 # 4.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
-aerodem_g150 = aerodem_path * "aerodem_rm-filtered_geoid-corr_g150.nc"
-obs_file     = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-if !isfile(aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
-    if !isfile(aerodem_g150)
-        # create aerodem, for some reason the cutting with the shapefile outline only works for smaller grids
-        # otherwise GDALError (CE_Failure, code 1): Cutline polygon is invalid.
-        create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path)
-    end
-    gdalwarp(aerodem_g150; gr, srcnodata="0.0", dest=obs_file)
-end
+aerodem_g150, obs_file = create_aerodem(;gr, shp_file, bedmachine_path)
 
 # 5.) get a netcdf mask from the imbie shp file
-imbie_mask = imbie_path * "imbie_mask_g$(gr).nc"
-if !isfile(imbie_mask)
-    create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path=aerodem_g150)
-end
-
+imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aerodem_g150)
 
 # 6.) run the svd solve_lsqfit
 
@@ -72,7 +49,7 @@ end
 λ           = F(parsed_args["λ"])     # regularization
 r           = parsed_args["r"]
 do_figure   = parsed_args["do_figure"]
-rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask, training_data_files, obs_file, do_figure)
+rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files, obs_file, do_figure)
 
 # 5.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)
@@ -84,8 +61,4 @@ create_reconstructed_bedmachine(rec_file, bedmachine_file)
 # ------------------------------------------------------------------------------- #
 
 # 1.) get ATM data
-atm_file          = atm_path*"ATM_elevation_geoid_corrected_g$(gr).nc"
-atm_download_file = download_path*"nsidc-download_BLATM2.001_2023-03-19.py"
-if !isfile(atm_file)
-    create_atm_grid(atm_path, atm_file, ATM_download_file, bedm_file)
-end
+atm_file = create_atm_grid(gr, bedmachine_file)

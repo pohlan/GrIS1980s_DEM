@@ -87,7 +87,8 @@ end
 """
 function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict)  where T <: AbstractArray
     template  = NCDataset(spatial_template_file)
-    m    = haskey(template, "mapping") ? "mapping" : "polar_stereographic"
+    crs_names = ["mapping", "polar_stereographic", "crs"]
+    m    = crs_names[findfirst(in.(crs_names, (keys(template),)))]
     crs  = template[m]
     tx   = template["x"]
     ty   = template["y"]
@@ -118,8 +119,47 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
     close(ds)
 end
 
-function create_bedmachine_grid(gr, bedmachine_path, spatial_template_file)
-    # check if bedmachine is there already, otherwise download
+"""
+    Do gdalwarp of mask manually because I couldn't find an option in gdalwarp to make the search radius larger
+    Necessary because bedrock mask needs to be conservatively large not leaving too many individual ice cells in between.
+"""
+function mask_downsamle(bedmachine_fullres, templ, r)
+    bedm_src = ncread(bedmachine_fullres, "mask")
+    x_src    = ncread(bedmachine_fullres, "x")
+    y_src    = ncread(bedmachine_fullres, "y")
+    x_dst    = ncread(templ, "x")
+    y_dst    = ncread(templ, "y")
+    bedm_dst = zeros(length(x_dst), length(y_dst))
+    # nx, ny = size(bedm_src)
+    @showprogress for iy in axes(bedm_dst, 2)
+        for ix in axes(bedm_dst, 1)
+            ix_src = findall(abs.(x_dst[ix] .- x_src) .< r)
+            iy_src = findall(abs.(y_dst[iy] .- y_src) .< r)
+            if !any(isempty.([ix_src, iy_src]))
+                # println("$ix, $iy")
+                pts_in_range = bedm_src[ix_src, iy_src]
+                if sum(pts_in_range .== 0) < 0.5*length(pts_in_range)
+                    pts_in_range[pts_in_range .== 0] .= 10
+                end
+                bedm_dst[ix,iy] = minimum(pts_in_range)
+            else
+                bedm_dst[ix,iy] = 0
+            end
+        end
+    end
+    return bedm_dst
+end
+
+
+function create_bedmachine_grid(gr, spatial_template_file, rad_mask_downsmpl=1000)
+    bedmachine_path = "data/bedmachine/"
+    dest_file = bedmachine_path * "bedmachine_g$(gr).nc"
+    # if file exists already, do nothing
+    if isfile(dest_file)
+        return dest_file
+    end
+
+    # check if the original bedmachine is there already, otherwise download
     mkpath(bedmachine_path)
     bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
     if !isfile(bedmachine_original)
@@ -133,25 +173,28 @@ function create_bedmachine_grid(gr, bedmachine_path, spatial_template_file)
     layernames = ["mask", "geoid", "bed", "surface", "thickness"]
     fieldvals  = Matrix[]
     for fn in layernames
-        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr)
-        push!(fieldvals, new[:,end:-1:1])  # flip y-axis due to behaviour of ArchGDAL
+        if fn == "mask"
+            new = mask_downsamle(bedmachine_original, spatial_template_file, rad_mask_downsmpl)   # 1000 is the radius over which the minimum value is taken
+        else
+            new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr)[:,end:-1:1]
+        end
+        push!(fieldvals, new)  # flip y-axis due to behaviour of ArchGDAL
     end
 
     # save as netcdf
-    dest = bedmachine_path * "bedmachine_g$(gr).nc"
     attr_template = NCDataset(bedmachine_original)
     attributes = get_attr(attr_template, layernames)
-    save_netcdf(dest, spatial_template_file, fieldvals, layernames, attributes)
-    return
+    save_netcdf(dest_file, spatial_template_file, fieldvals, layernames, attributes)
+    return dest_file
 end
 
 """
 copied from https://gist.github.com/scls19fr/9ea2fd021d5dd9a97271da317bff6533
 """
 function get_table_from_html(input::AbstractString)
-    r = HTTP.request("GET", input)
-    strr=String(r.body)
-    h = Gumbo.parsehtml(strr)
+    r = read(Downloads.download(input), String)      # recognizes .netcr file automatically, in contrast to HTTP request
+    h = Gumbo.parsehtml(r)
+    @assert strip(nodeText(eachmatch(Selector("title"), h.root)[1])) != "Earthdata Login" "Make sure .netrc file is available and correct."
     qs = eachmatch(Selector("table"), h.root)
     tables = []
     for helm_table in qs
@@ -188,60 +231,76 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(aerodem_path, imbie_shp_file, bedmachine_path, kw="")
-    gr      = 150
-    raw_path  = aerodem_path*"raw/"
-    mkpath(raw_path)
+function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
+    aerodem_path = "data/aerodem/"
+    get_aero_file(gr) = aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc"
+    aerodem_g150_file = get_aero_file(150)
+    aerodem_gr_file   = get_aero_file(gr)
 
-    if isempty(readdir(raw_path))
-        # Download
-        println("Downloading aerodem tif files, this may take a few minutes...")
-        url_DEMs          = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/DEM/"
-        url_reliablt_mask = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/ReliabilityMask/"
-        for url in [url_DEMs, url_reliablt_mask]
-            df = get_table_from_html(url)
-            tif_files = df.Name[endswith.(df.Name, ".tif") .&& .!occursin.("carey", df.Name) .&& occursin.(kw, df.Name)]
-            missing_files = tif_files[.!isfile.(tif_files)]
-            Downloads.download.(url .* missing_files, raw_path .* missing_files)
+    if isfile(aerodem_gr_file)
+        return aerodem_g150_file, aerodem_gr_file
+    elseif !isfile(aerodem_g150_file)
+
+        # create aerodem, for some reason the cutting with the shapefile outline only works for smaller grids
+        # otherwise GDALError (CE_Failure, code 1): Cutline polygon is invalid.
+        raw_path  = aerodem_path*"raw/"
+        mkpath(raw_path)
+
+        # download
+        if isempty(readdir(raw_path))
+            println("Downloading aerodem tif files, this may take a few minutes...")
+            url_DEMs          = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/DEM/"
+            url_reliablt_mask = "https://www.nodc.noaa.gov/archive/arc0088/0145405/1.1/data/0-data/G150AERODEM/ReliabilityMask/"
+            for url in [url_DEMs, url_reliablt_mask]
+                df = get_table_from_html(url)
+                tif_files = df.Name[endswith.(df.Name, ".tif") .&& .!occursin.("carey", df.Name) .&& occursin.(kw, df.Name)]
+                missing_files = tif_files[.!isfile.(raw_path.*tif_files)]
+                Downloads.download.(url .* missing_files, raw_path .* missing_files)
+            end
         end
+
+        aerodem_files = glob(raw_path * "aerodem_*.tif")
+        rm_files      = glob(raw_path * "rm_*.tif")
+
+        # gdalwarp
+        println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
+        merged_aero_dest = aerodem_path*"merged_aerodem_g150.nc"
+        aero_rm_filt     = gdalwarp(aerodem_files; gr=150, cut_shp=shp_file, dest=merged_aero_dest)
+        rel_mask         = gdalwarp(     rm_files; gr=150, cut_shp=shp_file)
+
+        # filter for observations where reliability value is low
+        aero_rm_filt[rel_mask .< 40] .= 0.0  # only keep values with reliability of at least xx
+
+        # apply geoid correction
+        geoid = gdalwarp("NETCDF:"*joinpath(bedmachine_path,"BedMachineGreenland-v5.nc:geoid");  gr=150)
+        idx                                = findall(aero_rm_filt .!= 0.0)
+        aero_rm_filt[idx]                .-= geoid[idx]
+        aero_rm_filt[aero_rm_filt .< 0.0] .= 0.0
+
+        # save as netcdf
+        sample_path = merged_aero_dest
+        layername   = "surface"
+        attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
+                                             "standard_name" => "surface_altitude",
+                                             "units" => "m")
+                            )
+        save_netcdf(aerodem_g150_file, sample_path, [aero_rm_filt[:,end:-1:1]], [layername], attributes)
     end
 
-    aerodem_files = glob(raw_path * "aerodem_*.tif")
-    rm_files      = glob(raw_path * "rm_*.tif")
+    # gdalwarp to desired grid
+    gdalwarp(aerodem_g150_file; gr, srcnodata="0.0", dest=aerodem_gr_file)
 
-    # gdalwarp
-    println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
-    merged_aero_dest = aerodem_path*"merged_aerodem_g$gr.nc"
-    merged_rm_dest   = aerodem_path*"merged_rm_g$gr.nc"
-    gdalwarp(aerodem_files; gr, cut_shp=imbie_shp_file, dest=merged_aero_dest)
-    gdalwarp(     rm_files; gr, cut_shp=imbie_shp_file, dest=merged_rm_dest)
-
-    # filter for observations where reliability value is low
-    aero_rm_filt = ncread(merged_aero_dest, "Band1")
-    rel_mask     = ncread(merged_rm_dest, "Band1")
-    aero_rm_filt[rel_mask .< 40] .= 0.0  # only keep values with reliability of at least xx
-    # apply geoid correction
-    geoid_g150 = bedmachine_path * "geoid_g150.nc"
-    gdalwarp("NETCDF:"*bedmachine_path*"BedMachineGreenland-v5.nc:geoid";  gr, dest = geoid_g150)
-    geoid  = ncread(geoid_g150, "Band1")
-    idx                     = findall(aero_rm_filt .!= 0.0)
-    aero_rm_geoid_corr      = zeros(size(aero_rm_filt))
-    aero_rm_geoid_corr[idx] = aero_rm_filt[idx] - geoid[idx]
-    aero_rm_geoid_corr[aero_rm_geoid_corr .< 0.0] .= 0.0
-
-    # save as netcdf
-    sample_path = merged_aero_dest
-    dest        = aerodem_path*"aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-    layername   = "surface"
-    attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
-                                         "standard_name" => "surface_altitude",
-                                         "units" => "m")
-                        )
-    save_netcdf(dest, sample_path, [aero_rm_geoid_corr], [layername], attributes)
-    return
+    return aerodem_g150_file, aerodem_gr_file
 end
 
-function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
+function create_imbie_mask(;gr, shp_file, sample_path)
+    imbie_path = "data/gris-imbie-1980/"
+    imbie_mask_file = imbie_path * "imbie_mask_g$(gr).nc"
+    # if file exists already, do nothing
+    if isfile(imbie_mask_file)
+        return imbie_mask_file
+    end
+
     # a bit ugly and cumbersome, due to the unability to resolve two issues:
     # 1) cut_shp doesn't work wih too large grids and if src file doesn't correspond to grid size
     # 2) the ArchGDAL gdalwarp function doesn't take Matrices as an input (or at least I haven't figured out how)
@@ -255,36 +314,15 @@ function create_imbie_mask(gr; imbie_path, imbie_shp_file, sample_path)
     layername   = "mask"
     attributes = Dict(layername => Dict())
     save_netcdf(fname_ones, sample_path, [ones_m], [layername], attributes)
-    gdalwarp(fname_ones; gr=150, cut_shp=imbie_shp_file, dest=fname_mask)
-    gdalwarp(fname_mask; gr, dest=imbie_path*"imbie_mask_g$(gr).nc")
+    gdalwarp(fname_ones; gr=150, cut_shp=shp_file, dest=fname_mask)
+    gdalwarp(fname_mask; gr, dest=imbie_mask_file)
     rm(fname_ones, force=true)
     rm(fname_mask, force=true)
-    return
+    return imbie_mask_file
 end
 
-function get_nc_from_flightlines(src_files, bedm_file, dest_file; correct_geoid=false)
-    # merge all flight files into one
-    # appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
-    function merge_files(src_files)
-        d_final = DataFrame()
-        @showprogress for (n,f) in enumerate(src_files)
-            startstring = "19"*split(f,"_")[3]
-            starttime   = DateTime(startstring, dateformat"yyyymmdd")
-            d           = readdlm(f)
-            d_new       = DataFrame(d,:auto)
-            d_new.x1    = starttime .+ Dates.Second.(Int.(round.(d[:,1])))
-            d_new.x12   = d[:,3] .- 360
-            if n == 1
-                d_final = d_new
-            else
-                append!(d_final, d_new)
-            end
-        end
-        return d_final
-    end
-    pt_data = merge_files(src_files)
-
-    # load geoid and coordinates of grid to project on
+function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_file::String; correct_geoid=false)
+    # load coordinates of grid to project on
     x      = ncread(bedm_file, "x")
     y      = ncread(bedm_file, "y")
     dx     = x[2]-x[1]
@@ -292,18 +330,18 @@ function get_nc_from_flightlines(src_files, bedm_file, dest_file; correct_geoid=
     nx, ny = length(x), length(y)
 
     # transform atm coordinates
-    coords = [[pt_data[i,3], pt_data[i,2]] for i in eachindex(pt_data[:,2])]
+    coords = [[pt_data.lon[i], pt_data.lat[i]] for i in eachindex(pt_data.lat)]
     coords_proj = AG.reproject(coords, ProjString("+proj=longlat +datum=WGS84 +no_defs"), EPSG(3413))  # hard-coded source and target coordinate systems
     x_proj = first.(coords_proj)
     y_proj = last.(coords_proj)
 
-    # reproject on grid using moving average weighted by inverse distance    
-    println("Projecting flight line values on model grid...")        
+    # reproject on grid using averages weighted by inverse distance
+    println("Projecting flight line values on model grid...")
     r_inv     = zeros(Float32, nx, ny)
     grid_data = zeros(Float32, nx, ny)
     npts      = zeros(Int, nx, ny)
     n = 1
-    for (xp, yp, zp) in zip(x_proj, y_proj, pt_data[:,4])
+    for (xp, yp, zp) in zip(x_proj, y_proj, pt_data.z)
         rx, ix = findmin(abs.(xp .- x))
         ry, iy = findmin(abs.(yp .- y))
         r = sqrt(rx^2 + ry^2)
@@ -324,24 +362,58 @@ function get_nc_from_flightlines(src_files, bedm_file, dest_file; correct_geoid=
     end
 
     # save as netcdf file
-    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))   
+    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))
     return
 end
 
-function create_atm_grid(atm_path, atm_file, ATM_download_file, bedm_file)
-    raw_path  = atm_path*"raw/"
-    mkpath(raw_path)
-
-    if isempty(readdir(raw_path))
-        # Download with python script from https://nsidc.org/data/data-access-tool/BLATM2/versions/1
-        pyinclude(ATM_download_file)   # ToDo: change location of this file?
+function create_atm_grid(gr, bedm_file::String, kw="")
+    atm_path = "data/ATM/"
+    atm_file = atm_path*"ATM_elevation_geoid_corrected_g$(gr).nc"
+    # if file exists already, do nothing
+    if isfile(atm_file)
+        return atm_file
     end
 
-    # move the files to a separate folder
-    fs = glob("BLATM2_*")
-    mv.(fs, raw_path.*fs, force=true)
-
+    # download files
+    raw_path  = atm_path*"ATM_raw/"
+    mkpath(raw_path)
+    if isempty(readdir(raw_path))
+        println("Donloading ATM elevation data...")
+        atm_url = "https://n5eil01u.ecs.nsidc.org/PRE_OIB/BLATM2.001/"
+        tb1 = get_table_from_html(atm_url)
+        folders = tb1.Name[(startswith.(tb1.Name, "1993") .|| startswith.(tb1.Name, "1994")) .&& occursin.(kw, tb1.Name)]
+        for fld in folders
+            df = get_table_from_html(atm_url*fld)
+            files_to_download = df.Name[endswith.(df.Name, "_nadir2seg")]
+            missing_files = files_to_download[.!isfile.(raw_path.*files_to_download)]    # only download missing files in case some are downloaded already
+            Downloads.download.(atm_url*fld.*missing_files, raw_path.*missing_files)
+        end
+    end
     files     = glob(raw_path*"BLATM2_*_nadir2seg")
-    get_nc_from_flightlines(files, bedm_file, atm_file; correct_geoid=true)
-    return
+
+    # merge all flight files into one
+    # appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
+    function merge_files(files)
+        d_final = DataFrame()
+        @showprogress for (n,f) in enumerate(files)
+            startstring = "19"*split(basename(f),"_")[2]
+            starttime   = DateTime(startstring, dateformat"yyyymmdd")
+            d           = readdlm(f)
+            time        = starttime .+ Dates.Second.(Int.(round.(d[:,1])))
+            lon         = d[:,3]
+            lat         = d[:,2]
+            z           = d[:,4]
+            d_new       = DataFrame((;time, lon, lat, z))
+            if n == 1
+                d_final = d_new
+            else
+                append!(d_final, d_new)
+            end
+        end
+        return d_final
+    end
+    df = merge_files(files)
+
+    get_nc_from_flightlines(df, bedm_file, atm_file; correct_geoid=true)
+    return atm_file
 end
