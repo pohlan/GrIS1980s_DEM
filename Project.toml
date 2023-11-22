@@ -54,6 +54,7 @@ Plots = "1"
 ProgressMeter = "1"
 PyCall = "1"
 Statistics = "1"
+StatsPlots = "0.15"
 TSVD = "0.4"
 
 [extras]
