@@ -70,9 +70,9 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     save_netcdf(filename, obs_file, [dem_rec], [layername], attributes)
     # plot and save difference between reconstruction and observations
     if do_figure
-        heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
         save_netcdf("output/dif.nc", obs_file, [dif], ["dif"], Dict("dif" => Dict()))
-        savefig(filename[1:end-3]*".pdf")
+        Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
+        Plots.savefig(filename[1:end-3]*".png")
     end
 
     return filename

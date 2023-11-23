@@ -417,3 +417,42 @@ function create_atm_grid(gr, bedm_file::String, kw="")
     get_nc_from_flightlines(df, bedm_file, atm_file; correct_geoid=true)
     return atm_file
 end
+
+function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
+    dhdt_dir       = "data/dhdt/"
+    download_file  = joinpath(dhdt_dir, "CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09.nc")
+    get_filename(starty, endy) = splitext(download_file)[1]*"_g$(gr)_$(starty)-$(endy).nc"
+    if isfile(get_filename(startyr, endyr))
+        return get_filename(startyr, endyr), endyr-startyr
+    end
+    # download
+    if !isfile(download_file)
+        println("Downloading dhdt data...")
+        dest_dir = "cci_sec_2021/"
+        url_dhdt = "http://products.esa-icesheets-cci.org/products/download/cci_sec_2021.zip"
+        @assert isfile(download_file)
+    end
+    println("Calculating cumulative elevation change...")
+    # extract cumulative elevation change over certain years
+    m0           = NCDataset(download_file)["SEC"]
+    t            = NCDataset(download_file)["time"] # center years, elevation change values are moving averages over 4yr time windows
+    ti1          = findmin(abs.(Year.(t) .- Year(startyr)))[2]
+    actual_start = Year(t[ti1]).value
+    if startyr != actual_start @warn "Given start year $startyr was not available, starting at the nearest year $actual_start instead." end
+    tin          = findmin(abs.(Year.(t) .- Year(endyr)))[2]
+    actual_end   = Year(t[tin]).value
+    if endyr != actual_end @warn "Given end year $endyr was not available, ending at the nearest year $actual_end instead." end
+
+    # sum up annual elevation change and save
+    n_years = actual_end - actual_start
+    msum    = sum(m0[ti1:tin,:,:], dims=1)[1,:,:]
+    msum[ismissing.(msum)] .= -9999
+    tempname = "temp.nc"
+    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict()))
+
+    # gdalwarp to right grid
+    dest = get_filename(actual_start, actual_end)
+    gdalwarp(tempname; srcnodata="-9999", gr, dest)[:,end:-1:1]
+    rm(tempname)
+    return dest, n_years
+end
