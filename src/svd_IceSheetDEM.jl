@@ -5,7 +5,7 @@ using ArgParse
 
 import ArchGDAL as AG
 
-using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes
+using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
 using Downloads, Cascadia, Gumbo, HTTP
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LinearAlgebra, ImageFiltering, ParallelRandomFields.grf2D_CUDA

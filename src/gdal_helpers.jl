@@ -418,6 +418,52 @@ function create_atm_grid(gr, bedm_file::String, kw="")
     return atm_file
 end
 
+function download_esa_cci(dest_file)
+    ## the data access is a bit cumbersome in this case as the website asks for a name and affiliation which requires some tricks
+    # get csrfmiddlewaretoken
+    csrf_url = "http://products.esa-icesheets-cci.org/products/details/cci_sec_2021.zip/"
+    session  = HTTP.get(csrf_url; cookies=true)
+    body     = Gumbo.parsehtml(String(session.body))
+    inpts    = eachmatch(Selector("input"), body.root)
+    function get_token(inpts)
+        for inp in inpts
+            if !haskey(inp.attributes, "name")
+                continue
+            end
+            if getattr(inp, "name") == "csrfmiddlewaretoken"
+                return getattr(inp, "value")
+            end
+        end
+        @error "No token found."
+    end
+    token = get_token(inpts)
+
+    # send post
+    username    = "Peeves"
+    affiliation = "Hogwarts"
+    credentials = Dict(
+        "username" => username,
+        "affiliation" => affiliation,
+        "csrfmiddlewaretoken" => token
+    )
+    login_url = "http://products.esa-icesheets-cci.org/register_or_login_no_redirect/"
+    HTTP.post(login_url, body=credentials, cookies=true)
+
+    # download
+    file_url = "http://products.esa-icesheets-cci.org/products/download/cci_sec_2021.zip"
+    out = HTTP.download(file_url, cookies=true)
+
+    # read file out of zip folder
+    r            = ZipFile.Reader(out)
+    fnames       = [r.files[i].name for i in eachindex(r.files)]
+    fi           = findfirst(startswith.(fnames, "Release/CCI_GrIS_RA") .&& endswith.(fnames, "nc"))
+    file_to_read = r.files[fi]
+    write(dest_file, read(file_to_read, String));
+    close(r)
+    rm(out)
+    return
+end
+
 function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     dhdt_dir       = "data/dhdt/"
     download_file  = joinpath(dhdt_dir, "CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09.nc")
@@ -428,12 +474,12 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     # download
     if !isfile(download_file)
         println("Downloading dhdt data...")
-        dest_dir = "cci_sec_2021/"
-        url_dhdt = "http://products.esa-icesheets-cci.org/products/download/cci_sec_2021.zip"
+        download_esa_cci(download_file)
         @assert isfile(download_file)
     end
-    println("Calculating cumulative elevation change...")
+
     # extract cumulative elevation change over certain years
+    println("Calculating cumulative elevation change...")
     m0           = NCDataset(download_file)["SEC"]
     t            = NCDataset(download_file)["time"] # center years, elevation change values are moving averages over 4yr time windows
     ti1          = findmin(abs.(Year.(t) .- Year(startyr)))[2]
