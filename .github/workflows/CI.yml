@@ -35,13 +35,10 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v1
-      - uses: julia-actions/julia-buildpkg@v1
-      - name: run tests
+      - name: add not registered package
         run: |
           julia -e 'println("--- :julia: Instantiating project")
-              using Pkg
-              Pkg.add("https://github.com/luraess/ParallelRandomFields.jl")'
-
-          julia -e 'println("+++ :julia: Running tests")
-              using Pkg
-              Pkg.test()'
+            using Pkg
+            Pkg.add("https://github.com/luraess/ParallelRandomFields.jl")'
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
