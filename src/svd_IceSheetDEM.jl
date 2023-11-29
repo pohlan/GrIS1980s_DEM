@@ -8,9 +8,10 @@ import ArchGDAL as AG
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
 using Downloads, Cascadia, Gumbo, HTTP
 using Printf, ProgressMeter
-using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LinearAlgebra, ImageFiltering, ParallelRandomFields.grf2D_CUDA
+using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
+using Arpack, LinearAlgebra
 using DataStructures: OrderedDict
-import Plots, StatsPlots, LsqFit
+import Plots, StatsPlots
 
 export parse_commandline
 export archgdal_read, gdalwarp
@@ -40,6 +41,10 @@ function parse_commandline(args)
             required = true
         "--do_figures"
             help     = "whether or not to plot the difference of the reconstructed elevations to aerodem data (plotting and saving requires a bit of extra memory)"
+            arg_type = Bool
+            default  = false
+        "--use_arpack"
+            help     = "If this is set to true, then the Arpack svd is used instead of the standard LinearAlgebra algorithm. Arpack is iterative and matrix free and thus useful when memory becomes limiting, but it can be slower."
             arg_type = Bool
             default  = false
     end

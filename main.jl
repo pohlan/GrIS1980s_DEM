@@ -49,7 +49,8 @@ imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aerodem_g150)
 λ           = F(parsed_args["λ"])     # regularization
 r           = parsed_args["r"]
 do_figures  = parsed_args["do_figures"]
-rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files, obs_file, do_figures)
+use_arpack  = parsed_args["use_arpack"]
+rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files, obs_file, do_figures, use_arpack)
 
 # 5.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf gneration??
@@ -66,4 +67,4 @@ atm_file  = create_atm_grid(gr, bedmachine_file)
 dh_obs_long_file, _   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
 dh_obs_short_file, n_years_short = create_dhdt_grid(;gr, startyr=1994, endyr=1996)
 # 3.) standardize residual, evaluate variogram and generate random fields
-rf_files = residual_analysis(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_long_file, dh_obs_short_file, n_years_short; do_figures)
+rf_files = residual_analysis(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_long_file, dh_obs_short_file, n_years_short; do_figures, n_fields=10)

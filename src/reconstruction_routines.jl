@@ -11,7 +11,7 @@ function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String
     return  Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny
 end
 
-function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, F::DataType) where T <: Real
+function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, F::DataType, use_arpack::Bool) where T <: Real
     # centering model data
     Data_mean  = mean(Data_ice, dims=2)
     Data_ice  .= Data_ice .- Data_mean
@@ -20,14 +20,15 @@ function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::V
 
     # compute SVD
     println("Computing the SVD..")
-    B = svd(Data_ice)
-    if r < min(size(Data_ice)...)-100  # the tsvd algorithm doesn't give good results for a full or close to full svd (https://github.com/JuliaLinearAlgebra/TSVD.jl/issues/28)
-        # U, Σ, _ = tsvd(Data_ice, r)
-        @views U = B.U[:,1:r]
-        @views Σ = B.S[1:r]
-    else
+    r = min(r, size(Data_ice, 2)-1)
+    if use_arpack
+        B, _, _ = svds(Data_ice, nsv=r)
         U = B.U
         Σ = B.S
+    else
+        B = svd(Data_ice)
+        @views U = B.U[:,1:r]
+        @views Σ = B.S[1:r]
     end
 
     # solve the lsqfit problem
@@ -47,9 +48,9 @@ function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::V
     return x_rec, err_mean, dif
 end
 
-function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figure=false)
+function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
     Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny = prepare_problem(obs_file, imbie_mask, bedm_file, model_files, F)
-    x_rec, err_mean, dif                            = solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F)
+    x_rec, err_mean, dif                            = solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F, use_arpack)
 
     # retrieve matrix of reconstructed DEM
     dem_rec             = zeros(F, nx,ny)
@@ -69,7 +70,7 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
                         )
     save_netcdf(filename, obs_file, [dem_rec], [layername], attributes)
     # plot and save difference between reconstruction and observations
-    if do_figure
+    if do_figures
         save_netcdf("output/dif.nc", obs_file, [dif], ["dif"], Dict("dif" => Dict()))
         Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
         Plots.savefig(filename[1:end-3]*".png")
