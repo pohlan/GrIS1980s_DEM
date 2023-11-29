@@ -60,6 +60,7 @@ Plots = "1"
 ProgressMeter = "1"
 Statistics = "1"
 StatsPlots = "0.15"
+ZipFile = "0.10"
 
 [extras]
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
