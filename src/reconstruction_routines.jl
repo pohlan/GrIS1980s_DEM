@@ -55,8 +55,8 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     # retrieve matrix of reconstructed DEM
     dem_rec             = zeros(F, nx,ny)
     dem_rec[I_no_ocean] = x_rec
-
-    # dem_rec = mapwindow(median, dem_rec, (5,5))
+    # smoothing
+    dem_rec = mapwindow(median, dem_rec, (5,5))
 
     # save as nc file
     mkpath("output/")

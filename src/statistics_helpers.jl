@@ -156,7 +156,7 @@ function generate_random_fields(;std_devs, corr_ls, x, y, std_z, rec, template_f
             rftot .+= Array(rf)
         end
         # smooth over a 5x5 pixel window
-        rftot_smooth = mapwindow(median, rftot, (5,5))
+        rftot_smooth = mapwindow(median, rftot, (7,7))
         # multiply with nmad and sigmas to get back variability w.r.t. binning variables
         rftot_smooth .*= std_z
         # add the random field to the reconstruction
