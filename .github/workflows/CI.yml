@@ -39,6 +39,8 @@ jobs:
         run: |
           julia -e 'println("--- :julia: Instantiating project")
             using Pkg
-            Pkg.add(url="https://github.com/luraess/ParallelRandomFields.jl.git")'
-      - uses: julia-actions/julia-buildpkg@v1
+            Pkg.add(url="https://github.com/luraess/ParallelRandomFields.jl.git")
+            Pkg.build()
+            '
+      # - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
