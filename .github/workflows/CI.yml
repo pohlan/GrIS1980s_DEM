@@ -37,10 +37,11 @@ jobs:
       - uses: julia-actions/cache@v1
       - name: add not registered package
         run: |
-          julia -e 'println("--- :julia: Instantiating project")
+          julia -e 'println("--- :julia: instantiating project")
             using Pkg
             Pkg.add(url="https://github.com/luraess/ParallelRandomFields.jl.git")
+            println("--- :julia: build")
             Pkg.build()
+            println("--- :julia: run tests")
+            Pkg.test()
             '
-      # - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
