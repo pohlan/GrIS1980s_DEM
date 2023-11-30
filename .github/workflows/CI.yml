@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.8'
+          - '1.9.3'
         os:
           - ubuntu-latest
         arch:
@@ -35,7 +35,7 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v1
-      - name: add not registered package
+      - name: build and run tests
         run: |
           julia -e 'println("--- :julia: instantiating project")
             using Pkg
