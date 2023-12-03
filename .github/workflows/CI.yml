@@ -39,7 +39,6 @@ jobs:
         run: |
           julia -e 'println("--- :julia: instantiating project")
             using Pkg
-            Pkg.add(url="https://github.com/luraess/ParallelRandomFields.jl.git")
             println("--- :julia: build")
             Pkg.build()
             println("--- :julia: run tests")
