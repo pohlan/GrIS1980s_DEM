@@ -1,5 +1,5 @@
 using svd_IceSheetDEM
-using Test, TSVD, LinearAlgebra, NetCDF, NCDatasets
+using Test, LinearAlgebra, NetCDF, NCDatasets
 
 cd(@__DIR__)  # set working directory to where file is located
 

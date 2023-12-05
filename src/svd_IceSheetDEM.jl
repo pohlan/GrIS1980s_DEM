@@ -5,7 +5,7 @@ using ArgParse
 
 import ArchGDAL as AG
 
-using DelimitedFiles, ProgressMeter, Glob, DataFrames, CSV, PyCall, Dates, GeoFormatTypes
+using DelimitedFiles, ProgressMeter, Glob, DataFrames, CSV, Dates, GeoFormatTypes
 using Downloads, Cascadia, Gumbo, HTTP, NCDatasets, NetCDF
 using Printf, Statistics, LinearAlgebra, ImageFiltering, Plots
 using DataStructures: OrderedDict
@@ -17,7 +17,7 @@ export solve_lsqfit, create_reconstructed_bedmachine
 export get_nc_from_flightlines
 export pyinclude
 
-pyinclude(fname) = (PyCall.pyeval_(read(fname, String), PyCall.pynamespace(Main), PyCall.pynamespace(Main), PyCall.Py_file_input, fname); nothing) # to be able to run an entire python script
+# pyinclude(fname) = (PyCall.pyeval_(read(fname, String), PyCall.pynamespace(Main), PyCall.pynamespace(Main), PyCall.Py_file_input, fname); nothing) # to be able to run an entire python script
 
 function parse_commandline(args)
     s = ArgParseSettings()
