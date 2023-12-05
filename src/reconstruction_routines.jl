@@ -47,7 +47,7 @@ function solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F
     dif                     = zeros(F, nx,ny)
     dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- obs_flat_I
     err_mean         = mean(abs.(dif[I_no_ocean[I_obs]]))
-    @printf("Mean absolute error: %1.1f m\n", err_mean)
+    @printf("Mean absolute error is: %1.1f m\n", err_mean)
 
     return x_rec, err_mean, dif
 end
