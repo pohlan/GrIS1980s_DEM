@@ -36,7 +36,7 @@ We want to find the vector $\mathbf{x}_\mathrm{rec}$ of reconstructed surface el
         x_1\\
         x_2\\
         ...\\
-        x_n       
+        x_n
     \end{bmatrix}_{\mathrm{rec}}
 \end{equation}
 Take the SVD of $X$, truncated to $r$ singular values, where $r<m$:
@@ -54,13 +54,15 @@ However, since we do not know all elements of $\mathbf{x}_\mathrm{rec}$ we canno
 where $\mathbf{x}_\mathrm{data} \in \mathbb{R}^d$ is a vector of the the available data (with $d<n$) and the rows of $A\in \mathbb{R}^{d\times r}$ are the corresponding rows of the matrix $U \Sigma$.
 
 The number of known data points is in the order of $d \sim 10^5$ and therefore much larger than $r$, the number of coefficients we want to solve for.
-It is thus an overdetermined system for which we can find the regularized least squares solution
+It is thus an overdetermined system for which we can find the regularized and weighted least squares solution
 \begin{equation} \label{eq:min_prob}
-    \min_{\mathbf{v_\mathrm{rec}}}    ||\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}||_2^2 + \lambda ||\mathbf{v}_\mathrm{rec}||_2^2
+    \min_{\mathbf{v_\mathrm{rec}}}  \qquad  (\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec})^T W (\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}) + \lambda \mathbf{v}_\mathrm{rec}^T \mathbf{v}_\mathrm{rec}~,
 \end{equation}
-where $\lambda$ is the regularization parameter. Taking the gradient of Eq.~\eqref{eq:min_prob} and setting it to zero results in the normal equation
+where $\lambda$ is the regularization parameter and $W$ is a diagonal matrix where each diagonal entry $W_{ii}$ corresponds to the weight for an observation $\mathbf{x}_{\mathrm{data},\,i}$.
+The higher the value in $W_{ii}$, the more we 'trust' in the observation and the more weight it will get in the least square fit.
+Taking the gradient of Eq.~\eqref{eq:min_prob} and setting it to zero results in the normal equation (see derivation at the bottom of this document)
 \begin{equation} \label{eq:normal_eq}
-    (A^TA+\lambda I)\hat{\mathbf{v}}_\mathrm{rec} = A^T \mathbf{x}_\mathrm{data}~.
+    (A^T W A+\lambda I)\hat{\mathbf{v}}_\mathrm{rec} = A^T W \mathbf{x}_\mathrm{data}~.
 \end{equation}
 % Inserting back $A=U\Sigma$:
 % \begin{align}
@@ -68,14 +70,14 @@ where $\lambda$ is the regularization parameter. Taking the gradient of Eq.~\eqr
 %     \label{eq:unitary}
 %     (\Sigma^T \Sigma + \lambda I)\hat{\mathbf{v}}_\mathrm{rec} &= \Sigma^T U^T \mathbf{x}_\mathrm{rec}
 % \end{align}
-% e do not actually know all the elements of 
+% e do not actually know all the elements of
 
 
 % The matrix $(\Sigma^T \Sigma + \lambda I)$ is diagonal and thus invertible, so we can directly solve the system:
 % \begin{equation}
 %     \hat{\mathbf{v}}_\mathrm{rec} = (\Sigma^T \Sigma + \lambda I)^{-1} \Sigma^T U^T \mathbf{x}_\mathrm{rec}~.
 % \end{equation}
-% However, 
+% However,
 
 In order to solve the system analytically, we take a full SVD of $A$
 \begin{equation}
@@ -93,7 +95,7 @@ Introducing $\mathbf{z} = V_A^T \hat{\mathbf{v}}_\mathrm{rec}$ we get
 \begin{equation}
     (\Sigma_A^T \Sigma_A + \lambda I) \mathbf{z} = \Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}
 \end{equation}
-where $(\Sigma_A^T \Sigma_A + \lambda I)$ is a diagonal matrix. The solution of the system is thus
+where $(\Sigma_A^T \Sigma_A + \lambda I)$ is a diagonal matrix and thus for sure invertible. The solution of the system is then
 \begin{equation}
     \mathbf{z} = (\Sigma_A^T \Sigma_A + \lambda I)^{-1} \Sigma_A^T U_A^T \mathbf{x}_\mathrm{data}~.
 \end{equation}
@@ -105,6 +107,28 @@ Finally, we can substitute this solution into $\hat{\mathbf{v}}_\mathrm{rec} = V
 
 % For Eq.~\eqref{eq:unitary} to hold, $U$ must be unitary, i.e. $U^TU = U U^T = I$, which is true for a truncated SVD but not when parts of the rows of $U$ are removed corresponding to grid cells where there is no data in $\mathbf{x}_\mathrm{rec}$.
 
+\section*{How do we arrive at the normal equation?}
+The function $f$ we want to minimize is
+\begin{align} \label{eq:f_1}
+    f(\mathbf{v}_\mathrm{rec}) %&= W ||\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}||_2^2 + \lambda ||\mathbf{v}_\mathrm{rec}||_2^2\\
+                               &= (\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec})^T W (\mathbf{x}_\mathrm{data}- A \mathbf{v}_\mathrm{rec}) + \lambda \mathbf{v}_\mathrm{rec}^T \mathbf{v}_\mathrm{rec}\\
+                               &=  \mathbf{x}_\mathrm{data}^T W \mathbf{x}_\mathrm{data} - \mathbf{v}_\mathrm{rec}^T A^T W \mathbf{x}_\mathrm{data} - \mathbf{x}_\mathrm{data}^T W A \mathbf{v}_\mathrm{rec} + \mathbf{v}_\mathrm{rec}^T A^T W A \mathbf{v}_\mathrm{rec} + \lambda \mathbf{v}_\mathrm{rec}^T \mathbf{v}_\mathrm{rec}
+\end{align}
+The following three gradients are given:
+\begin{align}
+    \nabla (\mathbf{v}_\mathrm{rec}^T A^T W \mathbf{x}_\mathrm{data})  &= A^T W \mathbf{x}_\mathrm{data}\\
+    \nabla (\mathbf{x}_\mathrm{data}^T W A \mathbf{v}_\mathrm{rec})    &= A^T W^T \mathbf{x}_\mathrm{data} = A^T W \mathbf{x}_\mathrm{data}\\
+    \nabla (\mathbf{v}_\mathrm{rec}^T A^T W A \mathbf{v}_\mathrm{rec}) &= 2 A^T W A \mathbf{v}_\mathrm{rec}\\
+    \nabla (\lambda \mathbf{v}_\mathrm{rec}^T \mathbf{v}_\mathrm{rec}) &= 2 \lambda \mathbf{v}_\mathrm{rec}
+\end{align}
+Thus, the gradient of $f$ is
+\begin{equation}\label{eq:grad_f}
+    \nabla f(\mathbf{v}_\mathrm{rec})= 2 (A^T W A + \lambda I) \mathbf{v}_\mathrm{rec} - 2 A^T W \mathbf{x}_\mathrm{data}
+\end{equation}
 
+Then setting the gradient in Eq.~\eqref{eq:grad_f} to zero results in
+\begin{equation}
+    (A^T W A + \lambda I) \mathbf{v}_\mathrm{rec} = A^T W \mathbf{x}_\mathrm{data}
+\end{equation}
 
 \end{document}
