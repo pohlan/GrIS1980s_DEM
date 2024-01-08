@@ -84,7 +84,7 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     surfaceDEM = ncread(rec_file, "surface")
     bedDEM     = ncread(bedmachine_file, "bed")
     bedm_mask  = ncread(bedmachine_file, "mask")
-    ice_mask   = (surfaceDEM .> 0.0) .&& (surfaceDEM .> bedDEM)
+    ice_mask   = (surfaceDEM .!= 0.0) .&& (surfaceDEM .> bedDEM)
 
     # retrieve grid size
     x          = ncread(rec_file, "x")
@@ -98,8 +98,8 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     floating_mask = (Pw .> Pi) .&& (ice_mask)  # floating where water pressure > ice pressure at the bed
 
     # calculate mask
-    new_mask = zeros(eltype(bedm_mask), size(bedm_mask))
-    new_mask[bedm_mask .== 1] .= 1 # bedrock
+    new_mask = ones(eltype(bedm_mask), size(bedm_mask))
+    new_mask[bedm_mask .== 0] .= 0 # ocean
     new_mask[ice_mask] .= 2
     new_mask[floating_mask]   .= 3
 
