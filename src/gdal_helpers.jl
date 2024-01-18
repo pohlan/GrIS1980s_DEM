@@ -303,7 +303,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
     gdalwarp(aerodem_g150_file; gr, srcnodata=dstnodata, dest=aerodem_gr_file)
     gdalwarp(rm_g150_file; gr, srcnodata=dstnodata, dest=rm_gr_file)
 
-    return aerodem_g150_file, aerodem_gr_file  #, rm_gr_file
+    return aerodem_g150_file, aerodem_gr_file, rm_gr_file
 end
 
 function create_imbie_mask(;gr, shp_file, sample_path)
