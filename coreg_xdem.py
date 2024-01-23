@@ -5,7 +5,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # choose target resolution
-gr = 6000
+gr = 1200
+# choose resampling method
+r_method = "average"
 
 # load data
 aero_not_aligned = xdem.DEM("data/aerodem/aerodem_rm-filtered_geoid-corr_g150.nc")
@@ -35,17 +37,17 @@ def do_align(reference_dem, dem_to_be_aligned):
     return aligned_dem, diff_before, diff_after
 
 # function to save as a netcdf on a different grid
-def save_netcdf_at_grid(grid, data, valname, dest_file):
-    dem_gr = data.reproject(dst_res=grid, resampling="med") # resampling="bilinear" is default but doesn't work well for ATM
+def save_netcdf_at_grid(grid, data, valname, dest_file, r_method):
+    dem_gr = data.reproject(dst_res=grid, resampling=r_method) # resampling="bilinear" is default but doesn't work well for ATM
     dem_xa = dem_gr.to_xarray(valname)
     dem_xa.to_netcdf(dest_file)
 
 # aerodem
 aero_aligned, aero_diff_before, aero_diff_after = do_align(grimp_reference, aero_not_aligned)
-save_netcdf_at_grid(gr, aero_diff_after, "dh", f"data/grimp_minus_aero_g{gr}.nc")
-save_netcdf_at_grid(gr, aero_aligned, "surface", f"data/aerodem/aerodem_g{gr}_aligned_median.nc")
+save_netcdf_at_grid(gr, aero_diff_after, "dh", f"data/grimp_minus_aero_g{gr}.nc", r_method)
+save_netcdf_at_grid(gr, aero_aligned, "surface", f"data/aerodem/aerodem_g{gr}_aligned_"+r_method+".nc", r_method)
 
 # atm
 atm_aligned, atm_diff_before, atm_diff_after = do_align(grimp_reference, atm_not_aligned)
-save_netcdf_at_grid(gr, atm_diff_after, "dh", f"data/grimp_minus_atm_g{gr}.nc")
-save_netcdf_at_grid(gr, atm_aligned, "surface", f"data/ATM/ATM_elevation_g{gr}_aligned_median.nc")
+save_netcdf_at_grid(gr, atm_diff_after, "dh", f"data/grimp_minus_atm_g{gr}.nc", r_method)
+save_netcdf_at_grid(gr, atm_aligned, "surface", f"data/ATM/ATM_elevation_g{gr}_"+r_method+".nc", r_method)
