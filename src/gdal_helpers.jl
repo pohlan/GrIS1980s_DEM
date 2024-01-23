@@ -85,7 +85,7 @@ end
 - dest:         destination where netcdf should be saved
 - sample_path:  path of netcdf file that properties should be copied from
 """
-function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict)  where T <: AbstractArray
+function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict{String, Dict{String, Any}})  where T <: AbstractArray
     template  = NCDataset(spatial_template_file)
     crs_names = ["mapping", "polar_stereographic", "crs"]
     m    = crs_names[findfirst(in.(crs_names, (keys(template),)))]

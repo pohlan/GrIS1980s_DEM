@@ -64,9 +64,9 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     logλ = Int(round(log(10, λ)))
     filename = r < min(size(Data_ice)...)-100 ? "output/rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc" : "output/rec_lambda_1e$logλ"*"_g$gr"*"_fullsvd.nc"
     layername   = "surface"
-    attributes  = Dict(layername => Dict("long_name" => "ice surface elevation",
-                                         "standard_name" => "surface_altitude",
-                                         "units" => "m")
+    attributes  = Dict(layername => Dict{String, Any}("long_name" => "ice surface elevation",
+                                                      "standard_name" => "surface_altitude",
+                                                      "units" => "m")
                         )
     save_netcdf(filename, obs_file, [dem_rec], [layername], attributes)
     # plot and save difference between reconstruction and observations
