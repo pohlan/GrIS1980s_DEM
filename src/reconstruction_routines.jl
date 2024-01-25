@@ -18,6 +18,22 @@ function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::V
     # centering observations with model mean
     x_data     = obs_flat_I .- Data_mean[I_obs]
 
+    # h_binned, bin_centers = bin_equal_sample_size(obs_flat_I, x_data, 10000)
+    # itp = linear_interpolation(bin_centers, mad.(h_binned),  extrapolation_bc = Interpolations.Line())
+    # Plots.plot(bin_centers, itp.(bin_centers))
+
+    # filter for outliers
+    i_to_delete = findall(abs.(x_data) .> 7 * mad(x_data))
+    println(length(i_to_delete))
+    deleteat!(x_data, i_to_delete)
+    deleteat!(I_obs, i_to_delete)
+    deleteat!(obs_flat_I, i_to_delete)
+
+    # bla = zeros(nx,ny)
+    # bla[I_no_ocean[I_obs]] = x_data
+    # Plots.heatmap(bla', cmap=:bwr, clims=(-100,100)); Plots.savefig("data_x.png")
+    # save_netcdf("data_x.nc", "data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc", [bla], ["x_data"], Dict("x_data" => Dict{String, Any}()))
+
     # compute SVD
     println("Computing the SVD..")
     r = min(r, size(Data_ice, 2)-1)
@@ -56,7 +72,7 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     dem_rec             = zeros(F, nx,ny)
     dem_rec[I_no_ocean] = x_rec
     # smoothing
-    dem_rec = mapwindow(median, dem_rec, (5,5))
+    # dem_rec = mapwindow(median, dem_rec, (5,5))
 
     # save as nc file
     mkpath("output/")
