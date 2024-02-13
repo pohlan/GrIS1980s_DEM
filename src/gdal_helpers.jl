@@ -67,7 +67,7 @@ end
 
 function get_attr(ds::NCDataset, layernames::Vector{String})
     # create dictionary of attributes
-    attributes = Dict()
+    attributes = Dict{String, Dict{String, Any}}()
     for l in layernames
         var_attr = NCDatasets.OrderedDict()
         for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue can easily throw errors (https://docs.juliahub.com/NCDatasets/lxvtD/0.10.3/issues/#Defining-the-attributes-_FillValue,-add_offset,-scale_factor,-units-and-calendar)
@@ -243,12 +243,12 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
     aerodem_g150_file = get_aero_file(150)
     aerodem_gr_file   = get_aero_file(gr)
     rm_g150_file      = get_rm_file(150)
-    rm_gr_file        = get_rm_file(gr)
+    # rm_gr_file        = get_rm_file(gr)
 
     dstnodata        = string(Float32(no_data_value))
 
-    if isfile(aerodem_gr_file) && isfile(rm_gr_file)
-        return aerodem_g150_file, aerodem_gr_file, rm_gr_file
+    if isfile(aerodem_gr_file) #&& isfile(rm_gr_file)
+        return aerodem_g150_file, aerodem_gr_file #, rm_gr_file
     elseif !isfile(aerodem_g150_file)
 
         # create aerodem, for some reason the cutting with the shapefile outline only works for smaller grids
@@ -301,7 +301,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
 
     # gdalwarp to desired grid
     gdalwarp(aerodem_g150_file; gr, srcnodata=dstnodata, dest=aerodem_gr_file)
-    gdalwarp(rm_g150_file; gr, srcnodata=dstnodata, dest=rm_gr_file)
+    # gdalwarp(rm_g150_file; gr, srcnodata=dstnodata, dest=rm_gr_file)
 
     return aerodem_g150_file, aerodem_gr_file  #, rm_gr_file
 end
