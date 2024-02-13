@@ -8,15 +8,17 @@ function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String
     # load model data
     Data_ice, nx, ny = read_model_data(;F,model_files,I_no_ocean)
     obs_flat_I = F.(obs[I_no_ocean][I_obs])
-    return  Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny
-end
 
-function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, F::DataType, use_arpack::Bool) where T <: Real
     # centering model data
     Data_mean  = mean(Data_ice, dims=2)
     Data_ice  .= Data_ice .- Data_mean
     # centering observations with model mean
     x_data     = obs_flat_I .- Data_mean[I_obs]
+
+    return  Data_ice, obs_flat_I, x_data, Data_mean, I_no_ocean, I_obs, nx, ny
+end
+
+function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, x_data, Data_mean, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, F::DataType, use_arpack::Bool) where T <: Real
 
     # h_binned, bin_centers = bin_equal_sample_size(obs_flat_I, x_data, 10000)
     # itp = linear_interpolation(bin_centers, mad.(h_binned),  extrapolation_bc = Interpolations.Line())
