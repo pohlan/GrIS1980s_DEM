@@ -325,7 +325,7 @@ function create_imbie_mask(;gr, shp_file, sample_path)
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
     layername   = "mask"
-    attributes = Dict(layername => Dict())
+    attributes = Dict(layername => Dict{String, Any}())
     save_netcdf(fname_ones, sample_path, [ones_m], [layername], attributes)
     gdalwarp(fname_ones; gr=150, cut_shp=shp_file, dest=fname_mask)
     gdalwarp(fname_mask; gr, dest=imbie_mask_file)
@@ -376,7 +376,7 @@ function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_fil
     end
 
     # save as netcdf file
-    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))
+    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict{String, Any}()))
     return
 end
 
@@ -508,7 +508,7 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     msum    = sum(m0[ti1:tin,:,:], dims=1)[1,:,:]
     msum[ismissing.(msum)] .= no_data_value
     tempname = "temp.nc"
-    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict()))
+    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict{String, Any}()))
 
     # gdalwarp to right grid
     dest = get_filename(actual_start, actual_end)
