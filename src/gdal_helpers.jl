@@ -242,7 +242,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
     get_rm_file(gr)   = aerodem_path * "rm_g$(gr).nc"
     aerodem_g150_file = get_aero_file(150)
     aerodem_gr_file   = get_aero_file(gr)
-    rm_g150_file      = get_rm_file(150)
+    # rm_g150_file      = get_rm_file(150)
     # rm_gr_file        = get_rm_file(gr)
 
     dstnodata        = string(Float32(no_data_value))
@@ -296,7 +296,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
                                                           "units"         => "m")
                             )
         save_netcdf(aerodem_g150_file, sample_path, [aero_rm_filt[:,end:-1:1]], [layername], attributes)
-        save_netcdf(rm_g150_file, sample_path, [Float32.(rel_mask[:,end:-1:1])], ["reliability mask"], Dict("reliability mask" => Dict()))
+        # save_netcdf(rm_g150_file, sample_path, [Float32.(rel_mask[:,end:-1:1])], ["reliability mask"], Dict("reliability mask" => Dict{String, Any}()))
     end
 
     # gdalwarp to desired grid
