@@ -35,12 +35,5 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v1
-      - name: build and run tests
-        run: |
-          julia -e 'println("--- :julia: instantiating project")
-            using Pkg
-            println("--- :julia: build")
-            Pkg.build()
-            println("--- :julia: run tests")
-            Pkg.test()
-            '
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
