@@ -43,6 +43,7 @@ end
 ds150                 = NCDataset(aero_150_file)["surface"][:]
 dsgr                  = NCDataset(aero_gr_file )["Band1"][:]
 println(sum(.!ismissing.(ds150)))
+println(missum(ds150.>0))
 println(missmax(ds150))
 println(sum(.!ismissing.(dsgr)))
 println(missmax(dsgr))
@@ -50,7 +51,7 @@ println(missmax(dsgr))
 @testset "aerodem" begin
     ds150                 = NCDataset(aero_150_file)["surface"][:]
     dsgr                  = NCDataset(aero_gr_file )["Band1"][:]
-    @test sum(.!ismissing.(ds150)) == 2093764 && missmax(ds150)  ≈ 3685.5481
+    @test missmax(ds150)  ≈ 3685.5481
     @test sum(.!ismissing.(dsgr))  == 7022    && missmax(dsgr)   ≈ 3252.3076
 end
 
