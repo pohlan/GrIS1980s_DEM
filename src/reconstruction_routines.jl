@@ -57,6 +57,7 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     dem_rec[I_no_ocean] = x_rec
     # smoothing
     dem_rec = mapwindow(median, dem_rec, (5,5))
+    dem_rec[dem_rec .== 0] .= no_data_value
 
     # save as nc file
     mkpath("output/")
