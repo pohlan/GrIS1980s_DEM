@@ -40,6 +40,8 @@ missum(x)  = sum(x[.!ismissing.(x)])
     close(ds)
 end
 
+ds150                 = NCDataset(aero_150_file)["surface"][:]
+dsgr                  = NCDataset(aero_gr_file )["Band1"][:]
 println(sum(.!ismissing.(ds150)))
 println(missmax(ds150))
 println(sum(.!ismissing.(dsgr)))
