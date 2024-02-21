@@ -70,7 +70,7 @@ function get_attr(ds::NCDataset, layernames::Vector{String})
     attributes = Dict{String, Dict{String, Any}}()
     for l in layernames
         var_attr = NCDatasets.OrderedDict()
-        for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue can easily throw errors (https://docs.juliahub.com/NCDatasets/lxvtD/0.10.3/issues/#Defining-the-attributes-_FillValue,-add_offset,-scale_factor,-units-and-calendar)
+        for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue is prescribed, not necessarily the same as in template
             push!(var_attr, att => ds[l].attrib[att])
         end
         push!(attributes, l => var_attr)
@@ -109,13 +109,11 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
         else
             attributes[field]["grid_mapping"] = m
         end
-        # add an attribute for the nodata value
-        if !haskey(attributes[field], "_FillValue") && field == "surface"
-            push!(attributes[field], "_FillValue" => eltype(data)(no_data_value))
-        elseif field == "surface"
-            attributes[field]["_FillValue"] = eltype(data)(no_data_value)
+        if field == "mask"
+            defVar(ds, field, data, ("x", "y"), attrib = attributes[field])
+        else
+            defVar(ds, field, data, ("x", "y"), attrib = attributes[field], fillvalue = no_data_value)
         end
-        defVar(ds, field, data, ("x", "y"), attrib = attributes[field])
     end
     defVar(ds, m, Char, (), attrib = crs.attrib)
     defVar(ds, "x", tx[:], ("x",), attrib = tx.attrib)
@@ -138,21 +136,17 @@ function mask_downsamle(bedmachine_fullres, templ, r)
     y_src    = ncread(bedmachine_fullres, "y")
     x_dst    = ncread(templ, "x")
     y_dst    = ncread(templ, "y")
-    bedm_dst = zeros(length(x_dst), length(y_dst))
-    # nx, ny = size(bedm_src)
+    bedm_dst = zeros(Int8, length(x_dst), length(y_dst))
     @showprogress for iy in axes(bedm_dst, 2)
         for ix in axes(bedm_dst, 1)
             ix_src = findall(abs.(x_dst[ix] .- x_src) .< r)
             iy_src = findall(abs.(y_dst[iy] .- y_src) .< r)
             if !any(isempty.([ix_src, iy_src]))
-                # println("$ix, $iy")
                 pts_in_range = bedm_src[ix_src, iy_src]
                 if sum(pts_in_range .== 0) < 0.5*length(pts_in_range)
                     pts_in_range[pts_in_range .== 0] .= 10
                 end
                 bedm_dst[ix,iy] = minimum(pts_in_range)
-            else
-                bedm_dst[ix,iy] = 0
             end
         end
     end
@@ -181,13 +175,17 @@ function create_bedmachine_grid(gr, spatial_template_file)
     println("Using gdalwarp to project bedmachine on model grid..")
     layernames = ["mask", "geoid", "bed", "surface", "thickness"]
     fieldvals  = Matrix[]
+    attr_template = NCDataset(bedmachine_original)
     for fn in layernames
-        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn; dstnodata=string(Float32(no_data_value)), gr)[:,end:-1:1]
+        if fn == "mask"
+            new = mask_downsamle(bedmachine_original, spatial_template_file, gr)
+        else
+            new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value))[:,end:-1:1]
+        end
         push!(fieldvals, new)  # flip y-axis due to behaviour of ArchGDAL
     end
 
     # save as netcdf
-    attr_template = NCDataset(bedmachine_original)
     attributes = get_attr(attr_template, layernames)
     save_netcdf(dest_file, spatial_template_file, fieldvals, layernames, attributes)
     return dest_file
@@ -242,7 +240,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
     get_rm_file(gr)   = aerodem_path * "rm_g$(gr).nc"
     aerodem_g150_file = get_aero_file(150)
     aerodem_gr_file   = get_aero_file(gr)
-    rm_g150_file      = get_rm_file(150)
+    # rm_g150_file      = get_rm_file(150)
     # rm_gr_file        = get_rm_file(gr)
 
     dstnodata        = string(Float32(no_data_value))
@@ -296,7 +294,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
                                                           "units"         => "m")
                             )
         save_netcdf(aerodem_g150_file, sample_path, [aero_rm_filt[:,end:-1:1]], [layername], attributes)
-        save_netcdf(rm_g150_file, sample_path, [Float32.(rel_mask[:,end:-1:1])], ["reliability mask"], Dict("reliability mask" => Dict()))
+        # save_netcdf(rm_g150_file, sample_path, [Float32.(rel_mask[:,end:-1:1])], ["reliability mask"], Dict("reliability mask" => Dict{String, Any}()))
     end
 
     # gdalwarp to desired grid
@@ -325,10 +323,10 @@ function create_imbie_mask(;gr, shp_file, sample_path)
     fname_ones = "temp1.nc"
     fname_mask = "temp2.nc"
     layername   = "mask"
-    attributes = Dict(layername => Dict())
+    attributes = Dict(layername => Dict{String, Any}())
     save_netcdf(fname_ones, sample_path, [ones_m], [layername], attributes)
-    gdalwarp(fname_ones; gr=150, cut_shp=shp_file, dest=fname_mask)
-    gdalwarp(fname_mask; gr, dest=imbie_mask_file)
+    gdalwarp(fname_ones; gr=150, cut_shp=shp_file, dest=fname_mask, dstnodata=string(no_data_value))
+    gdalwarp(fname_mask; gr, dest=imbie_mask_file, srcnodata=string(no_data_value), dstnodata=string(no_data_value))
     rm(fname_ones, force=true)
     rm(fname_mask, force=true)
     return imbie_mask_file
@@ -376,7 +374,7 @@ function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_fil
     end
 
     # save as netcdf file
-    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))
+    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict{String, Any}()))
     return
 end
 
@@ -508,7 +506,7 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     msum    = sum(m0[ti1:tin,:,:], dims=1)[1,:,:]
     msum[ismissing.(msum)] .= no_data_value
     tempname = "temp.nc"
-    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict()))
+    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict{String, Any}()))
 
     # gdalwarp to right grid
     dest = get_filename(actual_start, actual_end)

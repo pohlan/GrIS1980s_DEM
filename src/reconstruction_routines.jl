@@ -57,6 +57,7 @@ function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String
     dem_rec[I_no_ocean] = x_rec
     # smoothing
     dem_rec = mapwindow(median, dem_rec, (5,5))
+    dem_rec[dem_rec .== 0] .= no_data_value
 
     # save as nc file
     mkpath("output/")
@@ -84,7 +85,7 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     surfaceDEM = ncread(rec_file, "surface")
     bedDEM     = ncread(bedmachine_file, "bed")
     bedm_mask  = ncread(bedmachine_file, "mask")
-    ice_mask   = (surfaceDEM .!= 0.0) .&& (surfaceDEM .> bedDEM)
+    ice_mask   = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
 
     # retrieve grid size
     x          = ncread(rec_file, "x")
@@ -104,11 +105,11 @@ function create_reconstructed_bedmachine(rec_file, bedmachine_file)
     new_mask[floating_mask]   .= 3
 
     # make sure DEM is zero everywhere on the ocean and equal to bed DEM on bedrock
-    surfaceDEM[new_mask .== 0] .= 0.0
+    surfaceDEM[new_mask .== 0] .= no_data_value
     surfaceDEM[new_mask .== 1] .= bedDEM[new_mask .== 1]
 
     # calculate ice thickness
-    h_ice = zeros(size(surfaceDEM))
+    h_ice = zeros(size(surfaceDEM)) .+ no_data_value
     h_ice[ice_mask] .= surfaceDEM[ice_mask] - bedDEM[ice_mask]
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
