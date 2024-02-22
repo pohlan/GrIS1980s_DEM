@@ -342,7 +342,7 @@ function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_fil
 
     # transform atm coordinates
     coords = [[pt_data.lon[i], pt_data.lat[i]] for i in eachindex(pt_data.lat)]
-    coords_proj = AG.reproject(coords, ProjString("+proj=longlat +datum=WGS84 +no_defs"), EPSG(3413))  # hard-coded source and target coordinate systems
+    coords_proj = AG.reproject(coords, GFT.ProjString("+proj=longlat +datum=WGS84 +no_defs"), GFT.EPSG(3413))  # hard-coded source and target coordinate systems
     x_proj = first.(coords_proj)
     y_proj = last.(coords_proj)
 
