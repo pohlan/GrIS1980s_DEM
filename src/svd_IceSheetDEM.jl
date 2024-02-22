@@ -4,8 +4,9 @@ module svd_IceSheetDEM
 using ArgParse
 
 import ArchGDAL as AG
+import GeoFormatTypes as GFT
 
-using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
+using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, ZipFile
 using Downloads, Cascadia, Gumbo, HTTP
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
