@@ -73,7 +73,7 @@ function prepare_model(model_files, imbie_path, bedm_path, F, use_arpack)
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, I_no_ocean, Data_mean
+    return UΣ, I_no_ocean, Data_mean, Σ
 end
 
 function prepare_obs(obs_file, I_no_ocean, Data_mean)
@@ -91,15 +91,15 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     U_A, Σ_A, V_A = svd(A)
     D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
     v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
-    return v_rec
+    x_rec         = UΣ[:,1:r]*v_rec
+    return x_rec
 end
 
 function do_reconstruction(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
-    UΣ, I_no_ocean, Data_mean = prepare_model(model_files, imbie_mask, bedm_file, F, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs             = prepare_obs(obs_file, I_no_ocean, Data_mean)
-    r                         = min(size(UΣ,2), r)                                                    # truncation of SVD cannot be higher than the second dimension of U*Σ
-    v_rec                     = solve_optim(UΣ, I_obs, r, λ, x_data)                                  # derive analytical solution of regularized least squares
-    x_rec                     = UΣ*v_rec
+    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, imbie_mask, bedm_file, F, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs                = prepare_obs(obs_file, I_no_ocean, Data_mean)
+    r                            = min(size(UΣ,2), r)                                                    # truncation of SVD cannot be higher than the second dimension of U*Σ
+    x_rec                        = solve_optim(UΣ, I_obs, r, λ, x_data)                                  # derive analytical solution of regularized least squares
 
     # calculate error and print
     nx, ny                  = values(NCDataset(obs_file).dim)

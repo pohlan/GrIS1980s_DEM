@@ -9,7 +9,7 @@ import GeoFormatTypes as GFT
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, ZipFile
 using Downloads, Cascadia, Gumbo, HTTP
 using Printf, ProgressMeter
-using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
+using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, Distances, ParallelRandomFields.grf2D_CUDA
 using Arpack, LinearAlgebra
 using DataStructures: OrderedDict
 import Plots, StatsPlots
@@ -55,5 +55,6 @@ end
 include("gdal_helpers.jl")
 include("reconstruction_routines.jl")
 include("statistics_helpers.jl")
+include("model_selection.jl")
 
 end # module svd_IceSheetDEM
