@@ -1,11 +1,10 @@
 using svd_IceSheetDEM, Glob, NCDatasets, JLD2
 import Plots
 
-use_arpack = false
-
 parsed_args = parse_commandline(ARGS)
 model_files = parsed_args["training_data"]
 shp_file    = parsed_args["shp_file"]
+use_arpack  = parsed_args["use_arpack"]
 
 template_file = model_files[1]
 x = NCDataset(template_file)["x"]
