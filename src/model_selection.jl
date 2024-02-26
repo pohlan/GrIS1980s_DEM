@@ -1,4 +1,4 @@
-function make_training_gaps(x, y, r_gap, n_gaps, I_no_ocean, I_obs)
+function loocv_gaps(x, y, r_gap, n_gaps, I_no_ocean, I_obs)
     get_x(i,nx) = i % nx == 0 ? nx : i % nx
     get_y(i,nx) = cld(i,nx)
     xobs = x[get_x.(I_no_ocean[I_obs],length(x))]
@@ -17,6 +17,22 @@ function make_training_gaps(x, y, r_gap, n_gaps, I_no_ocean, I_obs)
         @assert length(i_gap) + length(i_train) == length(I_obs)
         push!(i_train_sets, i_train)
         push!(i_test_sets, i_gap)
+    end
+    return i_train_sets, i_test_sets
+end
+
+function k_fold_gaps(I_obs, k)
+    n = length(I_obs)
+    n_per_gap = cld(n, k)
+    i_train_sets = []
+    i_test_sets  = []
+    for i0 in 1:n_per_gap:n
+        i_test = i0:min(i0+n_per_gap-1, n)
+        i_train = Vector(1:length(I_obs))
+        deleteat!(i_train, i_test)
+        @assert length(i_test) + length(i_train) == length(I_obs)
+        push!(i_train_sets, i_train)
+        push!(i_test_sets, i_test)
     end
     return i_train_sets, i_test_sets
 end
