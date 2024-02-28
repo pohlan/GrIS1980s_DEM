@@ -22,8 +22,12 @@ mkpath(fig_dir)
 destdir = "output/model_selection/"
 mkpath(destdir)
 
+# give λ and r values to loop through
+λs        = [1e4, 1e5, 1e6, 5e6, 1e7, 5e7, 1e8, 5e8, 1e9, 5e9]
+rs        = [50, 100, 150, 200, 250, 300, 350]
+
 # load datasets, take full SVD (to be truncated with different rs later)
-UΣ, I_no_ocean, Data_mean, Σ = svd_IceSheetDEM.prepare_model(model_files, imbie_mask, bedm_file, F, use_arpack)
+UΣ, I_no_ocean, Data_mean, Σ = svd_IceSheetDEM.prepare_model(model_files, imbie_mask, bedm_file, maximum(rs), F, use_arpack)
 x_data, I_obs                = svd_IceSheetDEM.prepare_obs(obs_file, I_no_ocean, Data_mean)
 f_eval(λ, r, i_train       ) = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
 
@@ -32,8 +36,6 @@ k = 10
 i_train_sets, i_test_sets = svd_IceSheetDEM.k_fold_gaps(I_obs, k)
 
 # loop through λ and r values
-λs        = [1e4, 1e5, 1e6, 5e6, 1e7, 5e7, 1e8, 5e8, 1e9, 5e9]
-rs        = [50, 100, 150, 200, 250, 300, 350]
 dict      = svd_IceSheetDEM.sample_param_space(f_eval, λs, rs, x_data, I_obs, i_train_sets, i_test_sets)
 dict["σ"] = Σ
 dest      = destdir*"dict_$(k)-fold_cv.jld2"

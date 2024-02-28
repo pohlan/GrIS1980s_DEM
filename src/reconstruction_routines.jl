@@ -51,7 +51,7 @@ function read_model_data(;F::DataType=Float32,       # Float32 or Float64
     return Data
 end
 
-function prepare_model(model_files, imbie_path, bedm_path, F, use_arpack)
+function prepare_model(model_files, imbie_path, bedm_path, r, F, use_arpack)
     # get I_no_ocean
     imbie_mask = ncread(imbie_path, "Band1")
     grimp_mask = ncread(bedm_path, "mask")
@@ -64,9 +64,10 @@ function prepare_model(model_files, imbie_path, bedm_path, F, use_arpack)
     Data_ice  .= Data_ice .- Data_mean
 
     # compute SVD
-    r_max = size(Data_ice, 2)-1
     if use_arpack
-        U, Σ, V = svds(Data_ice, nsv=r_max)
+        nsv = min(r, size(Data_ice, 2)-1) # actual truncation is later, but takes too long if r is unnecessarily high here
+        B, _ = svds(Data_ice; nsv)
+        U, Σ, V = B
     else
         U, Σ, V = svd(Data_ice)
     end
@@ -96,7 +97,7 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
 end
 
 function do_reconstruction(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
-    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, imbie_mask, bedm_file, F, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, imbie_mask, bedm_file, r, F, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs                = prepare_obs(obs_file, I_no_ocean, Data_mean)
     r                            = min(size(UΣ,2), r)                                                    # truncation of SVD cannot be higher than the second dimension of U*Σ
     x_rec                        = solve_optim(UΣ, I_obs, r, λ, x_data)                                  # derive analytical solution of regularized least squares
