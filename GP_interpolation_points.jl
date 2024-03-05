@@ -1,17 +1,22 @@
 using svd_IceSheetDEM
-using NCDatasets, Interpolations, DataFrames, CSV, ProgressMeter, GeoStats, LsqFit, Distributed
-addprocs(3)
-@everywhere using StatsBase
+using NCDatasets, Interpolations, DataFrames, CSV, ProgressMeter, GeoStats, LsqFit, ParallelStencil
+using StatsBase
 import Plots
 
-gr = 600
+@init_parallel_stencil(Threads, Float64, 1)
+
+gr = 1200
+
+get_ix(i,nx) = i % nx == 0 ? nx : i % nx
+get_iy(i,nx) = cld(i,nx)
+
 
 # masks
-ds_mask = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr).nc")["Band1"]
-bedm_mask = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["mask"]
+ds_mask = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr).nc")["Band1"][:]
+bedm_mask = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["mask"][:]
 
 # GrIMP
-grimp = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["surface"]
+grimp = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["surface"][:,:]
 
 # aero
 ds_aero = NCDataset("data/grimp_minus_aero_g$(gr).nc")
@@ -19,223 +24,210 @@ dh_aero_all = ds_aero["dh"][:,:,1]
 dh_aero_all = dh_aero_all[:,end:-1:1]
 x  = sort(ds_aero["x"])
 y  = sort(ds_aero["y"])
-
-x_i    = 1:length(x)
-y_i    = 1:length(y)
-# x_i    = 750:1000
-# y_i    = 150:1300
-nx, ny = length(x_i), length(y_i)
-idx_aero = findall(.!ismissing.(dh_aero_all[x_i,y_i]) .&& .!ismissing.(ds_mask[x_i,y_i]) .&& (bedm_mask[x_i,y_i] .!= 1))
-
-df_aero_box = DataFrame(:x       => Float64.(repeat(x[x_i], 1, ny)[idx_aero]),
-                        :y       => Float64.(repeat(y[y_i]', nx, 1)[idx_aero]),
-                        :h_grimp => Float64.(grimp[x_i,y_i][idx_aero]),
-                        :dh      => Float64.(dh_aero_all[x_i,y_i][idx_aero]),
+idx_aero = findall(.!ismissing.(vec(dh_aero_all)) .&& .!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)))
+df_aero = DataFrame(:x       => x[get_ix.(idx_aero, length(x))],
+                        :y       => y[get_iy.(idx_aero, length(x))],
+                        :h_grimp => grimp[idx_aero],
+                        :dh      => dh_aero_all[idx_aero],
                         :idx     => idx_aero)
+# ii = sort(unique(rand(1:length(idx_aero), fld(size(df_aero,1), 2))))
+# keepat!(df_aero, ii)
+# remove outliers              # if outliers are removed the interpolated points will have significant differences to original aerodem data
+# aero_to_delete = findall(abs.(df_aero.dh) .> 7 .* mad(df_aero.dh)) # .|| df_aero.h_grimp .< 50)
+# deleteat!(df_aero, aero_to_delete)
 
 # atm
 df_atm = CSV.read("atm_grimp_interp_pts.csv", DataFrame)
-
-# take averages
-# df_atm_avg = DataFrame(names(df_atm) .=> [Float64[] for t in eachcol(df_atm)])
-# nd = 600
-# iblob = 1:nd:size(df_atm,1)
-# for i in iblob
-#     iend = min(i+500,size(df_atm,1))
-#     push!(df_atm_avg,mean.(eachcol(df_atm[i:iend,:])))
-# end
-
-
-x_min, x_max = extrema(x[x_i])
-y_min, y_max = extrema(y[y_i])
 mindist = 5e4 # minimum distance between aerodem and atm points
-function is_in_box(x, y)::Bool
-    dist_to_aero = minimum(sqrt.((x.-df_aero_box.x).^2 .+ (y.-df_aero_box.y).^2))
-    dist_to_aero = minimum(pairwise(Distances.euclidean, [x y], [df_aero_box.x df_aero_box.y], dims=1)[:])
-    # is_in_x = x_min < x < x_max
-    # is_in_y = y_min < y < y_max
+function choose_atm(x, y)::Bool
+    dist_to_aero = maximum(pairwise(Distances.euclidean, [x y], [df_aero.x df_aero.y], dims=1)[:])
     is_above_mindist = dist_to_aero > mindist
     return is_above_mindist
 end
-id = unique(sort(rand(1:size(df_atm,1), 20000)))
 println("selecting flightline values...")
-df_atm_box = filter([:x,:y] => is_in_box, df_atm[id,:])
-
+id = unique(sort(rand(1:size(df_atm,1), 100000)))
+keepat!(df_atm, id)
+filter!([:x,:y] => choose_atm, df_atm)
 # remove outliers
-atm_to_delete = findall(abs.(df_atm_box.dh) .> 3 .* mad(df_atm_box.dh))
-deleteat!(df_atm_box, atm_to_delete)
+atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
+deleteat!(df_atm, atm_to_delete)
 
-aero_to_delete = findall(abs.(df_aero_box.dh) .> 3 .* mad(df_aero_box.dh) .|| df_aero_box.h_grimp .< 50)
-deleteat!(df_aero_box, aero_to_delete)
+# merge aerodem and atm data
+df_all = vcat(df_aero, df_atm, cols=:intersect)
 
-# plot again without outliers
-dh_plot = Array{Union{Float32,Missing}}(missing, (nx,ny))
-dh_plot[df_aero_box.idx] = df_aero_box.dh
-Plots.heatmap(x[x_i],y[y_i], dh_plot', cmap=:bwr, clims=(-10,10))
-Plots.scatter!(df_atm_box.x, df_atm_box.y, marker_z=df_atm_box.dh, color=:bwr, markersize=2, markerstrokewidth=0, legend=false)
+# plot
+dh_plot = Array{Union{Float32,Missing}}(missing, (length(x),length(y)))
+dh_plot[df_aero.idx] = df_aero.dh
+Plots.heatmap(x,y, dh_plot', cmap=:bwr, clims=(-10,10))
+Plots.scatter!(df_atm.x, df_atm.y, marker_z=df_atm.dh, color=:bwr, markersize=0.5, markerstrokewidth=0, legend=false)
 Plots.savefig("dplot.png")
 
-df_all = vcat(df_aero_box, df_atm_box, cols=:intersect)
-
-# remove mean trend as a fct of elevation
-dh_binned, ELV_bin_centers = svd_IceSheetDEM.bin_equal_sample_size(df_all.h_grimp, df_all.dh, 16000)  # 16000
+# mean trend as a fct of elevation
+dh_binned, ELV_bin_centers = svd_IceSheetDEM.bin_equal_sample_size(df_all.h_grimp, df_all.dh, 12000)  # 16000
 itp_bias = linear_interpolation(ELV_bin_centers, mean.(dh_binned),  extrapolation_bc = Interpolations.Flat())
 Plots.scatter(ELV_bin_centers, mean.(dh_binned))
 ELV_plot = minimum(df_all.h_grimp):10:maximum(df_all.h_grimp)
 Plots.plot!(ELV_plot, itp_bias(ELV_plot), label="linear interpolation", legend=:bottomright)
 Plots.savefig("c1plot.png")
 
-# standardize
+# standard deviation as a fct of elevation
 itp_std = linear_interpolation(ELV_bin_centers, std.(dh_binned),  extrapolation_bc = Interpolations.Flat())
 Plots.scatter(ELV_bin_centers, std.(dh_binned))
 ELV_plot = minimum(df_all.h_grimp):10:maximum(df_all.h_grimp)
-Plots.plot!(ELV_plot, itp_std(ELV_plot), label="linear interpolation", legend=:bottomright)
+Plots.plot!(ELV_plot, itp_std(ELV_plot), label="linear interpolation", legend=:topright)
 Plots.savefig("c2plot.png")
 
+# standardize
 df_all.dh_detrend = (df_all.dh .- itp_bias(df_all.h_grimp)) ./ itp_std(df_all.h_grimp)
+Plots.density(df_all.dh_detrend, label="Standardized observations")
+Plots.density!((df_all.dh .- mean(df_all.dh)) ./ std(df_all.dh), label="Standardized without binning")
+Plots.plot!(Normal(), label="Normal distribution")
+Plots.savefig("eplot.png")
 
-# table = (; Z=df_all.dh_detrend)
-table = (; Z=df_all.dh_detrend)
-# coords = [(df_all.x[i], df_all.y[i]) for i in 1:length(df_all.x)]
-coords = [(df_all.x[i], df_all.y[i]) for i in 1:length(df_all.x)]
-data = georef(table,coords)
-
+# variogram
 println("Variogram...")
-gamma = EmpiricalVariogram(data, :Z; nlags=400,  maxlag=6e5)
-
-############################################
-# function SEIso_kernel(x, params)
-#     γ1 = params[1]^2 .* (1 .- exp.(-x.^2 ./ (2*params[2]^2)))
-#     # γ2 = params[3]^2 .* (1 .- exp.(-x.^2 ./ (2*params[4]^2)))
-#     # return γ1 .+γ2
+table_all  = (; Z=df_all.dh_detrend)
+coords_all = [(df_all.x[i], df_all.y[i]) for i in 1:length(df_all.x)]
+data       = georef(table_all,coords_all)
+gamma      = EmpiricalVariogram(data, :Z; nlags=400,  maxlag=2e5)
+# fit a covariance function
+# function custom_var(x, params)
+#     γ1 = ExponentialVariogram(range=params[1], sill=params[2], nugget=params[3])      # forcing nugget to be zero, not the case with the built-in fit function of GeoStats
+#     # γ2 = ExponentialVariogram(range=params[3], sill=params[4], nugget=0.0)
+#     f = γ1.(x) #.+ γ2.(x)
+#     return f
 # end
-# function RQIso_kernel(x, params)
-#     ℓ, σ, α = params
-#     γ1 = σ^2 * (-x.^2 ./ (2*α*ℓ^2)).^(-α)
-#     return γ1
-# end
-# function Mat12Iso_kernel(x, params)
-#     ℓ, σ = params
-#     cov = σ^2 .* exp.(-x./ℓ)
-#     γ1 = σ^2 .- cov
-#     return γ1
-# end
-# function Mat52Iso_kernel(x, params)
-#     ℓ, σ = params
-#     cov = σ^2 * (1 .+ √5 .*x./ℓ+5*x.^2/(3ℓ^2)) .* exp.(-√5 .*x./ℓ)
-#     γ1 = σ^2 .- cov
-#     return γ1
-# end
-
-# # ff = LsqFit.curve_fit(custom_kernel, gamma.abscissa, gamma.ordinate, [5, 2e4]) #, 5, 2e4]);
-# Plots.scatter(gamma.abscissa, gamma.ordinate, xscale=:log10)
-# Plots.plot!(gamma.abscissa, SEIso_kernel(gamma.abscissa, [1.0, 1e5]), label="SEIso")
-# # Plots.plot!(gamma.abscissa, RQIso_kernel(gamma.abscissa, [1e4, 1.0, -0.5]))
-# Plots.plot!(gamma.abscissa, Mat52Iso_kernel(gamma.abscissa, [4e4, 1.0]), label="Matern52")
-# Plots.plot!(gamma.abscissa, Mat12Iso_kernel(gamma.abscissa, [3e4, 1.1]), label="Matern12")
-##############################################
-
-
-
-
-# GeoStats.interpolate
-
-##################################
-
-
-function custom_var(x, params)
-    γ1 = ExponentialVariogram(range=params[1], sill=params[2], nugget=0.0)
-    # γ2 = ExponentialVariogram(range=params[3], sill=params[4], nugget=0.0)
-    f = γ1.(x) #.+ γ2.(x)
-    return f
-end
-ff = LsqFit.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [5e4, 1.0]);
-
+# ff = LsqFit.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [5e4, 1.0, 0.2]);
 # julia> ff.param
 # 2-element Vector{Float64}:
-#  59344.64967915991
-#      0.94160717609134
-varg = ExponentialVariogram(range=ff.param[1], sill=ff.param[2]) # +
-    #    ExponentialVariogram(range=ff.param[3], sill=ff.param[4])
-Plots.scatter(gamma.abscissa, gamma.ordinate)
-Plots.plot!(gamma.abscissa,varg.(gamma.abscissa), xscale=:log)
+#  50280.021902654196
+#      0.94295155705642
+varg = ExponentialVariogram(range=ff.param[1], sill=ff.param[2], nugget=ff.param[3])
+varg_gs_exp = fit(ExponentialVariogram, gamma)
+varg_gs_any = fit(Variogram, gamma)
+Plots.scatter(gamma.abscissa, gamma.ordinate, label="observations", xscale=:log10)
+# Plots.plot!(gamma.abscissa,varg.(gamma.abscissa), label="LsqFit fit")
+Plots.plot!(gamma.abscissa,varg_gs_exp.(gamma.abscissa), label="GeoStats fit exponential")
+Plots.plot!(gamma.abscissa,varg_gs_any.(gamma.abscissa), label="GeoStats fit circular")
+Plots.savefig("vplot.png")
+
+# varg = ExponentialVariogram(range=50280.021902654196, sill=0.94295155705642, nugget=0.05)   # nugget is uncertainty of observations
+varg = varg_gs_any
+
+@parallel_indices (ibox) function interpolate_subsets!(mb, dh_boxes, x_boxes, y_boxes, x_points, y_points, gr)
+    if 1 <= ibox <= length(x_boxes)
+        # extract data points in sub-area
+        x_min, x_max = extrema(x_points[ibox])
+        y_min, y_max = extrema(y_points[ibox])
+
+        # prepare data and grid for interpolation
+        table_box  = (; Z=Float32.(dh_boxes[ibox]))
+        coords_box = [(xi,yi) for (xi,yi) in zip(x_boxes[ibox],  y_boxes[ibox])]
+        geotable   = georef(table_box,coords_box)
+        grid       = CartesianGrid((x_min-gr/2, y_min-gr/2), (x_max+gr/2, y_max+gr/2), (Float64(gr), Float64(gr)))
+        model      = Kriging(varg_gs_any, 0.0)
+
+        # do interpolation
+        interp = geotable |> Interpolate(grid, model) #, minneighbors=300, maxneighbors=500)
+        mb[ibox,:,:] = reshape(interp.Z, size(grid))
+    end
+    return
+end
+
+# x_i1 = 110:450
+# y_i1 = 1550:1800
+# # 3.6 hours
+
+# mb_1 = interpolate_subset(df_all, x_i1, y_i1)
+
+# x_i2 = 170:510
+# y_i2 = 1550:1800
+
+# mb_2 = interpolate_subset(df_all, x_i2, y_i2)
+
+x_is = [110:280, 170:340, 230:400, 290:460, 350:520, 410:580, 470:640, 530:700]
+y_is = [1550:1670, 1550:1670, 1550:1670, 1550:1670, 1550:1670, 1550:1670, 1550:1670, 1550:1670]
+
+x_boxes = []
+y_boxes = []
+x_points = []
+y_points = []
+dh_boxes = []
+for (ix, iy) in zip(x_is, y_is)
+    x_min, x_max = extrema(x[ix])
+    y_min, y_max = extrema(y[iy])
+    function is_in_box(x, y)::Bool
+        is_in_x = x_min < x < x_max
+        is_in_y = y_min < y < y_max
+        return is_in_x && is_in_y
+    end
+    df_box = filter([:x,:y] => is_in_box, df_all)
+    # df_aero_box = filter([:x,:y] => is_in_box, df_aero)
+    # df_aero_box.dh_detrend = (df_aero_box.dh .- itp_bias(df_aero_box.h_grimp)) ./ itp_std(df_aero_box.h_grimp)
+    # iix = [findfirst(i .== x[x_i]) for i in df_aero_box.x]
+    # iiy = [findfirst(i .== y[y_i]) for i in df_aero_box.y]
+    push!(x_boxes, df_box.x)
+    push!(y_boxes, df_box.y)
+    push!(dh_boxes, df_box.dh_detrend)
+    push!(x_points, x[ix])
+    push!(y_points, y[iy])
+end
 
 
-idx = findall(.!ismissing.(ds_mask[x_i,y_i]) .&& (bedm_mask[x_i,y_i] .!= 1))
 
-df_idx = DataFrame(:x       => Float64.(repeat(x[x_i], 1, ny)[idx]),
-                   :y       => Float64.(repeat(y[y_i]', nx, 1)[idx]),
-                   :h_grimp => Float64.(grimp[x_i,y_i][idx]),
-                   :idx     => idx)
-
-# xi_predict = 700:1000; xip_min, xip_max = extrema(x[xi_predict])
-# yi_predict = 250:600; yip_min, yip_max = extrema(y[yi_predict])
-# ipred = findall(xip_min.<df_all.x .< xip_max .&& yip_min.<df_all.y .< yip_max)
-# table_pred = (; Z=df_all.dh_detrend[ipred])
-
-# # x0, xend = extrema(x[])
-# # y0, yend = extrema(y[])
-# grid = CartesianGrid((xip_min,yip_min), (xip_max,yip_max), dims=(length(xi_predict),length(yi_predict)))
-
-table    = (; Z=Float32.(df_all.dh_detrend))
-coords   = [(xi,yi) for (xi,yi) in zip(df_all.x, df_all.y)]
-geotable = georef(table,coords)
-grid     = CartesianGrid((x[1]-gr/2, y[1]-gr/2), (x[end]+gr/2, y[end]+gr/2), dims=(length(x), length(y)))
-
-# solver = Kriging(:Z => (variogram=varg,))
-# problem = EstimationProblem(data_pred, grid, :Z)
-# solution = solve(problem, solver)
-# mb = reshape(solution.Z, length(xi_predict),length(yi_predict))
-
-model = Kriging(varg)
-println("Kriging...")
+mb   = @zeros(length(x_boxes), length(x_is[1]), length(y_is[1]))
 tic = Base.time()
-interp = geotable |> Interpolate(grid, model)
+@parallel interpolate_subsets!(mb, dh_boxes, x_boxes, y_boxes, x_points, y_points, gr)
 toc = Base.time() - tic
-# tt = toc / 60
-println(toc)
-mb = reshape(interp.Z, length(xi_predict),length(yi_predict))
+tt = toc / 60
+println("Interpolation took $tt minutes.")
 
-# Plots.heatmap(x[xi_predict], y[yi_predict], mb', cmap=:bwr, clims=(-10,10))
 
-h_predict = vec(grimp[xi_predict, yi_predict]) .- (vec(mb).*itp_std(vec(grimp[xi_predict, yi_predict])) .+ itp_bias(vec(grimp[xi_predict, yi_predict])))
-Plots.heatmap(x[xi_predict], y[yi_predict], reshape(h_predict, nx,ny)')
-Plots.savefig("h_predict.png")
 
-h_aero = grimp[xi_predict,yi_predict] .- dh_aero_all[xi_predict,yi_predict]
-dd = reshape(h_predict,nx,ny) .- h_aero
-d = Array{Union{Float32,Missing}}(missing, (nx,ny))
-d[idx_aero] = dd[idx_aero]
-Plots.heatmap(x[xi_predict], y[yi_predict], d', cmap=:bwr, clims=(-15,15))
+
+
+## Plotting stuff
+
+
+# Plots.heatmap(x[x_i], y[y_i], mb', cmap=:bwr, clims=(-5,5), aspect_ratio=1)
+
+
+overlap_1 = mb_1[61:end,:]
+overlap_2 = mb_2[1:end-60,:]
+Plots.heatmap(x[x_i1[61:end]], y[y_i1],overlap_1' .- overlap_2', cmap=:bwr, clims=(-0.5,0.5))
+Plots.savefig("diff_overlap.png")
+
+# geotable, grid, model, xis, yis, grimp, itp_bias, itp_std, idx_aero = prepare(gr)
+# nx, ny = length(xis), length(yis)
+# mb = do_kriging(geotable, grid, model, nx,ny)
+
+h_predict = grimp[x_i,y_i] .- (mb.*itp_std.(grimp[x_i,y_i]) .+ itp_bias.(grimp[x_i,y_i]))
+Plots.heatmap(x[x_i], y[y_i], h_predict', aspect_ratio=1, clims=(0,1600))
+# Plots.savefig("h_predict.png")
+
+h_aero = grimp .- dh_aero_all
+idx_box = findall(.!ismissing.(h_aero[x_i,y_i]))
+
+
+dd = Array{Union{Float32,Missing}}(missing, (length(x_i),length(y_i)))
+dd[idx_box_dhdata] = h_predict[idx_box_dhdata] .- h_aero[x_i,y_i][idx_box_dhdata]
+Plots.heatmap(x[x_i], y[y_i], dd', aspect_ratio=1, cmap=:bwr, clims=(-60,60))
 Plots.savefig("diff_to_aero.png")
 
+Plots.heatmap(x[x_i],y[y_i],h_aero[x_i,y_i]', aspect_ratio=1, clims=(0,1500))
+hh = Array{Union{Float32,Missing}}(missing, (length(x_i),length(y_i)))
+hh[idx_box] = h_predict[idx_box]
+Plots.heatmap(x[x_i],y[y_i],hh', aspect_ratio=1, clims=(0,1500))
 
-# GP
 
-#########################
+# x_min, x_max = extrema(x[x_i])
+# y_min, y_max = extrema(y[y_i])
+# df_aero_box = filter([:x,:y] => is_in_box, df_aero)
+db = Array{Union{Float32,Missing}}(missing, (length(x),length(y)))
+db[df_aero_box.idx] .= df_aero_box.dh
+Plots.heatmap(x[x_i], y[y_i],reshape(db,length(x),length(y))[x_i,y_i]', cmap=:bwr, clims=(-5,5), aspect_ratio=1)
+idx_box_dhdata = findall(.!ismissing.(reshape(db,length(x),length(y))[x_i,y_i]))
 
-# m = MeanZero()
-# kern  = Mat12Iso(log(3e4), log(1.1)) #+
-#         # Mat12Iso(log(3e4), log(1.1))
-
-# println("GP")
-# gp = GP([df_all.x df_all.y]',df_all.dh_detrend,m,kern, log(1.0))
-# println("optimize...")
-# optimize!(gp)
-
-# n_pts = 3000
-# idx_u = rand(1:length(x_all), n_pts)
-# gp = GaussianProcesses.SoR([x_all y_all]', [x_all[idx_u] y_all[idx_u]]', dh_detrend, m, kern, log(200));
-# optimize!(gp_SOR)
-
-# # predict
-# println("predict...")
-# idx_predict = findall(.!ismissing.(ds_mask[x_i,y_i]) .&& (bedm_mask[x_i,y_i] .!= 1) .&& .!ismissing.(grimp[x_i,y_i]))
-# x_predict   = repeat(x[x_i],  1, ny)[idx_predict]
-# y_predict   = repeat(y[y_i]', nx, 1)[idx_predict]
-# elv_predict =         grimp[x_i,y_i][idx_predict]
-# # s_predict   =   grimp_slope[x_i,y_i][idx_predict]
-# mus, sig    = predict_y(gp, [vec(x_predict) vec(y_predict)]') # vec(elv_predict) vec(s_predict)]')
-# dh_pred     =  Array{Union{eltype(dh_aero),Missing}}(missing, (nx,ny))
-# dh_pred[idx_predict] .= mus .+ itp(elv_predict)
-# Plots.heatmap(x[x_i], y[y_i], dh_pred', cmap=:bwr, clims=(-30,30)); Plots.savefig("bplot.png")
+mbpart = zeros(length(x_i),length(y_i))
+mbpart[idx_box_dhdata] .= mb[idx_box_dhdata]
+Plots.heatmap(x[x_i], y[y_i],mbpart', cmap=:bwr, clims=(-5,5), aspect_ratio=1)
