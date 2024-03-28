@@ -286,7 +286,11 @@ toc = Base.time() - tic
 tt = toc / 60
 println("Interpolation took $tt minutes.")
 
+# save mb in case the rest doesn't run
+save("output/krigoutput_mb_only.jld2", Dict("mb"=>mb))
+
 # stitch back together
+println("Stitch back together.")
 mb_full = zeros(Float32, length(outputs_ix)*step, length(outputs_iy)*step)
 ib = 1
 for iy in outputs_iy
@@ -299,7 +303,8 @@ for iy in outputs_iy
 end
 
 # save
-save("krigoutput.jld2", Dict("mb_full" => mb_full, "mb" => mb))
+println("Save mb and mb_full.")
+save("output/krigoutput_both.jld2", Dict("mb_full" => mb_full, "mb" => mb))
 
 
 
@@ -339,13 +344,13 @@ save("krigoutput.jld2", Dict("mb_full" => mb_full, "mb" => mb))
 
 
 ## destandardize
-# grimp_tg = copy(grimp)
-# grimp_tg[ismissing.(grimp_tg)] .= NaN
+grimp_tg = copy(grimp)
+grimp_tg[ismissing.(grimp_tg)] .= NaN
 # h_predict_all = zeros(length(x),length(y))
-# h_predict_all[outputs_ix[1],outputs_iy[1]] = grimp_tg[outputs_ix[1],outputs_iy[1]] .- (mb[1,:,:] .*std_dh_detrend.*itp_std.(grimp_tg[outputs_ix[1],outputs_iy[1]]) .+ itp_bias.(grimp_tg[outputs_ix[1],outputs_iy[1]]))
-# h_predict_all[h_predict_all .<= 0 .|| isnan.(h_predict_all)] .= no_data_value
-# svd_IceSheetDEM.save_netcdf("output/kriging_g1200.nc", "data/grimp/surface/grimp_geoid_corrected_g$(gr).nc", [h_predict_all], ["surface"], Dict("surface" => Dict{String, Any}()))
-# gdalwarp("output/kriging_g5000.nc"; gr=600, srcnodata="-9999", dstnodata="-9999", dest="output/kriging_g600_warped_from_5000.nc")
+h_predict_all = grimp_tg .- (mb_full .*std_dh_detrend.*itp_std.(grimp_tg) .+ itp_bias.(grimp_tg))
+h_predict_all[h_predict_all .<= 0 .|| isnan.(h_predict_all)] .= no_data_value
+svd_IceSheetDEM.save_netcdf("output/kriging_g$(gr).nc", "data/grimp/surface/grimp_geoid_corrected_g$(gr).nc", [h_predict_all], ["surface"], Dict("surface" => Dict{String, Any}()))
+gdalwarp("output/kriging_g$(gr).nc"; gr=600, srcnodata="-9999", dstnodata="-9999", dest="output/kriging_g600_warped_from_g$(gr).nc")
 
 
 
