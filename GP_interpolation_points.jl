@@ -83,8 +83,8 @@ id = sort(StatsBase.sample(1:size(df_atm,1), 100000, replace=false))  # without 
 keepat!(df_atm, id)
 filter!([:x,:y] => choose_atm, df_atm)
 # remove outliers --> do it after standardization
-# atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
-# deleteat!(df_atm, atm_to_delete)
+atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
+deleteat!(df_atm, atm_to_delete)
 # id2 = sort(StatsBase.sample(1:size(df_atm,1), cld(length(df_aero.dh),2), replace=false))
 # keepat!(df_atm, id2)
 
@@ -116,13 +116,18 @@ Plots.savefig("c2plot.png")
 # standardize
 df_all.dh_detrend = (df_all.dh .- itp_bias(df_all.h_grimp)) ./ itp_std(df_all.h_grimp)
 
-# remove outliers after standardizing
+# remove outliers after standardizing (only to be used for better fit of variogram, for kriging use all observations)
 all_to_delete = findall(abs.(df_all.dh_detrend) .> 3 .* mad(df_all.dh_detrend))
-deleteat!(df_all, all_to_delete)
-std_dh_detrend        = std(df_all.dh_detrend)
+df_varg = copy(df_all)
+deleteat!(df_varg, all_to_delete)
+std_dh_detrend      = std(df_all.dh_detrend)
 df_all.dh_detrend ./= std_dh_detrend
 
+std_dh_detrend_varg = std(df_varg.dh_detrend)
+df_varg.dh_detrend ./= std_dh_detrend_varg
+
 Plots.density(df_all.dh_detrend, label="Standardized observations", xlims=(-10,10))
+Plots.density!(df_varg.dh_detrend, label="Standardized observations for variogram", xlims=(-10,10))
 # Plots.density!((df_all.dh .- mean(df_all.dh)) ./ std(df_all.dh), label="Standardized without binning")
 Plots.plot!(Normal(), label="Normal distribution")
 Plots.savefig("eplot.png")
@@ -134,7 +139,6 @@ Plots.savefig("d2plot.png")
 
 # variogram
 println("Variogram...")
-df_varg = df_all
 table_all  = (; Z=df_varg.dh_detrend)
 coords_all = [(df_varg.x[i], df_varg.y[i]) for i in 1:length(df_varg.x)]
 data       = georef(table_all,coords_all)
@@ -168,7 +172,7 @@ Plots.savefig("vplot.png")
 # only take a random selection of point to speed up Kriging
 i_krig = sort(StatsBase.sample(1:length(df_all.dh_detrend), cld(length(df_all.x),3), replace=false))
 df_krig = df_all[i_krig,:]
-Plots.scatter(df_krig.x, df_krig.y, marker_z=df_krig.dh_detrend, color=:bwr, markersize=0.5, markerstrokewidth=0, cmap=:bwr, clims=(-3,3))
+Plots.scatter(df_krig.x, df_krig.y, marker_z=df_krig.dh_detrend, color=:bwr, markersize=1.0, markerstrokewidth=0, cmap=:bwr, clims=(-3,3))
 
 
 # table_box  = (; Z=Float32.(df_krig.dh_detrend))
