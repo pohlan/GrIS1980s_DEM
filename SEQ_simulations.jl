@@ -105,21 +105,20 @@ Plots.savefig(joinpath(fig_path,"mad_vs_elevation.png"))
 
 # standardize
 df_all.dh_detrend   = (df_all.dh .- itp_bias(df_all.h_grimp)) ./ itp_std(df_all.h_grimp)
+# remove outliers after standardizing
+all_to_delete = findall(abs.(df_all.dh_detrend) .> 7 .* mad(df_all.dh_detrend))
+deleteat!(df_all, all_to_delete)
 # divide again by std as dividing by mad doesn't normalize fully
 std_dh_detrend      = std(df_all.dh_detrend)
 df_all.dh_detrend ./= std_dh_detrend
-
-# remove outliers after standardizing (only to be used for better fit of variogram, for kriging use all observations)
-all_to_delete = findall(abs.(df_all.dh_detrend) .> 7 .* mad(df_all.dh_detrend))
-deleteat!(df_all, all_to_delete)
-
+# plot standardized histograms
 Plots.histogram(df_all.dh_detrend, label="Standardized observations", xlims=(-10,10), normalize=:pdf, nbins=1000, wsize=(600,500), linecolor=nothing)
 Plots.histogram!((df_all.dh .- mean(df_all.dh)) ./ std(df_all.dh), label="Standardized without binning", normalize=:pdf, linecolor=nothing)
 Plots.plot!(Normal(), lw=1, label="Normal distribution", color="black")
 Plots.savefig(joinpath(fig_path,"histogram_standardization.png"))
 
 # plot again after standardizing
-Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-2,2), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
+Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
 # Plots.scatter(df_varg.x, df_varg.y, marker_z=df_varg.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-2,2), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
 Plots.savefig(joinpath(fig_path,"data_standardized.png"))
 
