@@ -148,6 +148,9 @@ function generate_random_fields(;std_devs, corr_ls, x, y, std_z, rec, template_f
     ly = y[end] - y[1]
     nx, ny = length(x), length(y)
     dest_files = Vector{String}(undef, n_fields)
+    RF_folder  = "output/SVD_RF/"
+    sim_folder = joinpath(RF_folder,"simulations/")
+    mkpath(sim_folder)
     for i in 1:n_fields
         rftot = zeros(nx, ny)
         for (sf, rn) in zip(std_devs, corr_ls)
@@ -161,10 +164,10 @@ function generate_random_fields(;std_devs, corr_ls, x, y, std_z, rec, template_f
         rftot_smooth .*= std_z
         # add the random field to the reconstruction
         rftot_smooth .+= rec
-        dest_files[i]  = "output/rec_rand_id_$(i).nc"
-        svd_IceSheetDEM.save_netcdf(dest_files[i], template_file, [rftot_smooth], ["surface"], Dict("surface" => Dict()))
+        dest_files[i]  = joinpath.(sim_folder, "test_rec_rand_id_$(i).nc")
+        svd_IceSheetDEM.save_netcdf(dest_files[i], template_file, [rftot_smooth], ["surface"], Dict("surface" => Dict{String,Any}()))
     end
-    return dest_files
+    return RF_folder, dest_files
 end
 
 
@@ -261,9 +264,11 @@ function residual_analysis(rec_file, bedm_file, obs_aero_file, obs_ATM_file,
     corr_ls  = ff.param[4]
     std_z = zeros(size(rec))
     std_z[ir_random_field] .= linear_interp.(bin_field_1[ir_random_field], bin_field_2[ir_random_field]) .* std_z_dh
-    rf_files = generate_random_fields(;std_devs, corr_ls, x, y, std_z, rec, template_file=obs_aero_file, n_fields)
+    RF_folder, rf_files = generate_random_fields(;std_devs, corr_ls, x, y, std_z, rec, template_file=obs_aero_file, n_fields)
 
     if do_figures
+        fig_dir = joinpath(RF_folder, "figures/")
+        mkpath(fig_dir)
         # nmad interpolation
         x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
         x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
