@@ -71,7 +71,7 @@ function choose_atm(x_, y_)::Bool
     return is_in_icesheet & is_above_mindist & has_low_dhdt
 end
 println("selecting flightline values...")
-id = sort(StatsBase.sample(1:size(df_atm,1), 100000, replace=false))  # without pre-selecting a subsample of points the filtering takes a long time
+id = sort(StatsBase.sample(1:size(df_atm,1), 40000, replace=false))  # without pre-selecting a subsample of points the filtering takes a long time
 keepat!(df_atm, id)
 filter!([:x,:y] => choose_atm, df_atm)
 # already remove some outliers here, improves standardization
@@ -148,12 +148,20 @@ Plots.plot!(gamma.abscissa,custom_var(gamma.abscissa, ff.param), label="LsqFit f
 Plots.savefig(joinpath(fig_path,"variogram.png"))
 
 # do simulations
-maxn   = 50     # maximum neighbours taken into account
-n_sims = 20     # number of simulations
+maxn   = 100     # maximum neighbours taken into account
+n_sims = 10     # number of simulations
 
-table_input  = (; Z=Float32.(df_all.dh_detrend))
-coords_input = [(xi,yi) for (xi,yi) in zip(df_all.x,  df_all.y)]
-geotable_input   = georef(table_input,coords_input)
+# subsample for longer ranges to have an effect (limited by maxneighbors parameter in SEQ)
+frac_subs = 6
+id = sort(StatsBase.sample(1:size(df_all,1), cld(size(df_all,1),frac_subs), replace=false))
+df_SEQ = df_all[id,:]
+# df_SEQ = filter( :source => x -> x==:aerodem, df_all)
+Plots.scatter(df_SEQ.x, df_SEQ.y, marker_z=df_SEQ.dh_detrend, label="", markersize=1.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
+Plots.savefig(joinpath(fig_path,"data_sampled_for_SEQ.png"))
+
+table_input    = (; Z=Float32.(df_SEQ.dh_detrend))
+coords_input   = [(xi,yi) for (xi,yi) in zip(df_SEQ.x,  df_SEQ.y)]
+geotable_input = georef(table_input,coords_input)
 
 # output as pointset rather than grid because grid includes a lot of unnecessary points in the ocean etc, makes it a lot slower
 I_no_ocean_no_aero = findall(.!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)) .&& ismissing.(vec(dh_aero_all)))
@@ -171,8 +179,8 @@ toc = Base.time() - tic
 print("Time for simulations in minutes: "); println(toc/60)
 
 # # for point mesh
-# Plots.scatter(xnew, ynew, marker_z=sim.Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu, clims=(-2,2))
-# Plots.savefig("interpol.png")
+Plots.scatter(xnew, ynew, marker_z=sims[1].Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu, clims=(-4,4))
+Plots.savefig(joinpath(fig_path,"interpolation_simulation_maxn_$(maxn)_frac_$(frac_subs)_aeroonly.png"))
 
 # @parallel_indices ind function do_seq!(ms)
 #     if 1 <= ind <= size(ms,2)
@@ -197,13 +205,10 @@ ds_mask_g600            = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr_up).n
 bedm_mask_g600          = NCDataset("data/bedmachine/bedmachine_g$(gr_up).nc")["mask"][:,:]
 I_no_ocean_no_aero_g600 = findall(.!ismissing.(vec(ds_mask_g600)) .&& (vec(bedm_mask_g600) .!= 1) .&& ismissing.(vec(h_aero_g600)))
 
-for (i,s) in enumerate(sims)
-    dest_file_0  = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr)_id_$(i).nc")
-    dest_file_up = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr_up)_id_$(i)_upsampled.nc")
-
+function destandardize_and_save(zvals, dest_file_0, dest_file_up)
     h_predict_all                        = zeros(size(h_aero))
     h_predict_all[.!ismissing.(h_aero)] .= h_aero[.!ismissing.(h_aero)]
-    h_predict_all[I_no_ocean_no_aero]    = grimp_tg[I_no_ocean_no_aero] .- (s.Z .*std_dh_detrend.*itp_std.(grimp_tg[I_no_ocean_no_aero]) .+ itp_bias.(grimp_tg[I_no_ocean_no_aero]))
+    h_predict_all[I_no_ocean_no_aero]    = grimp_tg[I_no_ocean_no_aero] .- (zvals .*std_dh_detrend.*itp_std.(grimp_tg[I_no_ocean_no_aero]) .+ itp_bias.(grimp_tg[I_no_ocean_no_aero]))
     h_predict_all[h_predict_all .<= 0 .|| isnan.(h_predict_all)] .= no_data_value
     svd_IceSheetDEM.save_netcdf(dest_file_0, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr).nc"), [h_predict_all], ["surface"], Dict("surface" => Dict{String, Any}()))
 
@@ -219,4 +224,18 @@ for (i,s) in enumerate(sims)
     h_new[I_no_ocean_no_aero_g600]   .= h_predict_warped[I_no_ocean_no_aero_g600]  # use upsampled SEQ simulation to fill the interior
     h_new[h_new .<= 0 .|| isnan.(h_new)] .= no_data_value
     svd_IceSheetDEM.save_netcdf(dest_file_up, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr_up).nc"), [h_new], ["surface"], Dict("surface" => Dict{String, Any}()))
+    return
 end
+
+for (i,s) in enumerate(sims)
+    zvals = s.Z
+    dest_file_0  = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr)_id_$(i).nc")
+    dest_file_up = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr_up)_id_$(i)_upsampled.nc")
+    destandardize_and_save(zvals, dest_file_0, dest_file_up)
+end
+
+# save mean (should converge towards simple kriging solution)
+zvals = mean(sims).Z
+dest_file_0  = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr)_mean.nc")
+dest_file_up = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr_up)_mean_upsampled.nc")
+destandardize_and_save(zvals, dest_file_0, dest_file_up)
