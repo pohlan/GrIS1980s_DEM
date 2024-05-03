@@ -1,5 +1,4 @@
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
-no_data_value = -9999.0
 
 """
     get_options(; gr, cut_shp="", x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)

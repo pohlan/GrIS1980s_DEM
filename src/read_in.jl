@@ -1,6 +1,5 @@
 # function to read in model data
-function read_model_data(;F::DataType=Float32,       # Float32 or Float64
-                          which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
+function read_model_data(;which_files=nothing,       # indices of files used for training     ; e.g. 1:10, default all available
                           tsteps=nothing,            # indices of time steps used for training; e.g.  ""      ""
                           model_files,
                           I_no_ocean)

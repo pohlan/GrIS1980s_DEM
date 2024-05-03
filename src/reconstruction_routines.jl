@@ -1,4 +1,4 @@
-function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String, model_files::Vector{String}, F::DataType)
+function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String, model_files::Vector{String})
     # load observations
     obs = ncread(obs_file, "Band1")
 
@@ -11,7 +11,7 @@ function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String
     return  Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny
 end
 
-function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, F::DataType, use_arpack::Bool) where T <: Real
+function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::Vector{Int}, I_obs::Vector{Int}, nx::Int, ny::Int, r::Int, λ::Real, use_arpack::Bool) where T <: Real
     # centering model data
     Data_mean  = mean(Data_ice, dims=2)
     Data_ice  .= Data_ice .- Data_mean
@@ -48,9 +48,9 @@ function solve_problem(Data_ice::Matrix{T}, obs_flat_I::Vector{T}, I_no_ocean::V
     return x_rec, err_mean, dif
 end
 
-function solve_lsqfit(F::DataType, λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
-    Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny = prepare_problem(obs_file, imbie_mask, bedm_file, model_files, F)
-    x_rec, err_mean, dif                            = solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, F, use_arpack)
+function solve_lsqfit(λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
+    Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny = prepare_problem(obs_file, imbie_mask, bedm_file, model_files)
+    x_rec, err_mean, dif                            = solve_problem(Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny, r, λ, use_arpack)
 
     # retrieve matrix of reconstructed DEM
     dem_rec             = zeros(F, nx,ny)

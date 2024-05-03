@@ -62,10 +62,9 @@ end
 # testing the problem solving #
 ###############################
 
-F           = Float32
 λ           = 1e5
 r           = 10^3
-rec_file    = solve_lsqfit(F, λ, r, gr, imbie_mask_file, bedmachine_file_gr, [template_file], aero_gr_file)
+rec_file    = solve_lsqfit(λ, r, gr, imbie_mask_file, bedmachine_file_gr, [template_file], aero_gr_file)
 rec_bm_file = create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
 
 @testset "solve least square fit" begin

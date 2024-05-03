@@ -20,6 +20,9 @@ export create_aerodem, create_bedmachine_grid, create_imbie_mask, create_atm_gri
 export solve_lsqfit, create_reconstructed_bedmachine
 export residual_analysis
 
+const no_data_value = -9999.0
+const F = Float32              # Julia default is Float64 but that kills the process for the full training data set if r is too large
+
 function parse_commandline(args)
     s = ArgParseSettings()
     @add_arg_table s begin
