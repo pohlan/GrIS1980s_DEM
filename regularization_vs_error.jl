@@ -17,7 +17,7 @@ bedmachine_path        = splitdir(bedm_file)[1]
 aerodem_g150, obs_file = create_aerodem(;gr, shp_file, bedmachine_path)
 imbie_mask             = create_imbie_mask(;gr, shp_file, sample_path=aerodem_g150)
 
-fig_dir = "output/figures/"
+fig_dir = "output/model_selection/figures/"
 mkpath(fig_dir)
 destdir = "output/model_selection/"
 mkpath(destdir)
@@ -42,10 +42,14 @@ dest      = destdir*"dict_$(k)-fold_cv.jld2"
 save(dest, dict)
 
 # plot
+Plots.scalefontsizes()
+Plots.scalefontsizes(2.5)
+# see https://juliagraphics.github.io/ColorSchemes.jl/stable/basics/#Pre-defined-schemes-1 for more pre-defined, color-blind friendly schemes
 for m in keys(filter(p -> .!(p.first ∈ ["r","λ", "σ"]), dict))
-    Plots.plot(λs, abs.(dict[m][:,1]), xscale=:log10, xlabel="λ", ylabel=m, label="r="*string(rs[1]), marker=:circle, markerstrokewidth=0)
-    for i in 2:length(rs)
-        Plots.plot!(λs, abs.(dict[m][:,i]), xscale=:log10, xlabel="λ", ylabel=m, label="r="*string(rs[i]), marker=:circle, markerstrokewidth=0)
+    p = Plots.plot(xscale=:log10, xlabel="λ", ylabel=m, size=(1300,800), leftmargin=10Plots.mm, topmargin=10Plots.mm, bottommargin=10Plots.mm, legend=:top, palette = :tol_light)
+    for i in eachindex(rs)
+        Plots.plot!(λs, abs.(dict[m][:,i]), label="r="*string(rs[i]), marker=:circle, markersize=6, markerstrokewidth=0, lw=3.5)
     end
+    Plots.plot(p)
     Plots.savefig(fig_dir*m*"_abs_$(k)-fold_cv.png")
 end
