@@ -6,7 +6,7 @@ function prepare_problem(obs_file::String, imbie_mask::String, bedm_file::String
     I_no_ocean, I_obs = get_indices(obs, imbie_mask, bedm_file)
 
     # load model data
-    Data_ice, nx, ny = read_model_data(;F,model_files,I_no_ocean)
+    Data_ice, nx, ny = read_model_data(;model_files,I_no_ocean)
     obs_flat_I = F.(obs[I_no_ocean][I_obs])
     return  Data_ice, obs_flat_I, I_no_ocean, I_obs, nx, ny
 end
