@@ -1,13 +1,11 @@
-# Assumes that the name of the files are all fixed
-
 using svd_IceSheetDEM, NetCDF
 
 # for running the script interactively
-# ARGS = [
-#         "--lambda", "1e5",
-#         "--r", "377",
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
-#         "--training_data", readdir("data/training_data_it0_1200", join=true)...]
+ARGS = [
+        "--lambda", "1e5",
+        "--r", "377",
+        "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+        "--training_data", readdir("data/training_data_it0_1200", join=true)...]
 
 parsed_args         = parse_commandline(ARGS)
 training_data_files = parsed_args["training_data"]
@@ -48,7 +46,7 @@ imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aerodem_g150)
 r           = parsed_args["r"]
 do_figures  = parsed_args["do_figures"]
 use_arpack  = parsed_args["use_arpack"]
-rec_file    = solve_lsqfit(λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files, obs_file, do_figures, use_arpack)
+rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files[1:3], obs_file, do_figures, use_arpack)
 
 # 5.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf gneration??
