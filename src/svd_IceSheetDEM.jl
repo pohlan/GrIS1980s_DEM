@@ -14,7 +14,7 @@ using Arpack, LinearAlgebra
 using DataStructures: OrderedDict
 import Plots, StatsPlots
 
-export parse_commandline
+export parse_commandline, get_ix, get_iy
 export archgdal_read, gdalwarp
 export create_aerodem, create_bedmachine_grid, create_imbie_mask, create_atm_grid, create_dhdt_grid
 export do_reconstruction, create_reconstructed_bedmachine
@@ -52,9 +52,11 @@ function parse_commandline(args)
     return parse_args(args,s)
 end
 
+get_ix(i,nx) = i % nx == 0 ? nx : i % nx
+get_iy(i,nx) = cld(i,nx)
+
 include("gdal_helpers.jl")
 include("reconstruction_routines.jl")
 include("statistics_helpers.jl")
-include("model_selection.jl")
 
 end # module svd_IceSheetDEM
