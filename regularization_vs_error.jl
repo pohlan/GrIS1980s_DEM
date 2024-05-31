@@ -1,5 +1,15 @@
-using svd_IceSheetDEM, Glob, NCDatasets, JLD2
+using svd_IceSheetDEM, Glob, NCDatasets, JLD2, GeoStats, Statistics, StatsBase
 import Plots
+
+# for running the script interactively
+# ARGS = [
+#         "--lambda", "1e5",
+#         "--r", "377",
+#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--training_data", readdir("data/training_data_it2_600", join=true)...]
+
+get_ix(i,nx) = i % nx == 0 ? nx : i % nx
+get_iy(i,nx) = cld(i,nx)
 
 parsed_args = parse_commandline(ARGS)
 model_files = parsed_args["training_data"]
@@ -7,8 +17,8 @@ shp_file    = parsed_args["shp_file"]
 use_arpack  = parsed_args["use_arpack"]
 
 template_file = model_files[1]
-x = NCDataset(template_file)["x"]
-y = NCDataset(template_file)["y"]
+x = NCDataset(template_file)["x"][:]
+y = NCDataset(template_file)["y"][:]
 const gr = Int(x[2] - x[1])
 const F  = Float32
 
@@ -23,22 +33,50 @@ destdir = "output/model_selection/"
 mkpath(destdir)
 
 # give λ and r values to loop through
-λs        = [1e4, 1e5, 1e6, 5e6, 1e7, 5e7, 1e8, 5e8, 1e9, 5e9]
-rs        = [50, 100, 150, 200, 250, 300, 350]
+λs        = [1e4, 1e5] #, 1e6, 5e6, 1e7, 5e7, 1e8, 5e8, 1e9, 5e9]
+rs        = [50, 100] #, 150, 200, 250, 300, 350]
 
 # load datasets, take full SVD (to be truncated with different rs later)
-UΣ, I_no_ocean, Data_mean, Σ = svd_IceSheetDEM.prepare_model(model_files, imbie_mask, bedm_file, maximum(rs), F, use_arpack)
+UΣ, I_no_ocean, Data_mean, Σ = svd_IceSheetDEM.prepare_model(model_files[1:3], imbie_mask, bedm_file, maximum(rs), F, use_arpack)
 x_data, I_obs                = svd_IceSheetDEM.prepare_obs(obs_file, I_no_ocean, Data_mean)
-f_eval(λ, r, i_train       ) = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
+
+function evaluate_params(λ, r, i_train, i_test, x_data, I_obs, UΣ)
+    x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
+    return x_rec[I_obs[i_test]]
+end
+
+# create geotable (for GeoStats)
+x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
+y_Iobs   = y[get_iy.(I_no_ocean[I_obs],length(x))]
+table    = (; Z=Float32.(x_data))
+coords   = [(xi,yi) for (xi,yi) in zip(x_Iobs, y_Iobs) ]
+geotable = georef(table,coords)
+
 
 # create sets of training and test data
-k = 10
-i_train_sets, i_test_sets = svd_IceSheetDEM.k_fold_gaps(I_obs, k)
+ℓ    = 7e5
+flds = folds(geotable, BlockFolding(ℓ))
 
 # loop through λ and r values
-dict      = svd_IceSheetDEM.sample_param_space(f_eval, λs, rs, x_data, I_obs, i_train_sets, i_test_sets)
+methods_name = ["median", "mean", "nmad", "std", "L2norm"]
+methods_fct  = [median, mean, mad, std, norm]
+# initiate dictionary
+dict = Dict{String,Array}(n => zeros(length(λs), length(rs)) for n in methods_name)
+dict["λ"] = λs
+dict["r"] = rs
+for (iλ,λ) in enumerate(λs)
+    for (ir,r) in enumerate(rs)
+        logλ = round(log(10, λ),digits=1)
+        println("r = $r, logλ = $logλ")
+        evaluate_fun(i_train,i_test) = evaluate_params(λ, r, i_train, i_test, x_data, I_obs, UΣ)
+        difs = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun,geotable)
+        for (mn, mf) in zip(methods_name, methods_fct)
+            dict[mn][iλ,ir] = mf(difs)
+        end
+    end
+end
 dict["σ"] = Σ
-dest      = destdir*"dict_$(k)-fold_cv.jld2"
+dest      = destdir*"dict_cv_block_$(ℓ).jld2"
 save(dest, dict)
 
 # plot
@@ -51,5 +89,6 @@ for m in keys(filter(p -> .!(p.first ∈ ["r","λ", "σ"]), dict))
         Plots.plot!(λs, abs.(dict[m][:,i]), label="r="*string(rs[i]), marker=:circle, markersize=6, markerstrokewidth=0, lw=3.5)
     end
     Plots.plot(p)
-    Plots.savefig(fig_dir*m*"_abs_$(k)-fold_cv.png")
+    logℓ = round(log(10,ℓ),digits=1)
+    Plots.savefig(fig_dir*m*"_abs_cv_block_1e$(logℓ).png")
 end
