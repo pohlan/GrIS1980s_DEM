@@ -6,7 +6,7 @@ using ArgParse
 import ArchGDAL as AG
 
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
-using Downloads, Cascadia, Gumbo, HTTP
+using Downloads, Cascadia, Gumbo, HTTP, PyCall
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
 using Arpack, LinearAlgebra
@@ -50,6 +50,10 @@ function parse_commandline(args)
     end
     return parse_args(args,s)
 end
+
+get_ix(i,nx) = i % nx == 0 ? nx : i % nx    # use LinearIndices instead
+get_iy(i,nx) = cld(i,nx)
+get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 
 include("read_in.jl")
 include("gdal_helpers.jl")

@@ -1,6 +1,6 @@
 using svd_IceSheetDEM
 using NCDatasets, Interpolations, DataFrames, CSV, ProgressMeter, GeoStats, LsqFit, ParallelStencil, ImageMorphology, ImageSegmentation, JLD2
-using StatsBase
+using StatsBase, Distributions
 import Plots
 Plots.scalefontsizes(2.0)
 
@@ -10,18 +10,23 @@ Plots.scalefontsizes(2.0)
 # stuff that's going to be in src or input to functions
 gr = 1200
 no_data_value = -9999.0
-get_ix(i,nx) = i % nx == 0 ? nx : i % nx
-get_iy(i,nx) = cld(i,nx)
-get_global_i(ix, iy, nx) = nx * (iy-1) + ix
+# get_ix(i,nx) = i % nx == 0 ? nx : i % nx    # use LinearIndices instead
+# get_iy(i,nx) = cld(i,nx)
+# get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 function replace_missing!(A,c)
     A[ismissing.(A)] .= c
     return A
+end
+function nanfun(f,a)
+    id_numbers = findall(.!isnan.(a))
+    return f(a[id_numbers])
 end
 # define paths
 SEQ_output_path = "output/SEQ/"
 fig_path        = joinpath(SEQ_output_path, "figures/")
 sims_path       = joinpath(SEQ_output_path, "simulations/")
 grimp_path      = "data/grimp/surface/"
+ATM_path        = "data/ATM/"
 
 mkpath(fig_path)
 mkpath(sims_path)
@@ -32,7 +37,9 @@ bedm_mask  = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["mask"][:,:]
 I_no_ocean = findall(.!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)))
 
 # GrIMP (recent version)
-ds_grimp = NCDataset(joinpath(grimp_path,"grimp_geoid_corrected_g$(gr).nc"))
+# ds_grimp = NCDataset(joinpath(grimp_path,"grimp_geoid_corrected_g$(gr).nc"))
+fname_grimp = "data/bedmachine/bedmachine_g$(gr).nc"
+ds_grimp = NCDataset(fname_grimp)
 grimp = ds_grimp["surface"][:,:]
 x  = sort(ds_grimp["x"])
 y  = sort(ds_grimp["y"])
@@ -42,41 +49,25 @@ dhdt = NCDataset("data/dhdt/CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09_g$(gr)_1994-1
 replace_missing!(dhdt, 0)
 
 # AERODEM
-h_aero = NCDataset("data/aerodem/aerodem_g$(gr)_aligned.nc")["surface"][:,end:-1:1]
+h_aero = NCDataset("data/aerodem/aerodem_g$(gr)_aligned.nc")["surface"][:,:]
+h_aero = h_aero[:,end:-1:1]
 dh_aero_all = grimp - h_aero
-idx_aero = findall(.!ismissing.(vec(dh_aero_all)) .&& .!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)))
-df_aero  = DataFrame(:x       => x[get_ix.(idx_aero, length(x))],
-                     :y       => y[get_iy.(idx_aero, length(x))],
-                     :h_grimp => grimp[idx_aero],
+idx_aero = findall(.!ismissing.(vec(dh_aero_all)) .&& .!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)) .&& vec(dhdt).!=0.0)
+df_aero  = DataFrame(:x       => x[svd_IceSheetDEM.get_ix.(idx_aero, length(x))],
+                     :y       => y[svd_IceSheetDEM.get_iy.(idx_aero, length(x))],
+                     :h       => grimp[idx_aero],
+                     :dhdt    => dhdt[idx_aero],
                      :dh      => dh_aero_all[idx_aero],
                      :idx     => idx_aero,
                      :source .=> :aerodem )
 
 # ATM
-df_atm = CSV.read("data/grimp/surface/atm_new_grimp_interp_pts_no_registr.csv", DataFrame)
-df_atm[!,:source] .= :atm
-mindist = 1e4 # minimum distance between aerodem and atm points, ToDo: make this dependent on dhdt from the ATM instead
-max_dhdt = std(dhdt[dhdt .!= 0])
-function choose_atm(x_, y_)::Bool
-    ix    = findmin(abs.(x_ .- x))[2]
-    iy    = findmin(abs.(y_ .- y))[2]
-    iglob = get_global_i(ix, iy, length(x))
-    # filter values outside the ice sheet
-    is_in_icesheet = iglob ∈ I_no_ocean
-    # filter values overlapping or close to aerodem
-    dist_to_aero = minimum(pairwise(Distances.euclidean, [x_ y_], [df_aero.x df_aero.y], dims=1)[:])
-    is_above_mindist = dist_to_aero > mindist
-    # filter values with high absolute dhdt
-    has_low_dhdt = 0.0 < abs(dhdt[ix,iy]) < max_dhdt
-    return is_in_icesheet & is_above_mindist & has_low_dhdt
-end
-println("selecting flightline values...")
-id = sort(StatsBase.sample(1:size(df_atm,1), 40000, replace=false))  # without pre-selecting a subsample of points the filtering takes a long time
-keepat!(df_atm, id)
-filter!([:x,:y] => choose_atm, df_atm)
-# already remove some outliers here, improves standardization
-atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
-deleteat!(df_atm, atm_to_delete)
+grimp_surface = svd_IceSheetDEM.bedmachine_surface_file(fname_grimp,remove_geoid=true)
+dh_atm_file = joinpath(ATM_path,"grimp1_minus_atm.csv")
+# interpolate GrIMP DEM on ATM points and calculate difference
+svd_IceSheetDEM.py_point_interp(grimp_surface, "data/ATM/ATM_nadir2seg_all.csv", dh_atm_file)
+# read in and select values
+df_atm = svd_IceSheetDEM.get_ATM_df(dh_atm_file, dhdt, x, y, df_aero; I_no_ocean)
 
 # merge aerodem and atm data
 df_all = vcat(df_aero, df_atm, cols=:intersect)
@@ -85,102 +76,226 @@ df_all = vcat(df_aero, df_atm, cols=:intersect)
 dh_plot = Array{Union{Float32,Missing}}(missing, (length(x),length(y)))
 dh_plot[df_aero.idx] = df_aero.dh
 Plots.heatmap(x,y, dh_plot', cmap=:RdBu, clims=(-20,20))
-Plots.scatter!(df_atm.x, df_atm.y, marker_z=df_atm.dh, color=:RdBu, markersize=0.5, markerstrokewidth=0, legend=false)
+Plots.scatter!(df_atm.x, df_atm.y, marker_z=df_atm.dh, color=:RdBu, markersize=0.5, markerstrokewidth=0, label="")
 Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
 
-# mean trend as a fct of elevation
-dh_binned, ELV_bin_centers = svd_IceSheetDEM.bin_equal_sample_size(df_all.h_grimp, df_all.dh, 12000)  # 16000
-itp_bias = linear_interpolation(ELV_bin_centers, mean.(dh_binned),  extrapolation_bc = Interpolations.Flat())
-Plots.scatter(ELV_bin_centers, mean.(dh_binned))
-ELV_plot = minimum(df_all.h_grimp):10:maximum(df_all.h_grimp)
-Plots.plot!(ELV_plot, itp_bias(ELV_plot), label="linear interpolation", legend=:bottomright)
-Plots.savefig(joinpath(fig_path,"bias_vs_elevation.png"))
-
-# standard deviation as a fct of elevation
-itp_std = linear_interpolation(ELV_bin_centers, mad.(dh_binned),  extrapolation_bc = Interpolations.Flat())
-Plots.scatter(ELV_bin_centers, mad.(dh_binned))
-ELV_plot = minimum(df_all.h_grimp):10:maximum(df_all.h_grimp)
-Plots.plot!(ELV_plot, itp_std(ELV_plot), label="linear interpolation", legend=:topright)
-Plots.savefig(joinpath(fig_path,"mad_vs_elevation.png"))
-
-# standardize
-df_all.dh_detrend   = (df_all.dh .- itp_bias(df_all.h_grimp)) ./ itp_std(df_all.h_grimp)
-# remove outliers after standardizing
-all_to_delete = findall(abs.(df_all.dh_detrend) .> 7 .* mad(df_all.dh_detrend))
-deleteat!(df_all, all_to_delete)
-# divide again by std as dividing by mad doesn't normalize fully
-std_dh_detrend      = std(df_all.dh_detrend)
-df_all.dh_detrend ./= std_dh_detrend
-# plot standardized histograms
-Plots.histogram(df_all.dh_detrend, label="Standardized observations", xlims=(-10,10), normalize=:pdf, nbins=1000, wsize=(600,500), linecolor=nothing)
-Plots.histogram!((df_all.dh .- mean(df_all.dh)) ./ std(df_all.dh), label="Standardized without binning", normalize=:pdf, linecolor=nothing)
-Plots.plot!(Normal(), lw=1, label="Normal distribution", color="black")
-Plots.savefig(joinpath(fig_path,"histogram_standardization.png"))
+# standardize, describing variance and bias as a function of dhdt and elevation h_grimp
+df_all.dhdt = abs.(df_all.dhdt)
+df_all, std_dh_detrend, m_dh_detrend = svd_IceSheetDEM.standardizing_2D(df_all, :dhdt, :h; nbins1=6, nbins2=15, min_n_sample=50, fig_path)
 
 # plot again after standardizing
 Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
 # Plots.scatter(df_varg.x, df_varg.y, marker_z=df_varg.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-2,2), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
 Plots.savefig(joinpath(fig_path,"data_standardized.png"))
+Plots.scatter(df_all.x,df_all.y,marker_z=df_all.dh_detrend, cmap=:bwr, clims=(-5,5),markerstrokewidth=0,markersize=2)
 
-# variogram
-println("Variogram...")
-table_all  = (; Z=df_all.dh_detrend)
-coords_all = [(df_all.x[i], df_all.y[i]) for i in 1:length(df_all.x)]
-data       = georef(table_all,coords_all)
-gamma      = EmpiricalVariogram(data, :Z; nlags=400,  maxlag=7e5, estimator=:cressie)
-# fit a covariance function
-function custom_var(x, params)
-    if any(params[[1,3,5]] .>= 8e5)
-        return -9999.0 .* ones(length(x))
-    end
-    γ1 = SphericalVariogram(range=params[1], sill=params[2])      # zero nugget
-    γ2 = SphericalVariogram(range=params[3], sill=params[4])
-    γ3 = SphericalVariogram(range=params[5], sill=params[6])
-    f = γ1.(x) .+ γ2.(x) .+ γ3.(x)
-    return f
-end
-ff = LsqFit.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [1e5, 0.2, 1e4, 0.2, 5e5, 0.5]);
-varg = SphericalVariogram(range=ff.param[1], sill=ff.param[2]) +
-       SphericalVariogram(range=ff.param[3], sill=ff.param[4]) +
-       SphericalVariogram(range=ff.param[5], sill=ff.param[6])
-Plots.scatter(gamma.abscissa, gamma.ordinate, label="all observations", xscale=:log10)
-Plots.plot!(gamma.abscissa,custom_var(gamma.abscissa, ff.param), label="LsqFit fit", lw=2)
-Plots.savefig(joinpath(fig_path,"variogram.png"))
+# define variogram function to fit
+custom_var(params) = SphericalVariogram(range=params[1], sill=params[4] ./ sum(params[4:6]), nugget=params[7]) +
+                     SphericalVariogram(range=params[2], sill=params[5] ./ sum(params[4:6]), nugget=params[8]) +
+                     SphericalVariogram(range=params[3], sill=params[6] ./ sum(params[4:6]), nugget=params[9])
+param_cond(params) = all(params[1:3] .< 1e6) && all(params[7:9] .> 0)
+# initial guess for parameters
+p0 = [1.2e4, 1.3e5, 6e5, 0.1, 0.3, 0.6, 0.,0.,0.]
+varg, _ = svd_IceSheetDEM.fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=2e6, nlags=80, custom_var, param_cond, sample_frac=0.2, p0, fig_path) # for too many nlags the optimizer has trouble finding the right solution!
+
 
 # do simulations
-maxn   = 100     # maximum neighbours taken into account
 n_sims = 10     # number of simulations
 
+table_input    = (; Z=Float32.(df_all.dh_detrend))
+coords_input   = [(xi,yi) for (xi,yi) in zip(df_all.x,  df_all.y)]
+geotable_input = georef(table_input,coords_input)
+
 # subsample for longer ranges to have an effect (limited by maxneighbors parameter in SEQ)
-frac_subs = 6
-id = sort(StatsBase.sample(1:size(df_all,1), cld(size(df_all,1),frac_subs), replace=false))
-df_SEQ = df_all[id,:]
-# df_SEQ = filter( :source => x -> x==:aerodem, df_all)
-Plots.scatter(df_SEQ.x, df_SEQ.y, marker_z=df_SEQ.dh_detrend, label="", markersize=1.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
+frac_subs = 4
+# id_all = Vector(1:size(df_all,1))
+# id = 1:(length(id_all)-cld(length(id_all),frac_subs))
+# df_SEQ = df_all[id,:]
+# df_test = df_all[setdiff(id_all,id),:]
+# filter!( :source => x -> x==:atm, df_test)
+Plots.scatter(df_SEQ.x, df_SEQ.y, marker_z=df_SEQ.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
+Plots.scatter(df_test.x, df_test.y, marker_z=df_test.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
 Plots.savefig(joinpath(fig_path,"data_sampled_for_SEQ.png"))
 
-table_input    = (; Z=Float32.(df_SEQ.dh_detrend))
-coords_input   = [(xi,yi) for (xi,yi) in zip(df_SEQ.x,  df_SEQ.y)]
-geotable_input = georef(table_input,coords_input)
+
+# simulate data on higher resolution
+gr_up                   = 1200
+h_aero_g600             = NCDataset("data/aerodem/aerodem_g$(gr_up)_aligned.nc")["surface"][:,:]
+h_aero_g600             = h_aero_g600[:,end:-1:1]
+ds_mask_g600            = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr_up).nc")["Band1"][:,:]
+bedm_mask_g600          = NCDataset("data/bedmachine/bedmachine_g$(gr_up).nc")["mask"][:,:]
+I_no_ocean_no_aero_g600 = findall(.!ismissing.(vec(ds_mask_g600)) .&& (vec(bedm_mask_g600) .!= 1) .&& ismissing.(vec(h_aero_g600)))
+x_g600 = NCDataset("data/aerodem/aerodem_g$(gr_up)_aligned.nc")["x"][:]
+y_g600 = NCDataset("data/aerodem/aerodem_g$(gr_up)_aligned.nc")["y"][:]
 
 # output as pointset rather than grid because grid includes a lot of unnecessary points in the ocean etc, makes it a lot slower
 I_no_ocean_no_aero = findall(.!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)) .&& ismissing.(vec(dh_aero_all)))
-xnew = x[get_ix.(I_no_ocean_no_aero, length(x))]
-ynew = y[get_iy.(I_no_ocean_no_aero, length(x))]
-grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(xnew, ynew)])
+xnew = x_g600[get_ix.(I_no_ocean_no_aero_g600, length(x_g600))]
+ynew = y_g600[get_iy.(I_no_ocean_no_aero_g600, length(x_g600))]
+n1   = 1*10^4
+nend = 2*10^5
+# grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(xnew[n1:nend], ynew[n1:nend])])
+# grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(xnew, ynew)])
+grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[get_ix.(I_no_ocean, length(x))], y[get_iy.(I_no_ocean, length(x))])])
 
 process = GaussianProcess(varg)
+
+maxn   = 1000    # maximum neighbours taken into account
 method = SEQMethod(maxneighbors=maxn)
 
-println("Do SEQ simulations...")
-tic = Base.time()
-sims = rand(process, grid_output, geotable_input, n_sims, method)
-toc = Base.time() - tic
-print("Time for simulations in minutes: "); println(toc/60)
 
-# # for point mesh
-Plots.scatter(xnew, ynew, marker_z=sims[1].Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu, clims=(-4,4))
-Plots.savefig(joinpath(fig_path,"interpolation_simulation_maxn_$(maxn)_frac_$(frac_subs)_aeroonly.png"))
+# # aerodem geotable
+# id_aero = findall(df_all.source .== :aerodem)
+# geotable_aero  = view(geotable_input, id_aero)
+# # atm geotable
+# id_atm = findall(df_all.source .== :atm)
+# geotable_atm   = view(geotable_input, id_atm)
+# df_aero.dh_detrend   = (df_aero.dh .- itp_bias(df_aero.h_grimp)) ./ itp_std(df_aero.h_grimp)
+# df_aero.dh_detrend ./= std_dh_detrend
+# df_sgs = vcat(df_all, df_aero, cols=:intersect)
+# table_sgs    = (; Z=Float32.(df_sgs.dh_detrend))
+# coords_sgs   = [(xi,yi) for (xi,yi) in zip(df_sgs.x,  df_sgs.y)]
+# geotable_input = georef(table_sgs,coords_sgs)
+
+
+
+
+# partitioning in Meshes.jl: https://juliageometry.github.io/MeshesDocs/stable/algorithms/partitioning.html
+# prts = partition(PointSet(Point.(coords_input)), BlockPartition(4e5,neighbors=true))
+# Meshes.metadata(prts)[:neighbors]
+flds = folds(geotable_input, BlockFolding(4e5))
+# inspired by https://github.com/JuliaEarth/GeoStatsValidation.jl/blob/main/src/cverrors/wcv.jl#L75 but there not implemented for random simulations conditioned on data
+dif_blocks     = [Float64[] for i in flds]
+NNdist_blocks  = [Float64[] for i in flds]
+xcoord_blocks  = [Float64[] for i in flds]
+ycoord_blocks  = [Float64[] for i in flds]
+p = Plots.plot()
+# fig, ax, hm = viz(geotable_input.geometry[1])
+@showprogress for (j,fs) in enumerate(flds)
+    # find the neighbors that the folds routine (https://github.com/JuliaEarth/GeoStatsBase.jl/blob/master/src/folding/block.jl) leaves out
+    # there might be a mistake in the partitioning routine in Meshes.jl, the neighbors don't make sense (also not tested well)
+    neighbors = Vector(1:length(geotable_input.Z))
+    deleteat!(neighbors, unique(sort([fs[1];fs[2]])))
+    append!(fs[1],neighbors)
+
+    # sdat  = vcat(view(geotable_input, fs[1]), geotable_aero)
+    sdat  = view(geotable_input, fs[1])
+    stest = view(domain(geotable_input), fs[2])
+    @assert length(sdat.Z) > length(stest)
+
+    # subsample again
+    # id_subspl = sort(StatsBase.sample(1:length(sdat.Z), ceil(Int,length(sdat.Z)*frac_subs); replace=false))
+    # id = 1:(length(sdat.Z)-cld(length(sdat.Z),frac_subs))
+    # sdat = view(sdat, id_subspl)
+    # if j==8
+
+    # simulations
+    sims_test    = rand(process, stest, sdat, 20, method)
+    var_sims     = zeros(length(sims_test))
+    test_data    = view(geotable_input, fs[2]).Z
+    dif_blocks[j] = mean(sims_test).Z .- test_data
+
+
+    # save distances
+    # ids_nn  = zeros(Int,length(stest))
+    # dist_nn = zeros(length(stest))
+    # for (i,st) in enumerate(stest)
+    #     id_st, dist = searchdists(st, KNearestSearch(domain(sdat),1))
+    #     ids_nn[i]  = id_st[1]
+    #     dist_nn[i] = dist[1]
+    # end
+    # @assert length(dist_nn) == length(test_data)
+    # NNdist_blocks[j] = dist_nn
+
+    # # # save coordinates
+    crds = coordinates.(stest)
+    xcoord_blocks[j] = first.(crds)
+    ycoord_blocks[j] = last.(crds)
+
+    # plot
+        # Plots.scatter!(df_all.x[fs[1]],df_all.y[fs[1]], color="grey",markersize=2, markerstrokewidth=0)
+        # Plots.scatter!(df_all.x[fs[2]],df_all.y[fs[2]], color=cols[j], markerstrokewidth=0,label=string(j))
+        # subd = view(sdat, sort(unique(ids_nn)))
+        # b=[m.coords for m in subd.geometry]
+        # Plots.scatter!(first.(b), last.(b),     color="black", markerstrokewidth=0, label=string(j))
+        # Plots.scatter!(first.(crds),last.(crds), marker_z=mean(sims_test).Z, cmap=:bwr, clims=(-3,3), markerstrokewidth=0)
+        # Plots.scatter!(first.(crds),last.(crds), marker_z=test_data, cmap=:bwr, clims=(-3,3), markerstrokewidth=0)
+
+        # viz!(domain(sdat), color=cols[j])
+        # viz!(domain(subd), color="black", markersize=10)
+        # viz!(stest, color=mean(sims_test).Z)
+    # if j == 6
+    #     break
+    # end
+end
+Plots.plot(p)
+
+dists = vcat(NNdist_blocks...)
+difs  = vcat(dif_blocks...)
+xcrds = vcat(xcoord_blocks...)
+ycrds = vcat(ycoord_blocks...)
+# Plots.scatter(dists,difs,markerstrokewidth=0,markersize=1,color="grey")
+dif_binned, dist_bin_centers = svd_IceSheetDEM.bin_equal_sample_size(dists[1:length(difs)], difs, 6000)  # 16000
+Plots.scatter(dist_bin_centers./1e3, nanfun.(median,dif_binned), title="maxn=$maxn", xlabel="distance to closest neighbor", ylabel="median", label="", xscale=:log10, ylims=(-0.3,0.2))
+Plots.scatter(dist_bin_centers./1e3, mad.(dif_binned), title="maxn=$maxn", xlabel="distance to closest neighbor", ylabel="nmad", label="", xscale=:log10)
+Plots.savefig("median.png")
+
+Plots.scatter(xcrds,ycrds,marker_z=difs, cmap=:bwr, clims=(-5,5),markerstrokewidth=0,markersize=2)
+Plots.scatter(xcrds, ycrds, marker_z=geotable_input.Z, cmap=:bwr, clims=(-5,5),markerstrokewidth=0,markersize=2)
+
+nm = 5
+Plots.scatter(vcat(setdiff(xcoord_blocks,nm)...),vcat(setdiff(ycoord_blocks,nm)...), markerstrokewidth=0)
+Plots.scatter!(xcoord_blocks[nm],ycoord_blocks[nm], markerstrokewidth=0)
+Plots.scatter!(xcoord_blocks[nm],ycoord_blocks[nm], markerstrokewidth=0)
+
+
+# println("Do SEQ simulations...")
+# tic = Base.time()
+# Random.seed!(1234)
+# sims = rand(process, grid_output, geotable_input, n_sims, method)
+# toc = Base.time() - tic
+# print("Time for simulations in minutes: "); println(toc/60)
+
+
+# test
+test_output = PointSet([Point(xi,yi) for (xi,yi) in zip(df_test.x, df_test.y)])
+sims_test = rand(process, test_output, geotable_input, 30, method)
+err = []
+dd  = zeros(length(sims_test), length(sims_test[1].Z))
+for (ism,sm) in enumerate(sims_test)
+    push!(err,median(abs.(sm.Z .- df_test.dh_detrend)))
+    dd[ism,:] = sm.Z .- df_test.dh_detrend
+end
+println(median(err))
+m_per_p = median(dd,dims=1)[:]
+# st_per_p = std(dd,dims=1)[:]
+Plots.scatter(df_test.x,df_test.y,marker_z=m_per_p, cmap=:bwr, clims=(-2,2), markerstrokewidth=0, markersize=1, aspect_ratio=1, title="maxn=$maxn", label="")
+# Plots.scatter(df_test.x,df_test.y,marker_z=st_per_p, markerstrokewidth=0, markersize=1, aspect_ratio=1, title="maxn=$maxn",label="")
+
+
+xn1, xnn = extrema(xnew[n1:nend])
+yn1, ynn = extrema(ynew[n1:nend])
+function choose_bla(x_, y_)::Bool
+    ix    = xn1 < x_ < xnn
+    iy    = yn1 < y_ < ynn
+    return ix && iy
+end
+df_plot = filter([:x,:y] => choose_bla, df_SEQ)
+Plots.scatter(df_plot.x, df_plot.y, marker_z=df_plot.dh_detrend, markerstrokewidth=0, markersize=4.0, cmap=:RdBu, clims=(-2.5,2.5), aspect_ratio=1, xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(900,1000))
+Plots.scatter(xnew[n1:nend], ynew[n1:nend], marker_z=sims[1].Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu,  clims=(-2.5,2.5), aspect_ratio=1, xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(900,1000), title="maxn=$maxn, frac_subs=$frac_subs")
+# Plots.scatter(xnew[n1:nend], ynew[n1:nend], marker_z=mean(sims).Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu,  clims=(-2.5,2.5), aspect_ratio=1, xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(900,1000), title="maxn=$maxn, frac_subs=$frac_subs")
+# Plots.savefig(joinpath(fig_path,"interpolation_simulation_maxn_$(maxn)_frac_$(frac_subs)_aeroonly.png"))
+Plots.scatter(x[get_ix.(I_no_ocean, length(x))], y[get_iy.(I_no_ocean, length(x))], marker_z=sims[1].Z, markerstrokewidth=0, markersize=1.0, cmap=:RdBu,  clims=(-2.5,2.5), aspect_ratio=1, xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(900,1000), title="maxn=$maxn, frac_subs=$frac_subs")
+Plots.scatter(df_SEQ.x, df_SEQ.y, marker_z=df_SEQ.dh_detrend, markerstrokewidth=0, markersize=4.0, cmap=:RdBu, clims=(-2.5,2.5), aspect_ratio=1, xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(900,1000))
+
+
+table_     = (; Z=sims[1].Z)
+# coords_    = [(xnew[i], ynew[i]) for i in n1:nend]
+coords_    = [(x[get_ix.(i, length(x))], y[get_iy.(i, length(x))]) for i in I_no_ocean]
+data       = georef(table_,coords_)
+gamma      = EmpiricalVariogram(data, :Z; nlags=200,  maxlag=1e5, estimator=:cressie)
+ff = LsqFit.curve_fit(custom_var, gamma.abscissa, gamma.ordinate, [1e5, 0.2, 1e4, 0.2, 5e5, 0.5]);
+
 
 # @parallel_indices ind function do_seq!(ms)
 #     if 1 <= ind <= size(ms,2)
@@ -195,41 +310,44 @@ Plots.savefig(joinpath(fig_path,"interpolation_simulation_maxn_$(maxn)_frac_$(fr
 # toc = Base.time() - tic
 
 ## destandardize and move to higher resolution
-grimp_tg = copy(grimp)
-grimp_tg[ismissing.(grimp)] .= 0
+grimp_tg = NCDataset("data/bedmachine/bedmachine_g$(gr_up).nc")["surface"][:,:]
+grimp_tg[ismissing.(grimp_tg)] .= 0
 
-# read in data at higher res
-gr_up                   = 600
-h_aero_g600             = NCDataset("data/aerodem/aerodem_g$(gr_up)_aligned.nc")["surface"][:,end:-1:1]
-ds_mask_g600            = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr_up).nc")["Band1"][:,:]
-bedm_mask_g600          = NCDataset("data/bedmachine/bedmachine_g$(gr_up).nc")["mask"][:,:]
-I_no_ocean_no_aero_g600 = findall(.!ismissing.(vec(ds_mask_g600)) .&& (vec(bedm_mask_g600) .!= 1) .&& ismissing.(vec(h_aero_g600)))
 
 function destandardize_and_save(zvals, dest_file_0, dest_file_up)
-    h_predict_all                        = zeros(size(h_aero))
-    h_predict_all[.!ismissing.(h_aero)] .= h_aero[.!ismissing.(h_aero)]
-    h_predict_all[I_no_ocean_no_aero]    = grimp_tg[I_no_ocean_no_aero] .- (zvals .*std_dh_detrend.*itp_std.(grimp_tg[I_no_ocean_no_aero]) .+ itp_bias.(grimp_tg[I_no_ocean_no_aero]))
+    h_predict_all                        = zeros(size(h_aero_g600))
+    h_predict_all[.!ismissing.(h_aero_g600)] .= h_aero_g600[.!ismissing.(h_aero_g600)]
+    h_predict_all[I_no_ocean_no_aero_g600]    = grimp_tg[I_no_ocean_no_aero_g600] .- (zvals .*std_dh_detrend.*itp_std.(grimp_tg[I_no_ocean_no_aero_g600]) .+ itp_bias.(grimp_tg[I_no_ocean_no_aero_g600]))
     h_predict_all[h_predict_all .<= 0 .|| isnan.(h_predict_all)] .= no_data_value
-    svd_IceSheetDEM.save_netcdf(dest_file_0, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr).nc"), [h_predict_all], ["surface"], Dict("surface" => Dict{String, Any}()))
+    svd_IceSheetDEM.save_netcdf(dest_file_0, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr_up).nc"), [h_predict_all], ["surface"], Dict("surface" => Dict{String, Any}()))
+
+    dh_aero_all_g600 = grimp_tg - h_aero_g600
+    dh_to_plot = zeros(size(dh_aero_all_g600))
+    ifll = findall(.!ismissing.(vec(dh_aero_all_g600)) .&& .!ismissing.(vec(ds_mask_g600)) .&& vec((bedm_mask_g600 .!= 1)))
+    dh_to_plot[ifll] .= (dh_aero_all_g600[ifll] .- itp_bias(grimp_tg[ifll])) ./ itp_std(grimp_tg[ifll])
+    dh_to_plot ./= std_dh_detrend
+    dh_to_plot[I_no_ocean_no_aero_g600] .= zvals
+    Plots.heatmap(x_g600, sort(y_g600), dh_to_plot', label="", cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
+    Plots.savefig(joinpath(fig_path,"interpolated_standardized.png"))
 
     # moving to higher resolution (upsampling)
-    upsampled_temp = joinpath(sims_path,"SEQ_upsampled_temp.nc")
-    gdalwarp(dest_file_0; gr=gr_up, srcnodata="-9999", dstnodata="-9999", dest=upsampled_temp)
-    h_predict_warped = NCDataset(upsampled_temp)["Band1"][:,:]
-    rm(upsampled_temp)
-    h_predict_warped[ismissing.(h_predict_warped)] .= 0
-    # put together in new array
-    h_new = zeros(size(h_aero_g600))
-    h_new[.!ismissing.(h_aero_g600)] .= h_aero_g600[.!ismissing.(h_aero_g600)]     # use original observations where available
-    h_new[I_no_ocean_no_aero_g600]   .= h_predict_warped[I_no_ocean_no_aero_g600]  # use upsampled SEQ simulation to fill the interior
-    h_new[h_new .<= 0 .|| isnan.(h_new)] .= no_data_value
-    svd_IceSheetDEM.save_netcdf(dest_file_up, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr_up).nc"), [h_new], ["surface"], Dict("surface" => Dict{String, Any}()))
+    # upsampled_temp = joinpath(sims_path,"SEQ_upsampled_temp.nc")
+    # gdalwarp(dest_file_0; gr=gr_up, srcnodata="-9999", dstnodata="-9999", dest=upsampled_temp)
+    # h_predict_warped = NCDataset(upsampled_temp)["Band1"][:,:]
+    # rm(upsampled_temp)
+    # h_predict_warped[ismissing.(h_predict_warped)] .= 0
+    # # put together in new array
+    # h_new = zeros(size(h_aero_g600))
+    # h_new[.!ismissing.(h_aero_g600)] .= h_aero_g600[.!ismissing.(h_aero_g600)]     # use original observations where available
+    # h_new[I_no_ocean_no_aero_g600]   .= h_predict_warped[I_no_ocean_no_aero_g600]  # use upsampled SEQ simulation to fill the interior
+    # h_new[h_new .<= 0 .|| isnan.(h_new)] .= no_data_value
+    # svd_IceSheetDEM.save_netcdf(dest_file_up, joinpath(grimp_path,"grimp_geoid_corrected_g$(gr_up).nc"), [h_new], ["surface"], Dict("surface" => Dict{String, Any}()))
     return
 end
 
 for (i,s) in enumerate(sims)
     zvals = s.Z
-    dest_file_0  = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr)_id_$(i).nc")
+    dest_file_0  = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr_up)_id_$(i).nc")
     dest_file_up = joinpath(sims_path,"SEQ_maxngh_$(maxn)_g$(gr_up)_id_$(i)_upsampled.nc")
     destandardize_and_save(zvals, dest_file_0, dest_file_up)
 end

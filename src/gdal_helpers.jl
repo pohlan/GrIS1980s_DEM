@@ -193,6 +193,19 @@ function create_bedmachine_grid(gr, spatial_template_file)
     return dest_file
 end
 
+function bedmachine_surface_file(bedm1;remove_geoid=false)
+    ds_bedm1 = NCDataset(bedm1)
+    surf     = ds_bedm1["surface"][:]
+    if remove_geoid  # when comparing to elevation data that is not geoid corrected
+        geoid    = ds_bedm1["geoid"][:]
+        surf   .+= geoid
+    end
+    surf[ismissing.(surf)] .= no_data_value
+    out_name = splitext(bedm1)[1]*"_surface"*splitext(bedm1)[2]
+    save_netcdf(out_name, bedm1, [Float32.(surf)], ["surface"], Dict{String, Any}("surface" => Dict()))
+    return out_name
+end
+
 """
 copied from https://gist.github.com/scls19fr/9ea2fd021d5dd9a97271da317bff6533
 """
@@ -516,3 +529,24 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     rm(tempname)
     return dest, n_years
 end
+
+function __init__()
+    py"""
+    import xdem
+    import pandas as pd
+    import geopandas as gpd
+
+    def point_interp(fname_ref, fname_atm, fname_out):
+        ref_DEM = xdem.DEM(fname_ref)
+        # extract ATM points
+        df = pd.read_csv(fname_atm)
+        geometry = gpd.points_from_xy(df.x12, df.x2, crs="WGS84")
+        g        = geometry.to_crs(ref_DEM.crs)
+        # interpolate
+        ref_pts  = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        # save
+        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h": ref_pts, "h_atm": df.x4, "dh": (ref_pts-df.x4)})
+        ds_save.to_csv(fname_out, index=False)
+    """
+end
+py_point_interp(fname_ref, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_atm, fname_out)
