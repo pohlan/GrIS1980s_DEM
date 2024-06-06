@@ -193,16 +193,16 @@ function create_bedmachine_grid(gr, spatial_template_file)
     return dest_file
 end
 
-function bedmachine_surface_file(bedm1;remove_geoid=false)
-    ds_bedm1 = NCDataset(bedm1)
-    surf     = ds_bedm1["surface"][:]
+function get_surface_file(ref1, bedm_file; remove_geoid=false)
+    ds_ref1 = NCDataset(ref1)
+    surf    = ds_ref1["surface"][:]
     if remove_geoid  # when comparing to elevation data that is not geoid corrected
-        geoid    = ds_bedm1["geoid"][:]
+        geoid    = NCDataset(bedm_file)["geoid"][:]
         surf   .+= geoid
     end
     surf[ismissing.(surf)] .= no_data_value
-    out_name = splitext(bedm1)[1]*"_surface"*splitext(bedm1)[2]
-    save_netcdf(out_name, bedm1, [Float32.(surf)], ["surface"], Dict{String, Any}("surface" => Dict()))
+    out_name = splitext(ref1)[1]*"_surface"*splitext(ref1)[2]
+    save_netcdf(out_name, ref1, [Float32.(surf)], ["surface"], Dict{String, Any}("surface" => Dict()))
     return out_name
 end
 
@@ -347,62 +347,16 @@ function create_imbie_mask(;gr, shp_file, sample_path)
     return imbie_mask_file
 end
 
-function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_file::String; correct_geoid=false)
-    # load coordinates of grid to project on
-    x      = ncread(bedm_file, "x")
-    y      = ncread(bedm_file, "y")
-    dx     = x[2]-x[1]
-    dy     = y[2]-y[1]
-    nx, ny = length(x), length(y)
-
-    # transform atm coordinates
-    coords = [[pt_data.lon[i], pt_data.lat[i]] for i in eachindex(pt_data.lat)]
-    coords_proj = AG.reproject(coords, ProjString("+proj=longlat +datum=WGS84 +no_defs"), EPSG(3413))  # hard-coded source and target coordinate systems
-    x_proj = first.(coords_proj)
-    y_proj = last.(coords_proj)
-
-    # reproject on grid using averages weighted by inverse distance
-    println("Projecting flight line values on model grid...")
-    r_inv     = zeros(Float32, nx, ny)
-    grid_data = zeros(Float32, nx, ny)
-    npts      = zeros(Int, nx, ny)
-    n = 1
-    for (xp, yp, zp) in zip(x_proj, y_proj, pt_data.z)
-        rx, ix = findmin(abs.(xp .- x))
-        ry, iy = findmin(abs.(yp .- y))
-        r = sqrt(rx^2 + ry^2)
-        if abs(xp - x[ix]) < 0.5dx && abs(yp - y[iy]) < 0.5dy
-            npts[ix,iy] += 1
-            r_inv[ix,iy] += 1 / r
-            grid_data[ix,iy] += zp / r
-        end
-        n += 1
-    end
-    i_z               = grid_data .!= 0
-    grid_data[i_z]    = grid_data[i_z] ./ r_inv[i_z]
-    grid_data[.!i_z] .= no_data_value
-
-    # correct for geoid
-    if correct_geoid
-        geoid = ncread(bedm_file, "geoid")
-        grid_data[i_z] -= geoid[i_z]
-    end
-
-    # save as netcdf file
-    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict()))
-    return
-end
-
-function create_atm_grid(gr, bedm_file::String, kw="")
+function get_atm_file()
     atm_path = "data/ATM/"
-    atm_file = atm_path*"ATM_elevation_geoid_corrected_g$(gr).nc"
+    atm_file = joinpath(atm_path,"ATM_nadir2seg_all.csv")
     # if file exists already, do nothing
     if isfile(atm_file)
         return atm_file
     end
 
     # download files
-    raw_path  = atm_path*"raw/"
+    raw_path  = joinpath(atm_path,"raw/")
     mkpath(raw_path)
     if isempty(readdir(raw_path))
         println("Downloading ATM elevation data...")
@@ -440,8 +394,7 @@ function create_atm_grid(gr, bedm_file::String, kw="")
         return d_final
     end
     df = merge_files(files)
-
-    get_nc_from_flightlines(df, bedm_file, atm_file; correct_geoid=true)
+    CSV.write(atm_file, df)
     return atm_file
 end
 

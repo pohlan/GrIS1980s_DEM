@@ -62,9 +62,8 @@ create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf 
 # ------------------------------------------------------------------------------- #
 
 # 1.) get ATM data
-atm_file  = create_atm_grid(gr, bedmachine_file)
+atm_file  = get_atm_file()
 # 2.) get elevation change data from Sørensen et al., 2018
-dh_obs_long_file, _   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
-dh_obs_short_file, n_years_short = create_dhdt_grid(;gr, startyr=1994, endyr=1996)
+dh_obs_file, _   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
 # 3.) standardize residual, evaluate variogram and generate random fields
-rf_files = residual_analysis(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_long_file, dh_obs_short_file, n_years_short; do_figures, n_fields=10)
+rf_files = SVD_random_fields(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; n_fields=10)

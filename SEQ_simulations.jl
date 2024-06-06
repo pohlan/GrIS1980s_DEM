@@ -1,11 +1,8 @@
 using svd_IceSheetDEM
-using NCDatasets, Interpolations, DataFrames, CSV, ProgressMeter, GeoStats, LsqFit, ParallelStencil, ImageMorphology, ImageSegmentation, JLD2
+using NCDatasets, Interpolations, DataFrames, CSV, ProgressMeter, GeoStats, JLD2
 using StatsBase, Distributions
 import Plots
 Plots.scalefontsizes(2.0)
-
-# @init_parallel_stencil(Threads, Float64, 1)
-# print("Number of threads:"); println(Threads.nthreads())
 
 # stuff that's going to be in src or input to functions
 gr = 1200
@@ -13,10 +10,7 @@ no_data_value = -9999.0
 # get_ix(i,nx) = i % nx == 0 ? nx : i % nx    # use LinearIndices instead
 # get_iy(i,nx) = cld(i,nx)
 # get_global_i(ix, iy, nx) = nx * (iy-1) + ix
-function replace_missing!(A,c)
-    A[ismissing.(A)] .= c
-    return A
-end
+
 function nanfun(f,a)
     id_numbers = findall(.!isnan.(a))
     return f(a[id_numbers])
@@ -25,69 +19,19 @@ end
 SEQ_output_path = "output/SEQ/"
 fig_path        = joinpath(SEQ_output_path, "figures/")
 sims_path       = joinpath(SEQ_output_path, "simulations/")
-grimp_path      = "data/grimp/surface/"
-ATM_path        = "data/ATM/"
 
 mkpath(fig_path)
 mkpath(sims_path)
 
-# masks
-ds_mask    = NCDataset("data/gris-imbie-1980/imbie_mask_g$(gr).nc")["Band1"][:,:]
-bedm_mask  = NCDataset("data/bedmachine/bedmachine_g$(gr).nc")["mask"][:,:]
-I_no_ocean = findall(.!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)))
+# ToDo: get filenames from functions as in main.jl
+rec_file = "output/rec_files/rec_lambda_1e7_g600_r200.nc"
+bedm_file = "data/bedmachine/bedmachine_g600.nc"
+obs_aero_file = "data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc"
+obs_ATM_file = get_atm_file()
+dhdt_file = "data/dhdt/CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09_g$(gr)_1994-1996.nc"
+mask_file = "data/gris-imbie-1980/imbie_mask_g$(gr).nc"
 
-# GrIMP (recent version)
-# ds_grimp = NCDataset(joinpath(grimp_path,"grimp_geoid_corrected_g$(gr).nc"))
-fname_grimp = "data/bedmachine/bedmachine_g$(gr).nc"
-ds_grimp = NCDataset(fname_grimp)
-grimp = ds_grimp["surface"][:,:]
-x  = sort(ds_grimp["x"])
-y  = sort(ds_grimp["y"])
-
-# dhdt
-dhdt = NCDataset("data/dhdt/CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09_g$(gr)_1994-1996.nc")["Band1"][:,:]
-replace_missing!(dhdt, 0)
-
-# AERODEM
-h_aero = NCDataset("data/aerodem/aerodem_g$(gr)_aligned.nc")["surface"][:,:]
-h_aero = h_aero[:,end:-1:1]
-dh_aero_all = grimp - h_aero
-idx_aero = findall(.!ismissing.(vec(dh_aero_all)) .&& .!ismissing.(vec(ds_mask)) .&& vec((bedm_mask .!= 1)) .&& vec(dhdt).!=0.0)
-df_aero  = DataFrame(:x       => x[svd_IceSheetDEM.get_ix.(idx_aero, length(x))],
-                     :y       => y[svd_IceSheetDEM.get_iy.(idx_aero, length(x))],
-                     :h       => grimp[idx_aero],
-                     :dhdt    => dhdt[idx_aero],
-                     :dh      => dh_aero_all[idx_aero],
-                     :idx     => idx_aero,
-                     :source .=> :aerodem )
-
-# ATM
-grimp_surface = svd_IceSheetDEM.bedmachine_surface_file(fname_grimp,remove_geoid=true)
-dh_atm_file = joinpath(ATM_path,"grimp1_minus_atm.csv")
-# interpolate GrIMP DEM on ATM points and calculate difference
-svd_IceSheetDEM.py_point_interp(grimp_surface, "data/ATM/ATM_nadir2seg_all.csv", dh_atm_file)
-# read in and select values
-df_atm = svd_IceSheetDEM.get_ATM_df(dh_atm_file, dhdt, x, y, df_aero; I_no_ocean)
-
-# merge aerodem and atm data
-df_all = vcat(df_aero, df_atm, cols=:intersect)
-
-# plot
-dh_plot = Array{Union{Float32,Missing}}(missing, (length(x),length(y)))
-dh_plot[df_aero.idx] = df_aero.dh
-Plots.heatmap(x,y, dh_plot', cmap=:RdBu, clims=(-20,20))
-Plots.scatter!(df_atm.x, df_atm.y, marker_z=df_atm.dh, color=:RdBu, markersize=0.5, markerstrokewidth=0, label="")
-Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
-
-# standardize, describing variance and bias as a function of dhdt and elevation h_grimp
-df_all.dhdt = abs.(df_all.dhdt)
-df_all, std_dh_detrend, m_dh_detrend = svd_IceSheetDEM.standardizing_2D(df_all, :dhdt, :h; nbins1=6, nbins2=15, min_n_sample=50, fig_path)
-
-# plot again after standardizing
-Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
-# Plots.scatter(df_varg.x, df_varg.y, marker_z=df_varg.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-2,2), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
-Plots.savefig(joinpath(fig_path,"data_standardized.png"))
-Plots.scatter(df_all.x,df_all.y,marker_z=df_all.dh_detrend, cmap=:bwr, clims=(-5,5),markerstrokewidth=0,markersize=2)
+dh_atm_file = joinpath(dirname(obs_ATM_file), "GrIMPv1_minus_atm.csv")
 
 # define variogram function to fit
 custom_var(params) = SphericalVariogram(range=params[1], sill=params[4] ./ sum(params[4:6]), nugget=params[7]) +
@@ -96,8 +40,8 @@ custom_var(params) = SphericalVariogram(range=params[1], sill=params[4] ./ sum(p
 param_cond(params) = all(params[1:3] .< 1e6) && all(params[7:9] .> 0)
 # initial guess for parameters
 p0 = [1.2e4, 1.3e5, 6e5, 0.1, 0.3, 0.6, 0.,0.,0.]
-varg, _ = svd_IceSheetDEM.fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=2e6, nlags=80, custom_var, param_cond, sample_frac=0.2, p0, fig_path) # for too many nlags the optimizer has trouble finding the right solution!
-
+_, varg, _, destand, I_no_ocean, _ = prepare_random_sims(rec_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
+                                                       dh_atm_file, fig_path, custom_var, param_cond, p0, nbins1=6, nbins2=10)
 
 # do simulations
 n_sims = 10     # number of simulations
