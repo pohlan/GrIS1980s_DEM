@@ -10,7 +10,7 @@ function get_options(;gr, cut_shp = "", srcnodata="", dstnodata="", x_min = - 67
                                                                     y_max = - 635600)
     options = ["-overwrite",
                "-t_srs", "EPSG:3413",
-               "-r", "average",
+               "-r", "bilinear",
                "-co", "FORMAT=NC4",
                "-co", "COMPRESS=DEFLATE",
                "-co", "ZLEVEL=2",
@@ -50,7 +50,7 @@ function gdalwarp(path::String; gr::Real, cut_shp="", srcnodata="", dstnodata=""
 end
 function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", dstnodata="", kwargs...)
     source = AG.read.(path)
-    ds = AG.gdalwarp(source, get_options(;gr, srcnodata)) do warped1
+    ds = AG.gdalwarp(source, get_options(;gr, srcnodata, dstnodata)) do warped1
         if !isempty(cut_shp)
             AG.gdalwarp([warped1], get_options(;gr, cut_shp, srcnodata, dstnodata); kwargs...) do warped2
                 band = AG.getband(warped2, 1)
@@ -86,7 +86,7 @@ end
 """
 function save_netcdf(dest::String, spatial_template_file::String, layers::Vector{T}, layernames::Vector{String}, attributes::Dict{String, Dict{String, Any}})  where T <: AbstractArray
     template  = NCDataset(spatial_template_file)
-    crs_names = ["mapping", "polar_stereographic", "crs"]
+    crs_names = ["mapping", "polar_stereographic", "crs", "spatial_ref"]
     m    = crs_names[findfirst(in.(crs_names, (keys(template),)))]
     crs  = template[m]
     tx   = template["x"]
@@ -188,6 +188,20 @@ function create_bedmachine_grid(gr, spatial_template_file)
     attributes = get_attr(attr_template, layernames)
     save_netcdf(dest_file, spatial_template_file, fieldvals, layernames, attributes)
     return dest_file
+end
+
+function get_surface_file(ref1, bedm_file; remove_geoid=false)
+    ds_ref1 = NCDataset(ref1)
+    surf    = ds_ref1["surface"][:]
+    if remove_geoid  # when comparing to elevation data that is not geoid corrected
+        geoid    = NCDataset(bedm_file)["geoid"][:]
+        surf   .+= geoid
+    end
+    surf[ismissing.(surf)] .= no_data_value
+    verticalrefname = remove_geoid ? "ellipsoid" : "geoid"
+    out_name = splitext(ref1)[1]*"_surface_"*verticalrefname*splitext(ref1)[2]
+    save_netcdf(out_name, ref1, [Float32.(surf)], ["surface"], Dict("surface" => Dict{String,Any}()))
+    return out_name
 end
 
 """
@@ -300,7 +314,7 @@ function create_aerodem(;gr, shp_file, bedmachine_path, kw="")
     gdalwarp(aerodem_g150_file; gr, srcnodata=dstnodata, dest=aerodem_gr_file)
     # gdalwarp(rm_g150_file; gr, srcnodata=dstnodata, dest=rm_gr_file)
 
-    return aerodem_g150_file, aerodem_gr_file  #, rm_gr_file
+    return aerodem_g150_file, aerodem_gr_file
 end
 
 function create_imbie_mask(;gr, shp_file, sample_path)
@@ -331,62 +345,16 @@ function create_imbie_mask(;gr, shp_file, sample_path)
     return imbie_mask_file
 end
 
-function get_nc_from_flightlines(pt_data::DataFrame, bedm_file::String, dest_file::String; correct_geoid=false)
-    # load coordinates of grid to project on
-    x      = ncread(bedm_file, "x")
-    y      = ncread(bedm_file, "y")
-    dx     = x[2]-x[1]
-    dy     = y[2]-y[1]
-    nx, ny = length(x), length(y)
-
-    # transform atm coordinates
-    coords = [[pt_data.lon[i], pt_data.lat[i]] for i in eachindex(pt_data.lat)]
-    coords_proj = AG.reproject(coords, GFT.ProjString("+proj=longlat +datum=WGS84 +no_defs"), GFT.EPSG(3413))  # hard-coded source and target coordinate systems
-    x_proj = first.(coords_proj)
-    y_proj = last.(coords_proj)
-
-    # reproject on grid using averages weighted by inverse distance
-    println("Projecting flight line values on model grid...")
-    r_inv     = zeros(Float32, nx, ny)
-    grid_data = zeros(Float32, nx, ny)
-    npts      = zeros(Int, nx, ny)
-    n = 1
-    for (xp, yp, zp) in zip(x_proj, y_proj, pt_data.z)
-        rx, ix = findmin(abs.(xp .- x))
-        ry, iy = findmin(abs.(yp .- y))
-        r = sqrt(rx^2 + ry^2)
-        if abs(xp - x[ix]) < 0.5dx && abs(yp - y[iy]) < 0.5dy
-            npts[ix,iy] += 1
-            r_inv[ix,iy] += 1 / r
-            grid_data[ix,iy] += zp / r
-        end
-        n += 1
-    end
-    i_z               = grid_data .!= 0
-    grid_data[i_z]    = grid_data[i_z] ./ r_inv[i_z]
-    grid_data[.!i_z] .= no_data_value
-
-    # correct for geoid
-    if correct_geoid
-        geoid = ncread(bedm_file, "geoid")
-        grid_data[i_z] -= geoid[i_z]
-    end
-
-    # save as netcdf file
-    svd_IceSheetDEM.save_netcdf(dest_file, bedm_file, [grid_data], ["surface"], Dict("surface" => Dict{String, Any}()))
-    return
-end
-
-function create_atm_grid(gr, bedm_file::String, kw="")
+function get_atm_file()
     atm_path = "data/ATM/"
-    atm_file = atm_path*"ATM_elevation_geoid_corrected_g$(gr).nc"
+    atm_file = joinpath(atm_path,"ATM_nadir2seg_all.csv")
     # if file exists already, do nothing
     if isfile(atm_file)
         return atm_file
     end
 
     # download files
-    raw_path  = atm_path*"raw/"
+    raw_path  = joinpath(atm_path,"raw/")
     mkpath(raw_path)
     if isempty(readdir(raw_path))
         println("Downloading ATM elevation data...")
@@ -424,8 +392,7 @@ function create_atm_grid(gr, bedm_file::String, kw="")
         return d_final
     end
     df = merge_files(files)
-
-    get_nc_from_flightlines(df, bedm_file, atm_file; correct_geoid=true)
+    CSV.write(atm_file, df)
     return atm_file
 end
 
@@ -513,3 +480,29 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
     rm(tempname)
     return dest, n_years
 end
+
+function __init__()
+    py"""
+    import xdem
+    import pandas as pd
+    import geopandas as gpd
+
+    def point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out):
+        ref_DEM       = xdem.DEM(fname_ref)
+        ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
+        # extract ATM points
+        df       = pd.read_csv(fname_atm)
+        geometry = gpd.points_from_xy(df.x12, df.x2, crs="WGS84")
+        g        = geometry.to_crs(ref_DEM.crs)
+        # interpolate
+        ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        ref_pts_geoid = ref_DEM_geoid.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        # save
+        # note: "h_ref" below is referenced to geoid !!
+        # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
+        # however, for destandardization we need the geoid-referenced elevation of grimp)
+        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.x4)})
+        ds_save.to_csv(fname_out, index=False)
+    """
+end
+py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_ref_geoid, fname_atm, fname_out)

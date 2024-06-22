@@ -6,8 +6,8 @@ using ArgParse
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
 
-using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, ZipFile
-using Downloads, Cascadia, Gumbo, HTTP
+using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
+using Downloads, Cascadia, Gumbo, HTTP, PyCall
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
 using Arpack, LinearAlgebra
@@ -16,9 +16,9 @@ import Plots, StatsPlots
 
 export parse_commandline, get_ix, get_iy
 export archgdal_read, gdalwarp
-export create_aerodem, create_bedmachine_grid, create_imbie_mask, create_atm_grid, create_dhdt_grid
+export create_aerodem, create_bedmachine_grid, create_imbie_mask, get_atm_file, create_dhdt_grid
 export SVD_reconstruction, create_reconstructed_bedmachine
-export residual_analysis
+export SVD_random_fields, geostats_interpolation
 
 const no_data_value = -9999.0
 const F = Float32              # Julia default is Float64 but that kills the process for the full training data set if r is too large
@@ -57,6 +57,7 @@ end
 
 get_ix(i,nx) = i % nx == 0 ? nx : i % nx
 get_iy(i,nx) = cld(i,nx)
+get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 
 include("gdal_helpers.jl")
 include("reconstruction_routines.jl")
