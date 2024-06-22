@@ -201,7 +201,8 @@ function get_surface_file(ref1, bedm_file; remove_geoid=false)
         surf   .+= geoid
     end
     surf[ismissing.(surf)] .= no_data_value
-    out_name = splitext(ref1)[1]*"_surface"*splitext(ref1)[2]
+    verticalrefname = remove_geoid ? "ellipsoid" : "geoid"
+    out_name = splitext(ref1)[1]*"_surface_"*verticalrefname*splitext(ref1)[2]
     save_netcdf(out_name, ref1, [Float32.(surf)], ["surface"], Dict{String, Any}("surface" => Dict()))
     return out_name
 end
@@ -489,17 +490,22 @@ function __init__()
     import pandas as pd
     import geopandas as gpd
 
-    def point_interp(fname_ref, fname_atm, fname_out):
-        ref_DEM = xdem.DEM(fname_ref)
+    def point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out):
+        ref_DEM       = xdem.DEM(fname_ref)
+        ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
         # extract ATM points
-        df = pd.read_csv(fname_atm)
+        df       = pd.read_csv(fname_atm)
         geometry = gpd.points_from_xy(df.x12, df.x2, crs="WGS84")
         g        = geometry.to_crs(ref_DEM.crs)
         # interpolate
-        ref_pts  = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        ref_pts_geoid = ref_DEM_geoid.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
         # save
-        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h": ref_pts, "h_atm": df.x4, "dh": (ref_pts-df.x4)})
+        # note: "h_ref" below is referenced to geoid !!
+        # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
+        # however, for destandardization we need the geoid-referenced elevation of grimp)
+        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.x4)})
         ds_save.to_csv(fname_out, index=False)
     """
 end
-py_point_interp(fname_ref, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_atm, fname_out)
+py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_ref_geoid, fname_atm, fname_out)

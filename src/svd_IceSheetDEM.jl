@@ -17,7 +17,7 @@ export parse_commandline
 export archgdal_read, gdalwarp
 export create_aerodem, create_bedmachine_grid, create_imbie_mask, get_atm_file, create_dhdt_grid
 export solve_lsqfit, create_reconstructed_bedmachine
-export SVD_random_fields
+export SVD_random_fields, geostats_interpolation
 
 function parse_commandline(args)
     s = ArgParseSettings()

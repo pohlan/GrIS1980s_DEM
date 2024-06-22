@@ -15,9 +15,9 @@ parsed_args         = parse_commandline(ARGS)
 training_data_files = parsed_args["training_data"]
 shp_file            = parsed_args["shp_file"]
 
-# ---------------------- #
-# Part A: reconstruction #
-# ---------------------- #
+# -------------------------- #
+# Part A: SVD reconstruction #
+# -------------------------- #
 
 # 1.) make sure the training data set is not empty
 @assert !isempty(training_data_files)
@@ -67,3 +67,10 @@ atm_file  = get_atm_file()
 dh_obs_file, _   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
 # 3.) standardize residual, evaluate variogram and generate random fields
 rf_files = SVD_random_fields(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; n_fields=10)
+
+
+# ------------------------------ #
+# Part C: Interpolation approach #
+# ------------------------------ #
+
+interp_rec_file = geostats_interpolation(bedmachine_file, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; nbins1=6, nbins2=12, maxn=50, n_fields=2, method=:sgs)

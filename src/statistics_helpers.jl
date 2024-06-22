@@ -71,7 +71,7 @@ function filter_per_bin!(y_binned; cutoff=5.0)
     end
     n_after  = sum(length.(y_binned))
     perc_deleted = (n_before-n_after)*100 / n_before
-    @printf "%.2f %% of points removed as outliers.\n" perc_deleted
+    @printf("%.2f %% of points removed as outliers.\n", perc_deleted)
     return is_deleted
 end
 
@@ -114,7 +114,7 @@ function get_aerodem_df(aero, ref, dhdt0, x, y, idx_aero)
     dhdt = replace_missing(dhdt0, 0)
     df_aero  = DataFrame(:x       => x[get_ix.(idx_aero, length(x))],
                          :y       => y[get_iy.(idx_aero, length(x))],
-                         :h       => ref[idx_aero],
+                         :h_ref   => ref[idx_aero],
                          :dhdt    => dhdt[idx_aero],
                          :dh      => ref[idx_aero] - aero[idx_aero],
                          :idx     => idx_aero,
@@ -137,7 +137,6 @@ function remove_small_bins!(A_binned::Vector...; min_n_sample=80)  # 1D
     return
 end
 function remove_small_bins(bin_centers_1::Vector, bin_centers_2::Vector, A_binned::Matrix; min_n_sample=80) # 2D
-    display(length.(A_binned))
     while any(length.(A_binned) .< min_n_sample)
         i_rm               = findall(length.(A_binned) .< min_n_sample)
         ix_rm              = [first(i_rm[i].I) for i in eachindex(i_rm)]
@@ -158,7 +157,7 @@ function remove_small_bins(bin_centers_1::Vector, bin_centers_2::Vector, A_binne
             @printf("Removed one column, %d columns left.\n", length(idx_y))
         end
     end
-    @assert all(length.(A_binned) .> min_n_sample)
+    @assert all(length.(A_binned) .>= min_n_sample)
     return bin_centers_1, bin_centers_2, A_binned
 end
 
@@ -242,6 +241,7 @@ function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, m
     # fit a covariance function
     ff = LsqFit.curve_fit(get_γ, gamma.abscissa, gamma.ordinate, p0);
     varg = custom_var(ff.param)
+
     # plot
     if !isempty(fig_path)
         Plots.scatter(gamma.abscissa .* 1e-3, gamma.ordinate, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance [km]", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
@@ -252,9 +252,7 @@ function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, m
     return varg, ff
 end
 
-function generate_random_fields(;std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file, n_fields)
-    output_dir = "output/SVD_RF/simulations/"
-    mkpath(output_dir)
+function generate_random_fields(output_dir; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file, n_fields)
     k_m = 100.0
     nh  = 10000
     lx = x[end] - x[1]
@@ -270,21 +268,21 @@ function generate_random_fields(;std_devs, corr_ls, x, y, destand, ir_random_fie
         end
         # multiply with nmad and sigmas to get back variability w.r.t. binning variables
         rftot_destand = zeros(Float32, nx, ny)
-        rftot_destand[ir_random_field] = destand(rftot, ir_random_field)
+        rftot_destand[ir_random_field] = destand(rftot[ir_random_field], ir_random_field)
         # smooth over a 5x5 pixel window
         rftot_smooth = mapwindow(median, rftot_destand, (5,5))
         # add the random field to the reconstruction
         rftot_smooth[ir_random_field] .+= rec[ir_random_field]
         rftot_smooth[rftot_smooth .<= 0] .= no_data_value
         dest_files[i]  = joinpath(output_dir, "rec_rand_id_$(i).nc")
-        svd_IceSheetDEM.save_netcdf(dest_files[i], template_file, [rftot_smooth], ["surface"], Dict("surface" => Dict()))
+        save_netcdf(dest_files[i], template_file, [rftot_smooth], ["surface"], Dict("surface" => Dict()))
     end
     return dest_files
 end
 
 
 function prepare_random_sims(ref_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                             dh_atm_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=100)
+                             atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=100)
     # read in
     ref          = NCDataset(ref_file)["surface"][:]
     x            = NCDataset(ref_file)["x"][:]
@@ -296,62 +294,159 @@ function prepare_random_sims(ref_file, bedm_file, obs_aero_file, obs_ATM_file, d
 
     # indices
     I_no_ocean = findall(vec(.!ismissing.(glacier_mask) .&& (bedm_mask .!= 1)))
-    idx_aero   = findall(vec(.!ismissing.(h_aero) .&& .!ismissing.(ref) .&& (bedm_mask .!= 1.0) .&& (h_aero  .> 0) .&& (abs.(ref .- h_aero ) .> 0.0)))
+    idx_aero   = findall(vec(.!ismissing.(h_aero) .&& (h_aero  .> 0) .&& .!ismissing.(ref) .&& (bedm_mask .!= 1.0) .&& .!ismissing.(glacier_mask) .&& (abs.(ref .- h_aero ) .> 0.0)))
 
     # aerodem
     df_aero = get_aerodem_df(h_aero, ref, dhdt, x, y, idx_aero)
 
-    # atm
-    ref_surface = get_surface_file(ref_file, bedm_file, remove_geoid=true)
+    # need a file with only one band for interp_points operation in xdem python;
+    # plus need to reference to ellipsoid to be consistent with atm before differencing the two
+    ref_surface_ellipsoid = get_surface_file(ref_file, bedm_file, remove_geoid=true)
+    ref_surface_geoid     = get_surface_file(ref_file, bedm_file, remove_geoid=false)
     # interpolate GrIMP DEM on ATM points and calculate difference
-    py_point_interp(ref_surface, obs_ATM_file, dh_atm_file)
-    # read in and select values
-    df_atm = get_ATM_df(dh_atm_file, dhdt, x, y, df_aero; I_no_ocean)
+    py_point_interp(ref_surface_ellipsoid, ref_surface_geoid, obs_ATM_file, atm_dh_dest_file)
+    rm(ref_surface_ellipsoid)
+    rm(ref_surface_geoid)     # delete them again as not needed anymore
+
+    # atm
+    df_atm  = get_ATM_df(atm_dh_dest_file, dhdt, x, y, df_aero; I_no_ocean)
 
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:intersect)
 
     # standardize, describing variance and bias as a function of dhdt and elevation
     df_all.dhdt = abs.(df_all.dhdt)
-    df_all, destandardize = standardizing_2D(df_all, :dhdt, :h; nbins1, nbins2, min_n_sample, fig_path);
+    df_all, destandardize = standardizing_2D(df_all, :dhdt, :h_ref; nbins1, nbins2, min_n_sample, fig_path);
     dhdt = replace_missing(dhdt, 0.0)   # the variance and bias linear interpolation function don't accept a type missing
     ref  = replace_missing(ref, 0.0)
-    destand(dh, idx) = destandardize(dh[idx], abs.(dhdt[idx]), ref[idx])
+    destand(dh, idx) = destandardize(dh, abs.(dhdt[idx]), ref[idx])
 
     # plot after standardizing
     Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
     Plots.savefig(joinpath(fig_path,"data_standardized.png"))
+    Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-50,50), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="dh non-standardized", grid=false, wsize=(1700,1800))
+    Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
 
     # variogram
-    varg, ff = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=1.2e6, nlags=200, custom_var, param_cond, sample_frac=0.05, p0, fig_path)
+    varg, ff = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=1.5e6, nlags=200, custom_var, param_cond, sample_frac=0.05, p0, fig_path)
     return df_all, varg, ff, destand, I_no_ocean, idx_aero
 end
 
-function SVD_random_fields(rec_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                           nbins1=10, nbins2=30, n_fields=10)
-    fig_path = "output/SVD_RF/figures/"
+function SVD_random_fields(rec_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
+                           nbins1::Int=10, nbins2::Int=30,  # amount of bins for 2D standardization
+                           n_fields::Int=10)                # number of simulations
+    main_output_dir  = joinpath("output","SVD_RF")
+    fig_path         = joinpath(main_output_dir, "figures")
+    sims_path        = joinpath(main_output_dir, "simulations")
+    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "SVD_rec_minus_atm.csv")
     mkpath(fig_path)
-    dh_atm_file = joinpath(dirname(obs_ATM_file), "SVD_rec_minus_atm.csv")
+    mkpath(sims_path)
 
     # define variogram function for ParallelRandomFields
     custom_var(params) =   x ->
-        params[1]^2 .* (1 .-  exp.(-sqrt(2) * x./params[3])) .+
-        params[2]^2 .* (1 .-  exp.(-sqrt(2) * x./params[4]))
-    param_cond(params) = all(0.0 .< params[1:2] .< 1.0) && all(sum(params[1:2].^2).>0.95) && all(params[3:4] .< 1e6) # conditions on parameters
-    p0 = [0.8, 0.5, 1e4, 4e5]
+        params[1] .* (1 .-  exp.(-sqrt(2) * x./params[3])) .+
+        params[2] .* (1 .-  exp.(-sqrt(2) * x./params[4]))
+    param_cond(params) = all(params .> 0.0) # conditions on parameters
+    # initial guess for parameters
+    p0 = [0.5, 0.5, 1e4, 4e5]
 
     # standardize and get variogram
-    _, _, ff, destand, I_no_ocean, _ = prepare_random_sims(rec_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                                                    dh_atm_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2)
+    _, varg, ff, destand, I_no_ocean, _ = prepare_random_sims(rec_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
+                                                           atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2)
+    @printf("Sum of variances in variogram: %.2f \n", sum(ff.param[1:2]))
+    @printf("Correlation length scales: %d and %d \n", ff.param[3], ff.param[4])
 
     # ParallelRandomFields
-    std_devs   = ff.param[1:2]
+    std_devs   = sqrt.(ff.param[1:2] ./ sum(ff.param[1:2]))
     corr_ls    = ff.param[3:4]
     obs        = ncread(obs_aero_file, "Band1")
     rec        = ncread(rec_file,"surface")
     x          = ncread(rec_file,"x")
     y          = ncread(rec_file,"y")
     ir_random_field = findall(vec(obs .> 0 .|| rec .> 0))
-    rf_files = generate_random_fields(;std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file=obs_aero_file, n_fields)
+    rf_files = generate_random_fields(sims_path; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file=obs_aero_file, n_fields)
     return rf_files
+end
+
+function generate_sequential_gaussian_sim(output_geometry, geotable_input, varg; n_fields, maxn)
+    method  = SEQMethod(maxneighbors=maxn)
+    process = GaussianProcess(varg)
+    tic   = Base.time()
+    sims    = rand(process, output_geometry, geotable_input, n_fields, method)
+    toc   = Base.time() - tic
+    @printf("SGS took %d minutes. \n", toc / 60)
+    return sims
+end
+
+function do_kriging(output_geometry, geotable_input, varg; maxn)
+    model  = Kriging(varg)
+    tic    = Base.time()
+    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn)
+    toc    = Base.time() - tic
+    @printf("Kriging took %d minutes. \n", toc / 60)
+    return interp
+end
+
+function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
+                                nbins1::Int=6, nbins2::Int=10,  # amount of bins for 2D standardization
+                                maxn::Int,                      # maximum neighbors for interpolation method
+                                method::Symbol=:kriging,        # either :kriging or :sgs
+                                n_fields::Int=10)               # number of simulations in case of method=:sgs
+    main_output_dir  = joinpath("output","geostats_interpolation")
+    fig_path         = joinpath(main_output_dir, "figures/")
+    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
+    mkpath(fig_path)
+
+    # define variogram function to fit
+    custom_var(params) = SphericalVariogram(range=params[1], sill=params[4]) + # ./ sum(params[4:6])) +
+                         SphericalVariogram(range=params[2], sill=params[5]) + # ./ sum(params[4:6])) +
+                         SphericalVariogram(range=params[3], sill=params[6]) # ./ sum(params[4:6]))
+    param_cond(params) = all(params .> 0) # && all(0.0 .< params[1:3] .< 1.0)
+    # initial guess for parameters
+    p0 = [1e4, 5e5, 1.4e6, 0.3, 0.3, 0.3]
+
+    # standardize and get variogram
+    df_all, varg, ff, destand, I_no_ocean, idx_aero = prepare_random_sims(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
+                                                                         atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2)
+    # force overall variance of variogram to be one
+    @printf("Sum of variances in variogram: %.2f \n", sum(ff.param[4:6]))
+    ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
+    varg           = custom_var(ff.param)
+    display(varg)
+
+    ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
+    grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(df_all.x[get_ix.(ir_sim, length(df_all.x))], df_all.y[get_iy.(ir_sim, length(df_all.x))])])
+    geotable    = make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
+
+    # prepare predicted field, fill with aerodem observations where available
+    h_aero               = NCDataset(obs_aero_file)["Band1"][:]
+    h_grimp              = NCDataset(grimp_file)["surface"][:]
+    h_grimp              = replace_missing(h_grimp, 0.0)
+    h_predict            = zeros(size(h_aero))
+    h_predict[idx_aero] .= h_aero[idx_aero]
+
+    if method == :sgs  # sequential gaussian simulations
+        output_path = joinpath(main_output_dir, "SEQ_simulations/")
+        mkpath(output_path)
+        println("Generating sequential gaussian simulations...")
+        sims = generate_sequential_gaussian_sim(grid_output, geotable, varg; n_fields, maxn)
+        dest_files = Vector{String}(undef, n_fields)
+        for (i,s) in enumerate(sims)
+            h_predict[ir_sim]           .= h_grimp[ir_sim] .- destand(s.Z, ir_sim)
+            h_predict[h_predict .<= 0.] .= no_data_value
+            dest_files[i]  = joinpath(output_path, "rec_sgs_id_$(i).nc")
+            save_netcdf(dest_files[i], obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict()))
+        end
+        return dest_files
+    elseif method == :kriging
+        output_path = joinpath(main_output_dir, "kriging/")
+        mkpath(output_path)
+        println("Kriging...")
+        interp = do_kriging(grid_output, geotable, varg; maxn)
+        h_predict[ir_sim]           .= h_grimp[ir_sim] .- destand(interp.Z, ir_sim)
+        h_predict[h_predict .<= 0.] .= no_data_value
+        dest_file                    = joinpath(output_path, "rec_kriging.nc")
+        save_netcdf(dest_file, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict()))
+        return dest_file
+    end
 end
