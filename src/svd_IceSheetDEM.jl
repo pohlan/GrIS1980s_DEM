@@ -5,6 +5,7 @@ using ArgParse
 
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
+import Conda
 
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile
 using Downloads, Cascadia, Gumbo, HTTP, PyCall

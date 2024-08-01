@@ -36,6 +36,8 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v1
       - name: build and run tests
+        env:
+          PYTHON: ""
         run: |
           julia --project -e 'println("--- :julia: instantiating project")
             using Pkg
