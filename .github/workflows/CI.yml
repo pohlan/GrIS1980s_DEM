@@ -23,6 +23,7 @@ jobs:
           - ubuntu-latest
         arch:
           - x64
+        python: [3.12]
     steps:
       - uses: actions/checkout@v3
       - uses: extractions/netrc@v1
@@ -30,12 +31,27 @@ jobs:
           machine: urs.earthdata.nasa.gov
           username: ${{ secrets.EARTHDATA_USERNAME }}
           password: ${{ secrets.EARTHDATA_PASSWORD }}
+      - name: Set up python ${{ matrix.python }}
+        uses: actions/setup-python@v2
+        with:
+            python-version: ${{ matrix.python }}
+      - name: Display Python version
+        run: python -c "import sys; print(sys.version)"
+      - name: Set ENV Variables for python
+        run: echo ENV["PYTHON"] = "${{ env.pythonLocation }}/bin/python" >> $GITHUB_ENV
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
       - uses: julia-actions/setup-julia@v1
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v1
       - name: build and run tests
+        env:
+          PYTHON: "${{ env.pythonLocation }}/bin/python"
         run: |
           julia --project -e 'println("--- :julia: instantiating project")
             using Pkg

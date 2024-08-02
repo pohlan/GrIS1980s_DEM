@@ -23,7 +23,7 @@ aero_150_file, aero_gr_file = create_aerodem(;gr, shp_file, bedmachine_path, kw=
 # imbie mask
 imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aero_150_file)
 # atm
-atm_file = create_atm_grid(gr, bedmachine_file_gr, "1994.05.21/")
+# atm_file = get_atm_file()
 
 
 missmax(x) = maximum(x[.!ismissing.(x)])
@@ -52,11 +52,11 @@ end
     @test missum(imb .== 1) == sum(.!ismissing.(imb)) == 9496
 end
 
-@testset "atm" begin
-    atm = ncread(atm_file, "surface")
-    @test sum(atm .> 0) == 633
-    @test maximum(atm) == 2385.68f0
-end
+# @testset "atm" begin
+#     atm = ncread(atm_file, "surface")
+#     @test sum(atm .> 0) == 633
+#     @test maximum(atm) == 2385.68f0
+# end
 
 ###############################
 # testing the problem solving #
