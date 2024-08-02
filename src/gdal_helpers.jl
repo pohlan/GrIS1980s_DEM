@@ -482,11 +482,6 @@ function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
 end
 
 function __init__()
-    for pk in ["pandas", "geopandas", "xdem"]
-        if !haskey(Conda._installed_packages_dict(),pk)
-            Conda.add(pk, :newenv, channel="conda-forge")
-        end
-    end
     py"""
     import xdem
     import pandas as pd

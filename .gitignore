@@ -1,6 +1,5 @@
 # data files / output
 *.jld2
-*.txt
 *.csv
 *.tif
 *.jpg
