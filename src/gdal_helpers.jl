@@ -483,26 +483,26 @@ end
 
 function __init__()
     py"""
-    # import xdem
+    import xdem
     import pandas as pd
     import geopandas as gpd
 
     def point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out):
-        # ref_DEM       = xdem.DEM(fname_ref)
-        # ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
+        ref_DEM       = xdem.DEM(fname_ref)
+        ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
         # extract ATM points
         df       = pd.read_csv(fname_atm)
         geometry = gpd.points_from_xy(df.x12, df.x2, crs="WGS84")
         g        = geometry.to_crs(ref_DEM.crs)
         # interpolate
-        # ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
-        # ref_pts_geoid = ref_DEM_geoid.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
+        ref_pts_geoid = ref_DEM_geoid.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
         # save
         # note: "h_ref" below is referenced to geoid !!
         # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
         # however, for destandardization we need the geoid-referenced elevation of grimp)
-        # ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.x4)})
-        # ds_save.to_csv(fname_out, index=False)
+        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.x4)})
+        ds_save.to_csv(fname_out, index=False)
     """
 end
 py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_ref_geoid, fname_atm, fname_out)
