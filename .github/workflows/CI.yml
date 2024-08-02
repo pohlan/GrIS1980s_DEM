@@ -39,12 +39,10 @@ jobs:
         run: python -c "import sys; print(sys.version)"
       - name: Set ENV Variables for python
         run: echo ENV["PYTHON"] = "${{ env.pythonLocation }}/bin/python" >> $GITHUB_ENV
-      - name: Initialize conda
-        run: |
-          source activate base
       - name: Install dependencies
         run: |
-          conda env update -f environment.yml --prune
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - uses: julia-actions/setup-julia@v1
         with:
