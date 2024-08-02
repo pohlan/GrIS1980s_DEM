@@ -41,9 +41,7 @@ jobs:
         run: echo ENV["PYTHON"] = "${{ env.pythonLocation }}/bin/python" >> $GITHUB_ENV
       - name: Initialize conda
         run: |
-          conda init bash
-          source ~/.bashrc
-          conda activate
+          source activate base
       - name: Install dependencies
         run: |
           conda env update -f environment.yml --prune
