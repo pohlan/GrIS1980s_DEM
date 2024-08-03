@@ -450,15 +450,9 @@ function do_kriging(output_geometry, geotable_input, varg; maxn)
     return interp
 end
 
-function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
-                                nbins1::Int=6, nbins2::Int=10,  # amount of bins for 2D standardization
-                                maxn::Int,                      # maximum neighbors for interpolation method
-                                method::Symbol=:kriging,        # either :kriging or :sgs
-                                n_fields::Int=10)               # number of simulations in case of method=:sgs
-    main_output_dir  = joinpath("output","geostats_interpolation")
-    fig_path         = joinpath(main_output_dir, "figures/")
-    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
-    mkpath(fig_path)
+function do_destandardization(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String,
+                              fig_path::String, atm_dh_dest_file::String;
+                              nbins1::Int, nbins2::Int)  # amount of bins for 2D standardization
 
     # define variogram function to fit
     custom_var(params) = SphericalVariogram(range=params[1], sill=params[4]) + # ./ sum(params[4:6])) +
@@ -487,6 +481,27 @@ function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_
     h_grimp              = replace_missing(h_grimp, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
+
+    function get_predicted_field(dh)
+        @assert length(dh) == length(ir_sim)
+        h_predict[ir_sim]           .= h_grimp[ir_sim] .- destand(dh, ir_sim)
+        h_predict[h_predict .<= 0.] .= no_data_value
+        return h_predict
+    end
+    return grid_output, geotable, varg, get_predicted_field
+end
+
+function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
+                                nbins1::Int=6, nbins2::Int=10,  # amount of bins for 2D standardization
+                                maxn::Int,                      # maximum neighbors for interpolation method
+                                method::Symbol=:kriging,        # either :kriging or :sgs
+                                n_fields::Int=10)               # number of simulations in case of method=:sgs
+    main_output_dir  = joinpath("output","geostats_interpolation")
+    fig_path         = joinpath(main_output_dir, "figures/")
+    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
+    mkpath(fig_path)
+
+    grid_output, geotable, varg, get_predicted_field = do_destandardization(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_path, atm_dh_dest_file; nbins1, nbins2)
 
     if method == :sgs  # sequential gaussian simulations
         output_path = joinpath(main_output_dir, "SEQ_simulations/")
