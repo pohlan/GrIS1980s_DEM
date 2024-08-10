@@ -177,7 +177,7 @@ function create_bedmachine_grid(gr, spatial_template_file)
     attr_template = NCDataset(bedmachine_original)
     for fn in layernames
         if fn == "mask"
-            new = mask_downsamle(bedmachine_original, spatial_template_file, gr)
+            new = mask_downsamle(bedmachine_original, spatial_template_file, 5e3)
         else
             new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value))[:,end:-1:1]
         end

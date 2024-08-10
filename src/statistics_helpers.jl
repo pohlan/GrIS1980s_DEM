@@ -32,10 +32,10 @@ function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2) # 2D
     nx = length(x1)
     nsampl1 = ceil(Int, nx / n_bins_1)
     nsampl2 = ceil(Int, nx / n_bins_2)
-    if nx % nsampl1 < 500
+    if nx % nsampl1 < 50
         n_bins_1 -= 1
     end
-    if nx % nsampl2 < 500
+    if nx % nsampl2 < 50
         n_bins_2 -= 1
     end
     p1 = sortperm(x1)
@@ -62,7 +62,7 @@ Input:
 - idx_binned
 -
 """
-function filter_per_bin!(y_binned; cutoff=5.0)
+function filter_per_bin!(y_binned; cutoff=7.0)
     println("Removing outliers per bin..")
     n_before = sum(length.(y_binned))
     is_deleted = [Int[] for i in y_binned]
@@ -125,6 +125,9 @@ function get_aerodem_df(aero, ref, dhdt0, x, y, idx_aero)
                          :dh      => ref[idx_aero] - aero[idx_aero],
                          :idx     => idx_aero,
                          :source .=> :aerodem )
+    # already remove some outliers here, improves standardization
+    aero_to_delete = findall(abs.(df_aero.dh) .> 5 .* mad(df_aero.dh))
+    deleteat!(df_aero, aero_to_delete)
     return df_aero
 end
 
@@ -184,7 +187,7 @@ function standardizing_2D(df::DataFrame, bfield1::Symbol, bfield2::Symbol; nbins
     # standardize
     df.dh_detrend   = (df.dh .- itp_med_lin.(bin_field_1,bin_field_2)) ./ itp_mad_lin.(bin_field_1,bin_field_2)
     # remove outliers again after standardizing
-    all_to_delete = findall(abs.(df.dh_detrend) .> 4 .* mad(df.dh_detrend))
+    all_to_delete = findall(abs.(df.dh_detrend) .> 5 .* mad(df.dh_detrend))
     deleteat!(df, all_to_delete)
     # make sure it's truly centered around zero and has std=1 exactly
     std_y          = std(df.dh_detrend)
@@ -210,8 +213,13 @@ function standardizing_2D(df::DataFrame, bfield1::Symbol, bfield2::Symbol; nbins
         # nmad interpolation
         x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
         x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-        Plots.heatmap(x1, x2, itp_mad_lin.(x1, x2')', xaxis=:log, xlabel="absolute elevation change over specified time period (m)", ylabel="surface elevation (m)", title="NMAD (-)")
+        Plots.heatmap(x1, x2, itp_mad_lin.(x1, x2')', xlabel="absolute elevation change over specified time period (m)", ylabel="surface elevation (m)", title="NMAD (-)")
         Plots.savefig(joinpath(fig_path,"nmad_interpolation.png"))
+        # medians interpolation
+        x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
+        x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
+        Plots.heatmap(x1, x2, itp_med_lin.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="absolute elevation change over specified time period (m)", ylabel="surface elevation (m)", title="median (m)")
+        Plots.savefig(joinpath(fig_path,"median_interpolation.png"))
     end
     @printf("Kurtosis after standardization: %1.2f\n", kurtosis(df.dh_detrend))
     destandardize(dh, bin_field_1, bin_field_2) = dh .* std_y .* itp_mad_lin.(bin_field_1,bin_field_2) .+ itp_med_lin.(bin_field_1,bin_field_2) .+ mean_y
@@ -467,7 +475,7 @@ function do_destandardization(grimp_file::String, bedm_file::String, obs_aero_fi
 
     # standardize and get variogram
     df_all, varg, ff, destand, I_no_ocean, idx_aero = prepare_random_sims(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                                                                         atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, blockspacing)
+                                                                         atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, blockspacing, min_n_sample=50)
     # force overall variance of variogram to be one
     @printf("Sum of variances in variogram: %.2f \n", sum(ff.param[4:6]))
     ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
