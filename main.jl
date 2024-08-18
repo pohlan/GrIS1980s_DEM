@@ -9,7 +9,7 @@ using svd_IceSheetDEM, NetCDF
 
 parsed_args         = parse_commandline(ARGS)
 training_data_files = parsed_args["training_data"]
-shp_file            = parsed_args["shp_file"]
+outline_shp_file    = parsed_args["shp_file"]
 
 # -------------------------- #
 # Part A: SVD reconstruction #
@@ -24,21 +24,23 @@ x = ncread(template_file, "x")
 const gr = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
 
 # 2.) move all the necessary bedmachine layers to the right grid (downloads the bedmachine-v5 if not available)
-bedmachine_file = create_bedmachine_grid(gr, template_file)
-bedmachine_path = splitdir(bedmachine_file)[1]
+bedmachine_original, bedmachine_file = create_bedmachine_grid(gr, template_file)
 
 # 3.) make sure the imbie shp file is available
 if !isfile(shp_file)
     error("shape file not found at " * shp_file)
 end
 
-# 4.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
-aerodem_g150, obs_file = create_aerodem(;gr, shp_file, bedmachine_path)
+# 4.) grimp v2, reference DEM
+grimpv2_gr150, grimpv2_gr = create_grimpv2(gr, bedmachine_original)
 
-# 5.) get a netcdf mask from the imbie shp file
-imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aerodem_g150)
+# 5.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
+aerodem_g150, obs_file = create_aerodem(gr, outline_shp_file, bedmachine_original, grimpv2_gr150)
 
-# 6.) run the svd solve_lsqfit
+# 6.) get a netcdf mask from the imbie shp file
+imbie_mask_file = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
+
+# 7.) run the svd solve_lsqfit
 
 # 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 # retrieve command line arguments
@@ -48,7 +50,7 @@ do_figures  = parsed_args["do_figures"]
 use_arpack  = parsed_args["use_arpack"]
 rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files[1:3], obs_file, do_figures, use_arpack)
 
-# 5.) calculate the floating mask and create nc file according to the bedmachine template
+# 8.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf gneration??
 
 
@@ -68,5 +70,4 @@ rf_files = SVD_random_fields(rec_file, bedmachine_file, obs_file, atm_file, dh_o
 # ------------------------------ #
 # Part C: Interpolation approach #
 # ------------------------------ #
-
-interp_rec_file = geostats_interpolation(bedmachine_file, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; nbins1=6, nbins2=12, maxn=50, n_fields=2, method=:sgs)
+interp_rec_file = geostats_interpolation(grimpv2_gr, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; nbins1=8, nbins2=10, maxn=10, blockspacing=gr*2)

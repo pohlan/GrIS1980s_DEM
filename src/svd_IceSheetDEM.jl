@@ -15,8 +15,8 @@ using DataStructures: OrderedDict
 import Plots, StatsPlots
 
 export parse_commandline, get_ix, get_iy
-export archgdal_read, gdalwarp
-export create_aerodem, create_bedmachine_grid, create_imbie_mask, get_atm_file, create_dhdt_grid
+# export archgdal_read, gdalwarp
+export create_aerodem, create_bedmachine_grid, create_imbie_mask, get_atm_file, create_dhdt_grid, create_grimpv2
 export SVD_reconstruction, create_reconstructed_bedmachine
 export SVD_random_fields, geostats_interpolation
 

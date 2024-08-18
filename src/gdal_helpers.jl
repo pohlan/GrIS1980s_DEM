@@ -50,7 +50,7 @@ function gdalwarp(path::String; gr::Real, cut_shp="", srcnodata="", dstnodata=""
 end
 function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", dstnodata="", kwargs...)
     source = AG.read.(path)
-    ds = AG.gdalwarp(source, get_options(;gr, srcnodata, dstnodata)) do warped1
+    ds = AG.gdalwarp(source, get_options(;gr, srcnodata, dstnodata); kwargs...) do warped1
         if !isempty(cut_shp)
             AG.gdalwarp([warped1], get_options(;gr, cut_shp, srcnodata, dstnodata); kwargs...) do warped2
                 band = AG.getband(warped2, 1)
@@ -129,7 +129,7 @@ end
     Do gdalwarp of mask manually because I couldn't find an option in gdalwarp to make the search radius larger
     Necessary because bedrock mask needs to be conservatively large not leaving too many individual ice cells in between.
 """
-function mask_downsamle(bedmachine_fullres, templ, r)
+function mask_downsample(bedmachine_fullres, templ, r)
     bedm_src = ncread(bedmachine_fullres, "mask")
     x_src    = ncread(bedmachine_fullres, "x")
     y_src    = ncread(bedmachine_fullres, "y")
@@ -155,15 +155,15 @@ end
 
 function create_bedmachine_grid(gr, spatial_template_file)
     bedmachine_path = "data/bedmachine/"
-    dest_file = bedmachine_path * "bedmachine_g$(gr).nc"
+    dest_file = joinpath(bedmachine_path, "bedmachine_g$(gr).nc")
+    bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
     # if file exists already, do nothing
     if isfile(dest_file)
-        return dest_file
+        return bedmachine_original, dest_file
     end
 
     # check if the original bedmachine is there already, otherwise download
     mkpath(bedmachine_path)
-    bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
     if !isfile(bedmachine_original)
         println("Downloading bedmachine..")
         url_bedm = "https://n5eil01u.ecs.nsidc.org/ICEBRIDGE/IDBMG4.005/1993.01.01/BedMachineGreenland-v5.nc"
@@ -177,7 +177,7 @@ function create_bedmachine_grid(gr, spatial_template_file)
     attr_template = NCDataset(bedmachine_original)
     for fn in layernames
         if fn == "mask"
-            new = mask_downsamle(bedmachine_original, spatial_template_file, 5e3)
+            new = mask_downsample(bedmachine_original, spatial_template_file, 5e3)
         else
             new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value))[:,end:-1:1]
         end
@@ -187,12 +187,63 @@ function create_bedmachine_grid(gr, spatial_template_file)
     # save as netcdf
     attributes = get_attr(attr_template, layernames)
     save_netcdf(dest_file, spatial_template_file, fieldvals, layernames, attributes)
-    return dest_file
+    return bedmachine_original, dest_file
+end
+
+function create_grimpv2(gr, bedmachine_original)
+    data_path = joinpath("data","grimpv2")
+    get_dest_file(gr) = joinpath(data_path, "grimpv2_geoid_corrected_g$(gr).nc")
+    dest_g150_file    = get_dest_file(150)
+    dest_gr_file      = get_dest_file(gr)
+
+    dstnodata = string(Float32(no_data_value))
+
+    if isfile(dest_gr_file)
+        return dest_g150_file, dest_gr_file
+    elseif !isfile(dest_g150_file)
+
+        # set up paths
+        raw_path = joinpath(data_path, "raw")
+        mkpath(data_path)
+        mkpath(raw_path)
+
+        # download
+        if isempty(readdir(raw_path))
+            println("Download grimp v2 surface DEM...")
+            url_grimpv2 = "https://n5eil01u.ecs.nsidc.org/MEASURES/NSIDC-0715.002/2008.05.15/"
+            t = get_table_from_html(url_grimpv2)
+            tif_files = t.Name[endswith.(t.Name, ".tif") .&& occursin.("_dem_", t.Name)]
+            Downloads.download.(joinpath.(url_grimpv2, tif_files), joinpath.(raw_path,tif_files))
+        end
+
+        # gdalwarp
+        grimp_files = readdir(raw_path, join=true)
+        filter!(endswith(".tif"),grimp_files)
+        merged_g150 = joinpath(data_path,"merged_grimpv2_g150.nc")
+        println("Using gdalwarp to merge the grimpv2 mosaics into one DEM, taking a while..")
+        grimp_g150  = gdalwarp(grimp_files; gr=150, srcnodata="0.0", dstnodata, dest=merged_g150)
+        grimp_g150  = grimp_g150[:,end:-1:1]
+
+        # apply geoid correction
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)
+        idx   = findall(grimp_g150 .!= no_data_value .&& .!ismissing.(geoid))
+        grimp_g150[idx] .-= geoid[idx]
+        grimp_g150[grimp_g150 .< 0.0] .= no_data_value
+
+        # save as netcdf
+        sample_path = merged_g150
+        save_netcdf(dest_g150_file, sample_path, [grimp_g150], ["surface"], Dict("surface"=>Dict{String,Any}()))
+    end
+
+    # gdalwarp to desired grid
+    gdalwarp(dest_g150_file; gr, srcnodata=dstnodata, dest=dest_gr_file)
+
+    return dest_g150_file, dest_gr_file
 end
 
 function get_surface_file(ref1, bedm_file; remove_geoid=false)
     ds_ref1 = NCDataset(ref1)
-    surf    = ds_ref1["surface"][:]
+    surf    = ds_ref1["Band1"][:]
     if remove_geoid  # when comparing to elevation data that is not geoid corrected
         geoid    = NCDataset(bedm_file)["geoid"][:]
         surf   .+= geoid
@@ -247,10 +298,10 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(;gr, outline_shp_file, bedmachine_path, reference_file_g150, kw="")
-    aerodem_path = "data/aerodem/"
-    get_aero_file(gr) = aerodem_path * "aerodem_rm-filtered_geoid-corr_g$(gr).nc"
-    get_rm_file(gr)   = aerodem_path * "rm_g$(gr).nc"
+function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150; kw="")
+    aerodem_path      = joinpath("data","aerodem")
+    get_aero_file(gr) = joinpath(aerodem_path, "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
+    # get_rm_file(gr)   = aerodem_path * "rm_g$(gr).nc"
     aerodem_g150_file = get_aero_file(150)
     aerodem_gr_file   = get_aero_file(gr)
     # rm_g150_file      = get_rm_file(150)
@@ -264,8 +315,9 @@ function create_aerodem(;gr, outline_shp_file, bedmachine_path, reference_file_g
 
         # create aerodem, for some reason the cutting with the shapefile outline only works for smaller grids
         # otherwise GDALError (CE_Failure, code 1): Cutline polygon is invalid.
-        raw_path  = aerodem_path*"raw/"
-        fig_path  = joinpath(aerodem_path, "figures/")
+        raw_path  = joinpath(aerodem_path,"raw")
+        fig_path  = joinpath(aerodem_path, "figures")
+        mkpath(aerodem_path)
         mkpath(raw_path)
         mkpath(fig_path)
 
@@ -282,9 +334,8 @@ function create_aerodem(;gr, outline_shp_file, bedmachine_path, reference_file_g
             end
         end
 
-        aerodem_files = glob(raw_path * "aerodem_*.tif")
-        rm_files      = glob(raw_path * "rm_*.tif")
-
+        aerodem_files = glob(joinpath(raw_path, "aerodem_*.tif"))
+        rm_files      = glob(joinpath(raw_path, "rm_*.tif"))
         # gdalwarp
         merged_aero_dest = aerodem_path*"merged_aerodem_g150.nc"
         merged_rm_dest   = aerodem_path*"merged_rm_g150.nc"
@@ -296,7 +347,7 @@ function create_aerodem(;gr, outline_shp_file, bedmachine_path, reference_file_g
         aero_rm_filt[rel_mask .< 40] .= no_data_value  # only keep values with reliability of at least xx
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*joinpath(bedmachine_path,"BedMachineGreenland-v5.nc:geoid");  gr=150, dstnodata)
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)
         idx                                = findall(aero_rm_filt .!= no_data_value)
         aero_rm_filt[idx]                .-= geoid[idx]
         aero_rm_filt[aero_rm_filt .< 0.0] .= no_data_value

@@ -298,7 +298,7 @@ end
 function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
                                atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=100, blockspacing=5e3)
     # read in
-    ref          = NCDataset(ref_file)["surface"][:]
+    ref          = NCDataset(ref_file)["Band1"][:]
     x            = NCDataset(ref_file)["x"][:]
     y            = NCDataset(ref_file)["y"][:]
     h_aero       = NCDataset(obs_aero_file)["Band1"][:]
@@ -346,7 +346,7 @@ function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file,
     Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
 
     # variogram
-    varg, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=1.4e6, nlags=200, custom_var, param_cond, sample_frac=1.0, p0, fig_path)
+    varg, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=1.2e6, nlags=200, custom_var, param_cond, sample_frac=1.0, p0, fig_path)
     return df_all, varg, ff, destand, I_no_ocean, idx_aero
 end
 
@@ -493,13 +493,14 @@ function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_
                                 nbins1::Int=6, nbins2::Int=10,  # amount of bins for 2D standardization
                                 maxn::Int,                      # maximum neighbors for interpolation method
                                 method::Symbol=:kriging,        # either :kriging or :sgs
-                                n_fields::Int=10)               # number of simulations in case of method=:sgs
+                                n_fields::Int=10,               # number of simulations in case of method=:sgs
+                                blockspacing::Real)             # for block reduction of atm data, with verde python package
     main_output_dir  = joinpath("output","geostats_interpolation")
     fig_path         = joinpath(main_output_dir, "figures/")
     atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
     mkpath(fig_path)
 
-    df_all, varg, destand, I_no_ocean, idx_aero = prepare_interpolation(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_path, atm_dh_dest_file; nbins1, nbins2)
+    df_all, varg, destand, I_no_ocean, idx_aero = prepare_interpolation(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_path, atm_dh_dest_file; nbins1, nbins2, blockspacing)
 
     # derive indices for cells to interpolate
     ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
@@ -510,7 +511,7 @@ function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_
 
     # prepare predicted field, fill with aerodem observations where available
     h_aero               = NCDataset(obs_aero_file)["Band1"][:]
-    h_grimp              = NCDataset(grimp_file)["surface"][:]
+    h_grimp              = NCDataset(grimp_file)["Band1"][:]
     h_grimp              = replace_missing(h_grimp, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
@@ -537,6 +538,14 @@ function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_
         h_predict[h_predict .<= 0.] .= no_data_value
         dest_file                    = joinpath(output_path, "rec_kriging.nc")
         save_netcdf(dest_file, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+        # save interp.Z directly
+        m_interp = zeros(size(h_predict))
+        m_interp[ir_sim]            .= interp.Z
+        dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")
+        Plots.heatmap(m_interp, cmap=:bwr, clims=(-4,4))
+        Plots.savefig(joinpath(fig_path,"interp_Z.png"))
+        m_interp[m_interp .== 0.0]  .= no_data_value
+        save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
         return dest_file
     end
 end
