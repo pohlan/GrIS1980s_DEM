@@ -2,10 +2,10 @@ using svd_IceSheetDEM, Glob, NCDatasets, JLD2, GeoStats, Statistics, StatsBase
 import Plots
 
 # set target directories
-fig_dir = "output/model_selection/figures/"
+main_output_dir = joinpath("output","tmodel_selection")
+mkpath(main_output_dir)
+fig_dir = joinpath(main_output_dir, "figures/")
 mkpath(fig_dir)
-destdir = "output/model_selection/"
-mkpath(destdir)
 
 # for running the script interactively
 # ARGS = [
@@ -70,7 +70,7 @@ for (iλ,λ) in enumerate(λs)
     end
 end
 dict["σ"] = Σ
-dest      = destdir*"dict_cv_block_$(ℓ).jld2"
+dest      = joinpath(main_output_dir,"dict_cv_block_$(ℓ).jld2")
 save(dest, dict)
 
 # plot
