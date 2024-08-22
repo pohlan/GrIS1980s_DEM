@@ -95,14 +95,20 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     return x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_file::String, model_files::Vector{String}, obs_file::String, do_figures=false, use_arpack=false)
-    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, imbie_mask, bedm_file, r, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                = prepare_obs(obs_file, I_no_ocean, Data_mean)
+function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_files::Vector{String}, do_figures=false, use_arpack=false)
+    # get filenames
+    bedmachine_original, bedm_file  = create_bedmachine_grid(gr)
+    reference_file_g150, ref_file   = create_grimpv2(gr, bedmachine_original)
+    aerodem_g150, obs_aero_file     = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
+    mask_file                       = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
+
+    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, mask_file, bedm_file, r, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs                = prepare_obs(obs_aero_file, I_no_ocean, Data_mean)
     r                            = min(size(UΣ,2), r)                                                    # truncation of SVD cannot be higher than the second dimension of U*Σ
     x_rec                        = solve_optim(UΣ, I_obs, r, λ, x_data)                                  # derive analytical solution of regularized least squares
 
     # calculate error and print
-    nx, ny                  = size(NCDataset(obs_file)["Band1"])
+    nx, ny                  = size(NCDataset(obs_aero_file)["Band1"])
     dif                     = zeros(F, nx,ny)
     dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- x_data
     err_mean                = mean(abs.(dif[I_no_ocean[I_obs]]))
@@ -125,10 +131,10 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, imbie_mask::String, bedm_
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
                         )
-    save_netcdf(filename, obs_file, [dem_rec], [layername], attributes)
+    save_netcdf(filename, obs_aero_file, [dem_rec], [layername], attributes)
     # plot and save difference between reconstruction and observations
     if do_figures
-        save_netcdf("output/dif.nc", obs_file, [dif], ["dif"], Dict("dif" => Dict()))
+        save_netcdf("output/dif.nc", obs_aero_file, [dif], ["dif"], Dict("dif" => Dict()))
         Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
         Plots.savefig(filename[1:end-3]*".png")
     end

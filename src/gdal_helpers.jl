@@ -153,7 +153,7 @@ function mask_downsample(bedmachine_fullres, templ, r)
 end
 
 
-function create_bedmachine_grid(gr, spatial_template_file)
+function create_bedmachine_grid(gr)
     bedmachine_path = "data/bedmachine/"
     dest_file = joinpath(bedmachine_path, "bedmachine_g$(gr).nc")
     bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
@@ -172,15 +172,12 @@ function create_bedmachine_grid(gr, spatial_template_file)
 
     # gdalwarp
     println("Using gdalwarp to project bedmachine on model grid..")
-    layernames = ["mask", "geoid", "bed", "surface", "thickness"]
+    layernames = ["geoid", "bed", "surface", "thickness", "mask"]
     fieldvals  = Matrix[]
     attr_template = NCDataset(bedmachine_original)
+    spatial_template_file = "template_file.nc"
     for fn in layernames
-        if fn == "mask"
-            new = mask_downsample(bedmachine_original, spatial_template_file, 5e3)
-        else
-            new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value))[:,end:-1:1]
-        end
+        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value), dest=spatial_template_file)[:,end:-1:1]
         push!(fieldvals, new)  # flip y-axis due to behaviour of ArchGDAL
     end
 
@@ -225,7 +222,7 @@ function create_grimpv2(gr, bedmachine_original)
         grimp_g150  = grimp_g150[:,end:-1:1]
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)[:,end:-1:1]
         idx   = findall(grimp_g150 .!= no_data_value .&& .!ismissing.(geoid))
         grimp_g150[idx] .-= geoid[idx]
         grimp_g150[grimp_g150 .< 0.0] .= no_data_value

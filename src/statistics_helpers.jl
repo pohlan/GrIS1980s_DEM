@@ -105,8 +105,8 @@ function get_ATM_df(fname, dhdt0, x, y, df_aero; mindist=5e4, I_no_ocean)
         dist_to_aero = minimum(pairwise(Distances.euclidean, [x_ y_], [df_aero.x df_aero.y], dims=1)[:])
         is_above_mindist = dist_to_aero > mindist
         # filter values with high absolute dhdt
-        has_low_dhdt = 0.0 < abs(dhdt_) < max_dhdt
-        return is_in_icesheet & is_above_mindist & has_low_dhdt
+        # has_low_dhdt = 0.0 < abs(dhdt_) < max_dhdt
+        return is_in_icesheet & is_above_mindist # & has_low_dhdt
     end
     println("selecting flightline values...")
     filter!([:x,:y,:dhdt] => choose_atm, df_atm)
@@ -126,8 +126,8 @@ function get_aerodem_df(aero, ref, dhdt0, x, y, idx_aero)
                          :idx     => idx_aero,
                          :source .=> :aerodem )
     # already remove some outliers here, improves standardization
-    aero_to_delete = findall(abs.(df_aero.dh) .> 5 .* mad(df_aero.dh))
-    deleteat!(df_aero, aero_to_delete)
+    # aero_to_delete = findall(abs.(df_aero.dh) .> 5 .* mad(df_aero.dh))
+    # deleteat!(df_aero, aero_to_delete)
     return df_aero
 end
 
@@ -174,7 +174,6 @@ function standardizing_2D(df::DataFrame, bfield1::Symbol, bfield2::Symbol; nbins
     bin_field_1 = df[!,bfield1]
     bin_field_2 = df[!,bfield2]
     y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2)
-    filter_per_bin!(y_binned)
     bin_centers_1, bin_centers_2, y_binned = remove_small_bins(bin_centers_1, bin_centers_2, y_binned; min_n_sample)
     # variance
     nmads       = mad.(y_binned, normalize=true)
@@ -186,8 +185,8 @@ function standardizing_2D(df::DataFrame, bfield1::Symbol, bfield2::Symbol; nbins
     itp_med_lin = extrapolate(itp_med_lin, Interpolations.Flat())
     # standardize
     df.dh_detrend   = (df.dh .- itp_med_lin.(bin_field_1,bin_field_2)) ./ itp_mad_lin.(bin_field_1,bin_field_2)
-    # remove outliers again after standardizing
-    all_to_delete = findall(abs.(df.dh_detrend) .> 5 .* mad(df.dh_detrend))
+    # remove outliers after standardizing
+    all_to_delete = findall(abs.(df.dh_detrend) .> 7 .* mad(df.dh_detrend))
     deleteat!(df, all_to_delete)
     # make sure it's truly centered around zero and has std=1 exactly
     std_y          = std(df.dh_detrend)
@@ -259,7 +258,7 @@ function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, m
     # plot
     if !isempty(fig_path)
         Plots.scatter(gamma.abscissa .* 1e-3, gamma.ordinate, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance [km]", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
-        Plots.plot!([1e-5;gamma.abscissa] .* 1e-3, varg.([1e-5;gamma.abscissa]), label="Variogram fit", lw=2)
+        Plots.plot!([1e-5;gamma.abscissa] .* 1e-3, varg.([1e-5;gamma.abscissa]), label="Variogram fit", lw=2, ylims=(0,1.1))
         Plots.savefig(joinpath(fig_path,"variogram.png"))
     end
     if p0 == ff.param @warn "Fitting of variogram failed, choose better initial parameters or reduce nlags." end
@@ -302,7 +301,8 @@ function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file,
     x            = NCDataset(ref_file)["x"][:]
     y            = NCDataset(ref_file)["y"][:]
     h_aero       = NCDataset(obs_aero_file)["Band1"][:]
-    dhdt         = NCDataset(dhdt_file)["Band1"][:]
+    # dhdt         = NCDataset(dhdt_file)["Band1"][:]
+    dhdt = abs.(mgradient(ref))                                 # ToDo: rename dhdt into something like grad
     glacier_mask = NCDataset(mask_file)["Band1"][:]
     bedm_mask    = NCDataset(bedm_file)["mask"][:]
 
@@ -332,6 +332,10 @@ function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file,
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:union)
 
+    # plot before standardizing
+    Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-50,50), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="dh non-standardized", grid=false, wsize=(1700,1800))
+    Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
+
     # standardize, describing variance and bias as a function of dhdt and elevation
     df_all.dhdt = abs.(df_all.dhdt)
     df_all, destandardize = standardizing_2D(df_all, :dhdt, :h_ref; nbins1, nbins2, min_n_sample, fig_path);
@@ -342,17 +346,22 @@ function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file,
     # plot after standardizing
     Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
     Plots.savefig(joinpath(fig_path,"data_standardized.png"))
-    Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-50,50), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="dh non-standardized", grid=false, wsize=(1700,1800))
-    Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
 
     # variogram
-    varg, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=1.2e6, nlags=200, custom_var, param_cond, sample_frac=1.0, p0, fig_path)
+    varg, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=1.5e6, nlags=200, custom_var, param_cond, sample_frac=0.5, p0, fig_path)
     return df_all, varg, ff, destand, I_no_ocean, idx_aero
 end
 
-function SVD_random_fields(rec_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
-                           nbins1::Int=10, nbins2::Int=30,  # amount of bins for 2D standardization
-                           n_fields::Int=10)                # number of simulations
+function SVD_random_fields(rec_file::String; nbins1::Int=10, nbins2::Int=30,  # amount of bins for 2D standardization
+                           n_fields::Int=10)                                  # number of simulations
+    # get filenames
+    bedmachine_original, bedm_file  = create_bedmachine_grid(gr)
+    aerodem_g150, obs_aero_file     = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
+    mask_file                       = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
+    dhdt_file, _                    = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
+    obs_ATM_file                    = get_atm_file()
+
+    # prepare output directories
     main_output_dir  = joinpath("output","SVD_RF")
     fig_path         = joinpath(main_output_dir, "figures")
     sims_path        = joinpath(main_output_dir, "simulations")
@@ -470,36 +479,49 @@ function prepare_interpolation(grimp_file::String, bedm_file::String, obs_aero_f
                               nbins1::Int, nbins2::Int, blockspacing::Real)  # amount of bins for 2D standardization
 
     # define variogram function to fit
-    custom_var(params) = SphericalVariogram(range=params[1], sill=params[3], nugget=params[5]) + # ./ sum(params[4:6])) +
-                         SphericalVariogram(range=params[2], sill=params[4], nugget=params[6]) # ./ sum(params[4:6]))
-                        #  SphericalVariogram(range=params[3], sill=params[6]) # ./ sum(params[4:6]))
-    param_cond(params) = all(params .> 0) && all(params[5] .< params[3:4]) && all(params[6] .< params[3:4])
+    custom_var(params) = SphericalVariogram(range=params[1], sill=params[4]) +
+                         SphericalVariogram(range=params[2], sill=params[5]) +
+                         SphericalVariogram(range=params[3], sill=params[6], nugget=params[7])
+    param_cond(params) = all(params .> 0) && all(params[4:6].<1.0) && all(params[1:3] .< 1.5e6) && params[7] .< 0.5
     # initial guess for parameters
-    # p0 = [1e4, 5e5, 1.4e6, 0.3, 0.3, 0.3]
-    p0 = [5e5, 1.2e6, 0.6, 0.4, 0.1, 0.1]
+    p0 = [6e4, 3e5, 9e5, 0.3, 0.5, 0.2, 0.25]
 
     # standardize and get variogram
     df_all, varg, ff, destand, I_no_ocean, idx_aero = stddize_and_variogram(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
                                                                             atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, blockspacing, min_n_sample=50)
     # force overall variance of variogram to be one
-    @printf("Sum of variances in variogram: %.2f \n", sum(ff.param[4:6]))
     ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
     varg           = custom_var(ff.param)
     display(varg)
     return df_all, varg, destand, I_no_ocean, idx_aero
 end
 
-function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String;
+function geostats_interpolation(grid_kriging, grid_out;         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
+                                outline_shp_file,
                                 nbins1::Int=6, nbins2::Int=10,  # amount of bins for 2D standardization
                                 maxn::Int,                      # maximum neighbors for interpolation method
                                 method::Symbol=:kriging,        # either :kriging or :sgs
                                 n_fields::Int=10,               # number of simulations in case of method=:sgs
                                 blockspacing::Real)             # for block reduction of atm data, with verde python package
+
+    # get filenames at grid_kriging
+    bedmachine_original, bedm_file  = create_bedmachine_grid(grid_kriging)
+    reference_file_g150, grimp_file = create_grimpv2(grid_kriging, bedmachine_original)
+    aerodem_g150, obs_aero_file     = create_aerodem(grid_kriging, outline_shp_file, bedmachine_original, reference_file_g150)
+    obs_ATM_file                    = get_atm_file()
+    dhdt_file, _                    = create_dhdt_grid(;gr=grid_kriging, startyr=1994, endyr=2010)
+    mask_file                       = create_imbie_mask(;gr=grid_kriging, outline_shp_file, sample_path=aerodem_g150)
+
+    # get filename at grid_out
+    aerodem_g150, obs_aero_file_gr_out = create_aerodem(grid_out, outline_shp_file, bedmachine_original, reference_file_g150)
+
+    # define names of output directories
     main_output_dir  = joinpath("output","geostats_interpolation")
     fig_path         = joinpath(main_output_dir, "figures/")
     atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
     mkpath(fig_path)
 
+    # preprocessing, standardization and variogram
     df_all, varg, destand, I_no_ocean, idx_aero = prepare_interpolation(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_path, atm_dh_dest_file; nbins1, nbins2, blockspacing)
 
     # derive indices for cells to interpolate
@@ -532,20 +554,34 @@ function geostats_interpolation(grimp_file::String, bedm_file::String, obs_aero_
     elseif method == :kriging
         output_path = joinpath(main_output_dir, "kriging/")
         mkpath(output_path)
+        # do the kriging
         println("Kriging...")
         interp = do_kriging(grid_output, geotable, varg; maxn)
+        # 'fill' aerodem with de-standardized kriging output, save as netcdf
         h_predict[ir_sim]           .= h_grimp[ir_sim] .- destand(interp.Z, ir_sim)
         h_predict[h_predict .<= 0.] .= no_data_value
-        dest_file                    = joinpath(output_path, "rec_kriging.nc")
-        save_netcdf(dest_file, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")
+        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+        # gdalwarp to higher resolution
+        dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")
+        gdalwarp(dest_file_gr_kriging; gr=grid_out, srcnodata=string(no_data_value), dest=dest_file_gr_out)
+        # replace aerodem values with the ones warped from higher resolution, save again as netcdf
+        h_predict_gr_out             = ncread(dest_file_gr_out, "Band1")
+        h_aero_gr_out                = ncread(obs_aero_file_gr_out, "Band1")
+        ir_aero                      = findall(h_aero_gr_out .!= no_data_value)
+        h_predict_gr_out[ir_aero]   .= h_aero_gr_out[ir_aero]
+        save_netcdf(dest_file_gr_out, obs_aero_file_gr_out, [h_predict_gr_out], ["surface"], Dict("surface" => Dict{String,Any}()))
+
         # save interp.Z directly
         m_interp = zeros(size(h_predict))
         m_interp[ir_sim]            .= interp.Z
+        # df_aero = df_all[df_all.source .== :aerodem,:]   # also plot aerodem data that was used
+        # m_interp[df_aero.idx]       .= df_aero.dh_detrend
         dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")
         Plots.heatmap(m_interp, cmap=:bwr, clims=(-4,4))
         Plots.savefig(joinpath(fig_path,"interp_Z.png"))
         m_interp[m_interp .== 0.0]  .= no_data_value
         save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
-        return dest_file
+        return dest_file_gr_out
     end
 end

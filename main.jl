@@ -23,51 +23,29 @@ template_file      = training_data_files[1]
 x = ncread(template_file, "x")
 const gr = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
 
-# 2.) move all the necessary bedmachine layers to the right grid (downloads the bedmachine-v5 if not available)
-bedmachine_original, bedmachine_file = create_bedmachine_grid(gr, template_file)
-
-# 3.) make sure the imbie shp file is available
-if !isfile(shp_file)
-    error("shape file not found at " * shp_file)
+# 2.) make sure the imbie shp file is available
+if !isfile(outline_shp_file)
+    error("shape file not found at " * outline_shp_file)
 end
 
-# 4.) grimp v2, reference DEM
-grimpv2_gr150, grimpv2_gr = create_grimpv2(gr, bedmachine_original)
+# 3.) run the svd solve_lsqfit
 
-# 5.) check if aerodem is available at the right grid, if not warp from available one or download/create from scratch
-aerodem_g150, obs_file = create_aerodem(gr, outline_shp_file, bedmachine_original, grimpv2_gr150)
-
-# 6.) get a netcdf mask from the imbie shp file
-imbie_mask_file = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
-
-# 7.) run the svd solve_lsqfit
-
-# 377 -> findfirst(cumsum(Σ)./sum(Σ).>0.9)
 # retrieve command line arguments
 λ           = parsed_args["λ"]     # regularization
 r           = parsed_args["r"]
 do_figures  = parsed_args["do_figures"]
 use_arpack  = parsed_args["use_arpack"]
-rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file, training_data_files[1:3], obs_file, do_figures, use_arpack)
+rec_file    = SVD_reconstruction(λ, r, gr, outline_shp_file, training_data_files[1:3], do_figures, use_arpack)
 
-# 8.) calculate the floating mask and create nc file according to the bedmachine template
+# 4.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf gneration??
 
-
-# ------------------------------------------------------------------------------- #
-# Part B: residual analysis                                                       #
-#   goal -> getting a distribution of reconstructed DEMs representing uncertainty #
-# ------------------------------------------------------------------------------- #
-
-# 1.) get ATM data
-atm_file  = get_atm_file()
-# 2.) get elevation change data from Sørensen et al., 2018
-dh_obs_file, _   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
-# 3.) standardize residual, evaluate variogram and generate random fields
-rf_files = SVD_random_fields(rec_file, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; n_fields=10)
+# 5.) standardize residual, evaluate variogram and generate random fields
+rf_files = SVD_random_fields(rec_file; n_fields=10)
 
 
 # ------------------------------ #
-# Part C: Interpolation approach #
+# Part B: Interpolation approach #
 # ------------------------------ #
-interp_rec_file = geostats_interpolation(grimpv2_gr, bedmachine_file, obs_file, atm_file, dh_obs_file, imbie_mask_file; nbins1=8, nbins2=10, maxn=10, blockspacing=gr*2)
+grid_kriging = gr*2
+interp_rec_file = geostats_interpolation(grid_kriging, gr; outline_shp_file, nbins1=7, nbins2=12, maxn=10, blockspacing=gr)

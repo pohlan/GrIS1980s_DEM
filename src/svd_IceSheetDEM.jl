@@ -10,13 +10,11 @@ using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoForma
 using Downloads, Cascadia, Gumbo, HTTP, PyCall
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
-using Arpack, LinearAlgebra
+using Arpack, LinearAlgebra, ImageMorphology
 using DataStructures: OrderedDict
 import Plots, StatsPlots
 
 export parse_commandline, get_ix, get_iy
-# export archgdal_read, gdalwarp
-export create_aerodem, create_bedmachine_grid, create_imbie_mask, get_atm_file, create_dhdt_grid, create_grimpv2
 export SVD_reconstruction, create_reconstructed_bedmachine
 export SVD_random_fields, geostats_interpolation
 
