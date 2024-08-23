@@ -184,6 +184,7 @@ function create_bedmachine_grid(gr)
     # save as netcdf
     attributes = get_attr(attr_template, layernames)
     save_netcdf(dest_file, spatial_template_file, fieldvals, layernames, attributes)
+    rm(spatial_template_file)
     return bedmachine_original, dest_file
 end
 
@@ -420,7 +421,6 @@ function get_atm_raw_file(kw)
             df = get_table_from_html(atm_url*fld)
             files_to_download = df.Name[endswith.(df.Name, "_nadir2seg")]
             missing_files = files_to_download[.!isfile.(raw_path.*files_to_download)]    # only download missing files in case some are downloaded already
-            display(missing_files)
             Downloads.download.(atm_url*fld.*missing_files, joinpath.(raw_path,missing_files))
         end
     end
