@@ -187,7 +187,7 @@ function create_bedmachine_grid(gr)
     return bedmachine_original, dest_file
 end
 
-function create_grimpv2(gr, bedmachine_original)
+function create_grimpv2(gr, bedmachine_original; kw="")
     data_path = joinpath("data","grimpv2")
     get_dest_file(gr) = joinpath(data_path, "grimpv2_geoid_corrected_g$(gr).nc")
     dest_g150_file    = get_dest_file(150)
@@ -209,7 +209,7 @@ function create_grimpv2(gr, bedmachine_original)
             println("Download grimp v2 surface DEM...")
             url_grimpv2 = "https://n5eil01u.ecs.nsidc.org/MEASURES/NSIDC-0715.002/2008.05.15/"
             t = get_table_from_html(url_grimpv2)
-            tif_files = t.Name[endswith.(t.Name, ".tif") .&& occursin.("_dem_", t.Name)]
+            tif_files = t.Name[endswith.(t.Name, ".tif") .&& occursin.("_dem_", t.Name) .&& [any(contains.(name, kw)) for name in t.Name]]
             Downloads.download.(joinpath.(url_grimpv2, tif_files), joinpath.(raw_path,tif_files))
         end
 
@@ -230,6 +230,7 @@ function create_grimpv2(gr, bedmachine_original)
         # save as netcdf
         sample_path = merged_g150
         save_netcdf(dest_g150_file, sample_path, [grimp_g150], ["surface"], Dict("surface"=>Dict{String,Any}()))
+        rm(merged_g150)
     end
 
     # gdalwarp to desired grid
@@ -327,15 +328,15 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
                 df = get_table_from_html(url)
                 tif_files = df.Name[endswith.(df.Name, ".tif") .&& .!occursin.("carey", df.Name) .&& occursin.(kw, df.Name)]
                 missing_files = tif_files[.!isfile.(raw_path.*tif_files)]
-                Downloads.download.(url .* missing_files, raw_path .* missing_files)
+                Downloads.download.(url .* missing_files, joinpath.(raw_path, missing_files))
             end
         end
 
         aerodem_files = glob(joinpath(raw_path, "aerodem_*.tif"))
         rm_files      = glob(joinpath(raw_path, "rm_*.tif"))
         # gdalwarp
-        merged_aero_dest = aerodem_path*"merged_aerodem_g150.nc"
-        merged_rm_dest   = aerodem_path*"merged_rm_g150.nc"
+        merged_aero_dest = joinpath(aerodem_path, "merged_aerodem_g150.nc")
+        merged_rm_dest   = joinpath(aerodem_path, "merged_rm_g150.nc")
         println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
         aero_rm_filt     = gdalwarp(aerodem_files; gr=150, srcnodata=string(0.0), dstnodata, dest=merged_aero_dest)
         rel_mask         = gdalwarp(     rm_files; gr=150, srcnodata=string(0.0), dstnodata, dest=merged_rm_dest)
@@ -362,7 +363,10 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
 
         # co-registration
         fig_name = joinpath(fig_path, "coregistration_before_after.jpg")
-        py_coregistration(reference_file_g150, not_aligned_file, aerodem_g150_file, outline_shp_file, fig_name)
+        py_coregistration(reference_file_g150, not_aligned_file, aerodem_g150_file, outline_shp_file, fig_name) # note: output is upside down but will be reversed in gdalwarp below
+
+        rm(merged_aero_dest)
+        rm(merged_rm_dest)
     end
 
     # gdalwarp to desired grid
@@ -372,35 +376,31 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
     return aerodem_g150_file, aerodem_gr_file
 end
 
-function create_imbie_mask(;gr, outline_shp_file, sample_path)
-    imbie_path = "data/gris-imbie-1980/"
-    imbie_mask_file = imbie_path * "imbie_mask_g$(gr).nc"
+function create_outline_mask(gr, outline_shp_file, sample_file)
+    outline_path = "data/gris-imbie-1980/"
+    outline_mask_file = joinpath(outline_path, "outline_mask_g$(gr).nc")
     # if file exists already, do nothing
-    if isfile(imbie_mask_file)
-        return imbie_mask_file
+    if isfile(outline_mask_file)
+        return outline_mask_file
     end
 
-    # a bit ugly and cumbersome, due to the unability to resolve two issues:
-    # 1) cut_shp doesn't work wih too large grids and if src file doesn't correspond to grid size
-    # 2) the ArchGDAL gdalwarp function doesn't take Matrices as an input (or at least I haven't figured out how)
-    #    need to give a filename as argument
-    println("Creating imbie mask netcdf..")
-    mkpath(imbie_path)
-    sample = archgdal_read(sample_path)
+    # a bit ugly because
+    # the ArchGDAL gdalwarp function doesn't take matrices as an input (or at least I haven't figured out how)
+    # --> need to save an nc file with ones and give the filename as an input
+    println("Creating outline mask netcdf..")
+    mkpath(outline_path)
+    sample = archgdal_read(sample_file)
     ones_m = ones(size(sample))
     fname_ones = "temp1.nc"
-    fname_mask = "temp2.nc"
     layername   = "mask"
     attributes = Dict(layername => Dict{String, Any}())
-    save_netcdf(fname_ones, sample_path, [ones_m], [layername], attributes)
-    gdalwarp(fname_ones; gr=150, cut_shp=outline_shp_file, dest=fname_mask, dstnodata=string(no_data_value))
-    gdalwarp(fname_mask; gr, dest=imbie_mask_file, srcnodata=string(no_data_value), dstnodata=string(no_data_value))
+    save_netcdf(fname_ones, sample_file, [ones_m], [layername], attributes)
+    gdalwarp(fname_ones; gr, cut_shp=outline_shp_file, dest=outline_mask_file, dstnodata=string(no_data_value))
     rm(fname_ones, force=true)
-    rm(fname_mask, force=true)
-    return imbie_mask_file
+    return outline_mask_file
 end
 
-function get_atm_file()
+function get_atm_raw_file(kw)
     atm_path = "data/ATM/"
     atm_file = joinpath(atm_path,"ATM_nadir2seg_all.csv")
     # if file exists already, do nothing
@@ -415,15 +415,16 @@ function get_atm_file()
         println("Downloading ATM elevation data...")
         atm_url = "https://n5eil01u.ecs.nsidc.org/PRE_OIB/BLATM2.001/"
         tb1 = get_table_from_html(atm_url)
-        folders = tb1.Name[(startswith.(tb1.Name, "1993") .|| startswith.(tb1.Name, "1994")) .&& occursin.(kw, tb1.Name)]
+        folders = tb1.Name[(startswith.(tb1.Name, "1993") .|| startswith.(tb1.Name, "1994")) .&& [any(contains.(name, kw)) for name in tb1.Name]]
         for fld in folders
             df = get_table_from_html(atm_url*fld)
             files_to_download = df.Name[endswith.(df.Name, "_nadir2seg")]
             missing_files = files_to_download[.!isfile.(raw_path.*files_to_download)]    # only download missing files in case some are downloaded already
-            Downloads.download.(atm_url*fld.*missing_files, raw_path.*missing_files)
+            display(missing_files)
+            Downloads.download.(atm_url*fld.*missing_files, joinpath.(raw_path,missing_files))
         end
     end
-    files     = glob(raw_path*"BLATM2_*_nadir2seg")
+    files     = glob(joinpath(raw_path,"BLATM2_*_nadir2seg"))
 
     # merge all flight files into one
     # appending DataFrames is much faster than doing e.g. 'd_final = [d_final; d_new]' or 'd_final = vcat(d_final, d_new)'
@@ -449,6 +450,34 @@ function get_atm_file()
     df = merge_files(files)
     CSV.write(atm_file, df)
     return atm_file
+end
+
+function get_atm_dh_file(ref_file, bedm_file, blockspacing; kw="")
+    raw_atm_data_file = get_atm_raw_file(kw)
+
+    atm_dh_dest_file = joinpath(dirname(raw_atm_data_file), "dh_ref_minus_atm.csv")
+    # if file exists already, do nothing
+    if isfile(atm_dh_dest_file)
+        return atm_dh_dest_file
+    end
+
+    # need a file with only one band for interp_points operation in xdem python;
+    # plus need to reference to ellipsoid to be consistent with atm before differencing the two
+    ref_surface_ellipsoid = get_surface_file(ref_file, bedm_file, remove_geoid=true)
+    ref_surface_geoid     = get_surface_file(ref_file, bedm_file, remove_geoid=false)
+    # interpolate GrIMP DEM on ATM points and calculate difference
+    dh_interpolated_file = joinpath(dirname(raw_atm_data_file), "atm_dh_interpolated.csv")
+    py_point_interp(ref_surface_ellipsoid, ref_surface_geoid, raw_atm_data_file, dh_interpolated_file)
+
+    # block reduce with python package verde; average data that is heavily oversampled in direction of flight
+    py_block_reduce(dh_interpolated_file, atm_dh_dest_file, blockspacing)
+
+    # delete all temporary files
+    rm(ref_surface_ellipsoid)
+    rm(ref_surface_geoid)
+    rm(dh_interpolated_file)
+
+    return atm_dh_dest_file
 end
 
 function download_esa_cci(dest_file)
@@ -552,7 +581,7 @@ function __init__()
         ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
         # extract ATM points
         df       = pd.read_csv(fname_atm)
-        geometry = gpd.points_from_xy(df.x12, df.x2, crs="WGS84")
+        geometry = gpd.points_from_xy(df.lon, df.lat, crs="WGS84")
         g        = geometry.to_crs(ref_DEM.crs)
         # interpolate
         ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
@@ -561,7 +590,7 @@ function __init__()
         # note: "h_ref" below is referenced to geoid !!
         # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
         # however, for destandardization we need the geoid-referenced elevation of grimp)
-        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.x4)})
+        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.z)})
         ds_save.to_csv(fname_out, index=False)
 
     def block_reduce(fname_in, fname_out, spacing):
@@ -571,7 +600,7 @@ function __init__()
         coordinates, h_reduced  = reducer.filter((df.x, df.y), df.h_ref)
         xn, yn                  = coordinates
         df_reduced              = pd.DataFrame({"x":xn, "y":yn, "h_ref":h_reduced, "dh":dh_reduced})
-        df_reduced.to_csv(fname_out)
+        df_reduced.to_csv(fname_out, index=False)
 
     def coregistration(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name):
         dem_not_aligned = xdem.DEM(dem_file_not_aligned)

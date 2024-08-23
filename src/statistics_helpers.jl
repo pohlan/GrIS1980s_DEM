@@ -94,8 +94,8 @@ function get_ATM_df(fname, dhdt0, x, y, df_aero; mindist=5e4, I_no_ocean)
     sort!(unique!(y))
     itp = interpolate((x, y), dhdt, Gridded(Linear()))
     df_atm[!,:dhdt] = itp.(df_atm.x, df_atm.y)
-    max_dhdt = std(dhdt[dhdt .!= 0])
-    function choose_atm(x_, y_, dhdt_)::Bool
+    # max_dhdt = std(dhdt[dhdt .!= 0])
+    function choose_atm(x_, y_)::Bool
         ix    = findmin(abs.(x_ .- x))[2]
         iy    = findmin(abs.(y_ .- y))[2]
         iglob = get_global_i(ix, iy, length(x))
@@ -109,7 +109,7 @@ function get_ATM_df(fname, dhdt0, x, y, df_aero; mindist=5e4, I_no_ocean)
         return is_in_icesheet & is_above_mindist # & has_low_dhdt
     end
     println("selecting flightline values...")
-    filter!([:x,:y,:dhdt] => choose_atm, df_atm)
+    filter!([:x,:y] => choose_atm, df_atm)
     # already remove some outliers here, improves standardization
     atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
     deleteat!(df_atm, atm_to_delete)
@@ -294,8 +294,8 @@ function generate_random_fields(output_dir; std_devs, corr_ls, x, y, destand, ir
 end
 
 
-function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                               atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=100, blockspacing=5e3)
+function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, atm_dh_file, dhdt_file, mask_file;
+                               fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=100)
     # read in
     ref          = NCDataset(ref_file)["Band1"][:]
     x            = NCDataset(ref_file)["x"][:]
@@ -313,21 +313,8 @@ function stddize_and_variogram(ref_file, bedm_file, obs_aero_file, obs_ATM_file,
     # aerodem
     df_aero = get_aerodem_df(h_aero, ref, dhdt, x, y, idx_aero)
 
-    # need a file with only one band for interp_points operation in xdem python;
-    # plus need to reference to ellipsoid to be consistent with atm before differencing the two
-    ref_surface_ellipsoid = get_surface_file(ref_file, bedm_file, remove_geoid=true)
-    ref_surface_geoid     = get_surface_file(ref_file, bedm_file, remove_geoid=false)
-    # interpolate GrIMP DEM on ATM points and calculate difference
-    py_point_interp(ref_surface_ellipsoid, ref_surface_geoid, obs_ATM_file, atm_dh_dest_file)
-    rm(ref_surface_ellipsoid)
-    rm(ref_surface_geoid)     # delete them again as not needed anymore
-
-    # block reduce with python package verde; average data that is heavily oversampled in direction of flight
-    atm_dh_reduced = splitext(atm_dh_dest_file)[1]*"_reduced"*splitext(atm_dh_dest_file)[2]
-    py_block_reduce(atm_dh_dest_file, atm_dh_reduced, blockspacing)
-
     # atm
-    df_atm  = get_ATM_df(atm_dh_reduced, dhdt, x, y, df_aero; I_no_ocean)
+    df_atm  = get_ATM_df(atm_dh_file, dhdt, x, y, df_aero; I_no_ocean)
 
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:union)
@@ -474,9 +461,9 @@ function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, v
     return interp
 end
 
-function prepare_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, obs_ATM_file::String, dhdt_file::String, mask_file::String,
-                              fig_path::String, atm_dh_dest_file::String;
-                              nbins1::Int, nbins2::Int, blockspacing::Real)  # amount of bins for 2D standardization
+function prepare_interpolation(grimp_file::String, bedm_file::String, obs_aero_file::String, atm_dh_file::String, dhdt_file::String, mask_file::String,
+                              fig_path::String;
+                              nbins1::Int, nbins2::Int)  # amount of bins for 2D standardization
 
     # define variogram function to fit
     custom_var(params) = SphericalVariogram(range=params[1], sill=params[4]) +
@@ -487,8 +474,8 @@ function prepare_interpolation(grimp_file::String, bedm_file::String, obs_aero_f
     p0 = [6e4, 3e5, 9e5, 0.3, 0.5, 0.2, 0.25]
 
     # standardize and get variogram
-    df_all, varg, ff, destand, I_no_ocean, idx_aero = stddize_and_variogram(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file;
-                                                                            atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2, blockspacing, min_n_sample=50)
+    df_all, varg, ff, destand, I_no_ocean, idx_aero = stddize_and_variogram(grimp_file, bedm_file, obs_aero_file, atm_dh_file, dhdt_file, mask_file;
+                                                                            fig_path, custom_var, param_cond, p0, nbins1, nbins2, min_n_sample=50)
     # force overall variance of variogram to be one
     ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
     varg           = custom_var(ff.param)
@@ -508,7 +495,7 @@ function geostats_interpolation(grid_kriging, grid_out;         # make kriging a
     bedmachine_original, bedm_file  = create_bedmachine_grid(grid_kriging)
     reference_file_g150, grimp_file = create_grimpv2(grid_kriging, bedmachine_original)
     aerodem_g150, obs_aero_file     = create_aerodem(grid_kriging, outline_shp_file, bedmachine_original, reference_file_g150)
-    obs_ATM_file                    = get_atm_file()
+    atm_dh_file                     = get_atm_dh_file(grimp_file, bedm_file, blockspacing)
     dhdt_file, _                    = create_dhdt_grid(;gr=grid_kriging, startyr=1994, endyr=2010)
     mask_file                       = create_imbie_mask(;gr=grid_kriging, outline_shp_file, sample_path=aerodem_g150)
 
@@ -518,11 +505,10 @@ function geostats_interpolation(grid_kriging, grid_out;         # make kriging a
     # define names of output directories
     main_output_dir  = joinpath("output","geostats_interpolation")
     fig_path         = joinpath(main_output_dir, "figures/")
-    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
     mkpath(fig_path)
 
     # preprocessing, standardization and variogram
-    df_all, varg, destand, I_no_ocean, idx_aero = prepare_interpolation(grimp_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_path, atm_dh_dest_file; nbins1, nbins2, blockspacing)
+    df_all, varg, destand, I_no_ocean, idx_aero = prepare_interpolation(grimp_file, bedm_file, obs_aero_file, atm_dh_file, dhdt_file, mask_file, fig_path; nbins1, nbins2)
 
     # derive indices for cells to interpolate
     ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero

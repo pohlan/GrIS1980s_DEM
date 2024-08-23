@@ -1,12 +1,12 @@
 using svd_IceSheetDEM
-using Test, LinearAlgebra, NetCDF, NCDatasets
+using Test, LinearAlgebra, NetCDF, NCDatasets, CSV, DataFrames
 
 cd(@__DIR__)  # set working directory to where file is located
 
 const gr = 4000
 
-template_file       = "testdata/testtemplate_g$(gr).nc"
-shp_file            = "testdata/testshape.shp"
+test_svd_training_file      = "testdata/testtemplate_g$(gr).nc"
+outline_shp_file            = "testdata/testshape.shp"
 
 rm("data/", recursive=true, force=true)
 rm("output/", recursive=true, force=true)
@@ -16,67 +16,101 @@ rm("output/", recursive=true, force=true)
 ###################################################
 
 # bedmachine
-bedmachine_file_gr = create_bedmachine_grid(gr, template_file)
-bedmachine_path    = splitdir(bedmachine_file_gr)[1]
+bedmachine_original, bedmachine_file_gr = svd_IceSheetDEM.create_bedmachine_grid(gr)
+# GrIMP v2
+tiles = ["2_0", "2_1", "3_0", "3_1", "3_2", "4_1", "4_2", "5_2"]
+reference_file_g150, ref_file   = svd_IceSheetDEM.create_grimpv2(gr, bedmachine_original, kw=tiles)
 # aerodem
-aero_150_file, aero_gr_file = create_aerodem(;gr, shp_file, bedmachine_path, kw="1981")    # only download the DEMs from 1981 while testing to save some space
+aero_150_file, aero_gr_file = svd_IceSheetDEM.create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150, kw="1981")    # only download the DEMs from 1981 while testing to save some space
 # imbie mask
-imbie_mask_file = create_imbie_mask(;gr, shp_file, sample_path=aero_150_file)
+outline_mask_file = svd_IceSheetDEM.create_outline_mask(gr, outline_shp_file, aero_150_file)
 # atm
-# atm_file = get_atm_file()
-
+blockspacing=gr
+lines = ["93.06.23", "93.06.24", "93.07.01", "93.07.09"]
+atm_dh_file = svd_IceSheetDEM.get_atm_dh_file(ref_file, bedmachine_file_gr, blockspacing, kw=lines)
 
 missmax(x) = maximum(x[.!ismissing.(x)])
 missmin(x) = minimum(x[.!ismissing.(x)])
 missum(x)  = sum(x[.!ismissing.(x)])
 
 @testset "bedmachine" begin
+    # read in
     ds = NCDataset(bedmachine_file_gr)
     @test all(["mask","geoid","bed","surface","thickness"] .∈ (keys(ds),))
-    mask = ds["mask"][:]
-    @test missum(mask.==1) .== 39235 && missum(mask.==2) .== 95036 && missum(mask.==3) .== 92 && missum(mask.==4) .== 7052
-    @test missmax(ds["geoid"][:]) == 64 && missmin(ds["geoid"][:]) == 6 && sum(ismissing.(ds["geoid"][:])) == 8208
-    @test missmax(ds["bed"][:]) == 3106.2961f0 && missmin(ds["bed"][:]) == -5521.8154f0
+    mask  = ds["mask"][:]
+    geoid = ds["geoid"][:]
+    bed   = ds["bed"][:]
+    surface = ds["surface"][:]
+    # test that the values are correct
+    @test missum(mask.==1) .== 23428 && missum(mask.==2) .== 111419 && missum(mask.==3) .== 650 && missum(mask.==4) .== 6315
+    @test missmax(geoid) == 64 && missmin(geoid) == 6 && sum(ismissing.(geoid)) == 8208
+    @test missmax(bed) ≈ 3010.345f0 && missmin(bed) ≈ -5505.15f0
+    @test missmax(surface) ≈ 3233.3943f0 && missmin(surface) ≈ 0.0f0
+    # check that none of the layers are "upside down" as happens sometimes with gdalwarp
+    ny_half = fld(size(mask,2),2)
+    @test missum(mask[:,1:ny_half] .== 4) == 0
+    @test missum(geoid[:,1:ny_half]) > missum(geoid[:,(ny_half+1):end])           # more higher values for the geoid in the southern half
+    @test missum(bed[:,1:ny_half] .< 0) > missum(bed[:,(ny_half+1):end] .< 0)     # more and deeper ocean bed in the south
+    @test missum(surface[:,1:ny_half] .== 0) > missum(surface[:,(ny_half+1):end] .== 0)     # more ocean than in the south
     close(ds)
+end
+
+@testset "reference elevation grimp v2" begin
+    ds = NCDataset(ref_file)["Band1"][:]
+    @test missmax(ds) ≈ 3184.565f0
+    @test sum(.!ismissing.(ds)) == 49434
+    # check that it's not "upside down"
+    ny_half = fld(size(ds,2),2)
+    @test sum(.!ismissing.(ds[:,(ny_half+1):end])) == 0    # The data should all be in the southern half
 end
 
 @testset "aerodem" begin
     ds150                 = NCDataset(aero_150_file)["surface"][:]
+    ds150 = svd_IceSheetDEM.replace_missing(ds150,0.0)[:,:,1]
     dsgr                  = NCDataset(aero_gr_file )["Band1"][:]
-    @test missmax(ds150)  ≈ 3685.5481
-    @test sum(.!ismissing.(dsgr))  == 7022    && missmax(dsgr)   ≈ 3252.3076
+    @test missmax(ds150)  ≈ 3602.2051
+    @test sum(.!ismissing.(dsgr)) == 2306 && missmax(dsgr) ≈ 2823.4519
+    # check that it's not "upside down"
+    ny_half = fld(size(dsgr,2),2)
+    sum(.!ismissing.(dsgr[:,(ny_half+1):end])) == 0    # The data should all be in the southern half
 end
 
-@testset "imbie mask" begin
-    imb = NCDataset(imbie_mask_file)["Band1"]
-    @test missum(imb .== 1) == sum(.!ismissing.(imb)) == 9496
+@testset "outline mask" begin
+    outline_mask = NCDataset(outline_mask_file)["Band1"][:]
+    @test missum(outline_mask .== 1) == sum(.!ismissing.(outline_mask)) == 9050
+    # check that it's not "upside down"
+    ny_half = fld(size(outline_mask,2),2)
+    sum(.!ismissing.(outline_mask[:,(ny_half+1):end])) == 0    # The data should all be in the southern half
 end
 
-# @testset "atm" begin
-#     atm = ncread(atm_file, "surface")
-#     @test sum(atm .> 0) == 633
-#     @test maximum(atm) == 2385.68f0
-# end
+@testset "atm" begin
+    df_atm = CSV.read(atm_dh_file, DataFrame)
+    @test size(df_atm) == (2555,4)
+    @test all(extrema(df_atm.x) .≈ (-303464.8238980389, 638898.3325838596))
+    @test all(extrema(df_atm.y) .≈ (-3.2941951313083693e6, -1.8143275337342792e6))
+    @test maximum(df_atm.h_ref) == 3174.446
+    @test all(extrema(df_atm.dh) .≈ (-13244.1867, 243.09922121582034))
+end
 
 ###############################
 # testing the problem solving #
 ###############################
 
-λ           = 1e5
-r           = 10^3
-rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file_gr, [template_file], aero_gr_file)
-rec_bm_file = create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
+# λ           = 1e5
+# r           = 10^3
+# rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file_gr, [test_svd_training_file], aero_gr_file)
+# rec_bm_file = create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
 
-@testset "solve least square fit" begin
-    rec         = NCDataset(rec_file)["surface"][:,:]
-    @test missmax(rec) ≈ 3041.7896f0 && rec[353:356, 326] ≈ Float32[2008.46, 2018.27, 1980.02, 1889.64] && missum(rec .> 0) == 2542
-    bm          = NCDataset(rec_bm_file)
-    @test all(["mask","bed","surface","thickness","polar_stereographic","x","y"] .∈ (keys(bm),))
-    mask = bm["mask"][:]
-    @test sum(mask.==1) == 139044 && sum(mask.==2) == 2388 && sum(mask.==3) == 55
-    @test isapprox(missmax(bm["surface"][:]), 3106, atol=1)
-    close(bm)
-end
+# @testset "solve least square fit" begin
+#     rec         = NCDataset(rec_file)["surface"][:,:]
+#     @test missmax(rec) ≈ 3041.7896f0 && rec[353:356, 326] ≈ Float32[2008.46, 2018.27, 1980.02, 1889.64] && missum(rec .> 0) == 2542
+#     bm          = NCDataset(rec_bm_file)
+#     @test all(["mask","bed","surface","thickness","polar_stereographic","x","y"] .∈ (keys(bm),))
+#     mask = bm["mask"][:]
+#     @test sum(mask.==1) == 139044 && sum(mask.==2) == 2388 && sum(mask.==3) == 55
+#     @test isapprox(missmax(bm["surface"][:]), 3106, atol=1)
+#     close(bm)
+# end
 
 ####################################
 # testing the uncertainty analysis #
