@@ -1,20 +1,30 @@
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 
 """
+Defines the domain containing the Greenland ice sheet that all grids are projected on, including the projection
+"""
+@kwdef struct DomainLimits{T}
+    x_min::T = - 678650
+    y_min::T = -3371600
+    x_max::T =   905350
+    y_max::T = - 635600
+    crs::String = "EPSG:3413"
+end
+
+"""
     get_options(; gr, cut_shp="", x_min=-678650, y_min=-3371600, x_max=905350, y_max=- 635600)
 Returns a vector of Strings that can be used as an input for gdalwarp
 """
-function get_options(;gr, cut_shp = "", srcnodata="", dstnodata="", x_min = - 678650,
-                                                                    y_min = -3371600,
-                                                                    x_max =   905350,
-                                                                    y_max = - 635600)
+function gdalwarp_options(;gr, cut_shp = "", srcnodata="", resampling="bilinear")
+    lims = DomainLimits()
     options = ["-overwrite",
-               "-t_srs", "EPSG:3413",
-               "-r", "bilinear",
+               "-t_srs", lims.crs,
+               "-r", resampling,
                "-co", "FORMAT=NC4",
                "-co", "COMPRESS=DEFLATE",
                "-co", "ZLEVEL=2",
-               "-te", "$x_min", "$y_min", "$x_max", "$y_max",  # y_max and y_min flipped otherwise GDAL is reversing the Y-dimension
+               "-dstnodata", string(no_data_value),
+               "-te", string(lims.x_min), string(lims.y_min), string(lims.x_max), string(lims.y_max),
                "-tr", "$gr", "$gr",
                ]
     if !isempty(cut_shp)
@@ -22,9 +32,6 @@ function get_options(;gr, cut_shp = "", srcnodata="", dstnodata="", x_min = - 67
     end
     if !isempty(srcnodata)
         append!(options, ["-srcnodata", srcnodata])
-    end
-    if !isempty(dstnodata)
-        append!(options, ["-dstnodata", dstnodata])
     end
     return options
 end
@@ -39,20 +46,20 @@ taken from https://discourse.julialang.org/t/help-request-using-archgdal-gdalwar
 out = gdalwarp("data/input.nc"; gr=1200, dest="data/output.nc")
 ```
 """
-function gdalwarp(path::String; gr::Real, cut_shp="", srcnodata="", dstnodata="", kwargs...)
+function gdalwarp(path::String; gr::Real, cut_shp="", srcnodata="", resampling="bilinear", kwargs...)
     ds = AG.read(path) do source
-        AG.gdalwarp([source], get_options(;gr, cut_shp, srcnodata, dstnodata); kwargs...) do warped
+        AG.gdalwarp([source], gdalwarp_options(;gr, cut_shp, srcnodata, resampling); kwargs...) do warped
            band = AG.getband(warped, 1)
            AG.read(band)
        end
     end
     return ds
 end
-function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", dstnodata="", kwargs...)
+function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", resampling="bilinear", kwargs...)
     source = AG.read.(path)
-    ds = AG.gdalwarp(source, get_options(;gr, srcnodata, dstnodata); kwargs...) do warped1
+    ds = AG.gdalwarp(source, gdalwarp_options(;gr, srcnodata, resampling); kwargs...) do warped1
         if !isempty(cut_shp)
-            AG.gdalwarp([warped1], get_options(;gr, cut_shp, srcnodata, dstnodata); kwargs...) do warped2
+            AG.gdalwarp([warped1], gdalwarp_options(;gr, cut_shp, srcnodata, resampling); kwargs...) do warped2
                 band = AG.getband(warped2, 1)
                 AG.read(band)
             end
@@ -62,6 +69,48 @@ function gdalwarp(path::Vector{String}; gr::Real, cut_shp="", srcnodata="", dstn
         end
     end
     return ds
+end
+
+function gdalgrid(filenm::String; gr::Real, kwargs...)
+    filenm_noext  = splitext(filenm)[1]             # including path but without extension
+    filenm_basenm = splitext(basename(filenm))[1]   # no path, no extension
+
+    # get domain limits and crs of target grid
+    lims = DomainLimits()
+
+    # create .vrt file containing metadata for csv file
+    open(filenm_noext*".vrt", "w") do io
+        print(io,
+    "<OGRVRTDataSource>
+        <OGRVRTLayer name=\""*filenm_basenm*"\">
+            <SrcDataSource>"*filenm*"</SrcDataSource>
+            <SrcLayer>"*filenm_basenm*"</SrcLayer>
+            <LayerSRS>"*lims.crs*"</LayerSRS>
+            <GeometryType>wkbPoint</GeometryType>
+            <GeometryField encoding=\"PointFromColumns\" x=\"x\" y=\"y\" z=\"dh\"/>
+        </OGRVRTLayer>
+    </OGRVRTDataSource>
+    ")
+    end
+
+    # define options for gdalgrid
+    rad     = 2*gr
+    options = ["-a", "invdist:radius=$rad:min_points=1:nodata=$(string(no_data_value))",
+               "-co", "FORMAT=NC4",
+               "-co", "COMPRESS=DEFLATE",
+               "-co", "ZLEVEL=2",
+               "-txe", string(lims.x_min), string(lims.x_max),
+               "-tye", string(lims.y_min), string(lims.y_max),
+               "-tr", "$gr", "$gr"]
+    display(options)
+    # call gdalgrid
+    ds = AG.read(filenm_noext*".vrt") do source
+        AG.gdalgrid(source, options; kwargs...) do gridded
+            band = AG.getband(gridded, 1)
+            AG.read(band)
+        end
+    end
+    return
 end
 
 function get_attr(ds::NCDataset, layernames::Vector{String})
@@ -125,32 +174,32 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
     close(ds)
 end
 
-"""
-    Do gdalwarp of mask manually because I couldn't find an option in gdalwarp to make the search radius larger
-    Necessary because bedrock mask needs to be conservatively large not leaving too many individual ice cells in between.
-"""
-function mask_downsample(bedmachine_fullres, templ, r)
-    bedm_src = ncread(bedmachine_fullres, "mask")
-    x_src    = ncread(bedmachine_fullres, "x")
-    y_src    = ncread(bedmachine_fullres, "y")
-    x_dst    = ncread(templ, "x")
-    y_dst    = ncread(templ, "y")
-    bedm_dst = zeros(Int8, length(x_dst), length(y_dst))
-    @showprogress for iy in axes(bedm_dst, 2)
-        for ix in axes(bedm_dst, 1)
-            ix_src = findall(abs.(x_dst[ix] .- x_src) .< r)
-            iy_src = findall(abs.(y_dst[iy] .- y_src) .< r)
-            if !any(isempty.([ix_src, iy_src]))
-                pts_in_range = bedm_src[ix_src, iy_src]
-                if sum(pts_in_range .== 0) < 0.5*length(pts_in_range)
-                    pts_in_range[pts_in_range .== 0] .= 10
-                end
-                bedm_dst[ix,iy] = minimum(pts_in_range)
-            end
-        end
-    end
-    return bedm_dst
-end
+# """
+#     Do gdalwarp of mask manually because I couldn't find an option in gdalwarp to make the search radius larger
+#     Necessary because bedrock mask needs to be conservatively large not leaving too many individual ice cells in between.
+# """
+# function mask_downsample(bedmachine_fullres, templ, r)
+#     bedm_src = ncread(bedmachine_fullres, "mask")
+#     x_src    = ncread(bedmachine_fullres, "x")
+#     y_src    = ncread(bedmachine_fullres, "y")
+#     x_dst    = ncread(templ, "x")
+#     y_dst    = ncread(templ, "y")
+#     bedm_dst = zeros(Int8, length(x_dst), length(y_dst))
+#     @showprogress for iy in axes(bedm_dst, 2)
+#         for ix in axes(bedm_dst, 1)
+#             ix_src = findall(abs.(x_dst[ix] .- x_src) .< r)
+#             iy_src = findall(abs.(y_dst[iy] .- y_src) .< r)
+#             if !any(isempty.([ix_src, iy_src]))
+#                 pts_in_range = bedm_src[ix_src, iy_src]
+#                 if sum(pts_in_range .== 0) < 0.5*length(pts_in_range)
+#                     pts_in_range[pts_in_range .== 0] .= 10
+#                 end
+#                 bedm_dst[ix,iy] = minimum(pts_in_range)
+#             end
+#         end
+#     end
+#     return bedm_dst
+# end
 
 
 function create_bedmachine_grid(gr)
@@ -177,7 +226,8 @@ function create_bedmachine_grid(gr)
     attr_template = NCDataset(bedmachine_original)
     spatial_template_file = "template_file.nc"
     for fn in layernames
-        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), dstnodata=string(no_data_value), dest=spatial_template_file)[:,end:-1:1]
+        resampling = fn == "mask" ? "max" : "bilinear"
+        new = gdalwarp("NETCDF:"*bedmachine_original*":"*fn;  gr, srcnodata=string(attr_template.attrib["no_data"]), resampling, dest=spatial_template_file)[:,end:-1:1]
         push!(fieldvals, new)  # flip y-axis due to behaviour of ArchGDAL
     end
 
@@ -193,8 +243,6 @@ function create_grimpv2(gr, bedmachine_original; kw="")
     get_dest_file(gr) = joinpath(data_path, "grimpv2_geoid_corrected_g$(gr).nc")
     dest_g150_file    = get_dest_file(150)
     dest_gr_file      = get_dest_file(gr)
-
-    dstnodata = string(Float32(no_data_value))
 
     if isfile(dest_gr_file)
         return dest_g150_file, dest_gr_file
@@ -219,11 +267,11 @@ function create_grimpv2(gr, bedmachine_original; kw="")
         filter!(endswith(".tif"),grimp_files)
         merged_g150 = joinpath(data_path,"merged_grimpv2_g150.nc")
         println("Using gdalwarp to merge the grimpv2 mosaics into one DEM, taking a while..")
-        grimp_g150  = gdalwarp(grimp_files; gr=150, srcnodata="0.0", dstnodata, dest=merged_g150)
+        grimp_g150  = gdalwarp(grimp_files; gr=150, srcnodata="0.0", dest=merged_g150)
         grimp_g150  = grimp_g150[:,end:-1:1]
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)[:,end:-1:1]
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150)[:,end:-1:1]
         idx   = findall(grimp_g150 .!= no_data_value .&& .!ismissing.(geoid))
         grimp_g150[idx] .-= geoid[idx]
         grimp_g150[grimp_g150 .< 0.0] .= no_data_value
@@ -235,7 +283,7 @@ function create_grimpv2(gr, bedmachine_original; kw="")
     end
 
     # gdalwarp to desired grid
-    gdalwarp(dest_g150_file; gr, srcnodata=dstnodata, dest=dest_gr_file)
+    gdalwarp(dest_g150_file; gr, srcnodata=string(no_data_value), dest=dest_gr_file)
 
     return dest_g150_file, dest_gr_file
 end
@@ -306,8 +354,6 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
     # rm_g150_file      = get_rm_file(150)
     # rm_gr_file        = get_rm_file(gr)
 
-    dstnodata        = string(Float32(no_data_value))
-
     if isfile(aerodem_gr_file) #&& isfile(rm_gr_file)
         return aerodem_g150_file, aerodem_gr_file #, rm_gr_file
     elseif !isfile(aerodem_g150_file)
@@ -339,14 +385,14 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
         merged_aero_dest = joinpath(aerodem_path, "merged_aerodem_g150.nc")
         merged_rm_dest   = joinpath(aerodem_path, "merged_rm_g150.nc")
         println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
-        aero_rm_filt     = gdalwarp(aerodem_files; gr=150, srcnodata=string(0.0), dstnodata, dest=merged_aero_dest)
-        rel_mask         = gdalwarp(     rm_files; gr=150, srcnodata=string(0.0), dstnodata, dest=merged_rm_dest)
+        aero_rm_filt     = gdalwarp(aerodem_files; gr=150, srcnodata=string(0.0), dest=merged_aero_dest)
+        rel_mask         = gdalwarp(     rm_files; gr=150, srcnodata=string(0.0), dest=merged_rm_dest)
 
         # filter for observations where reliability value is low
         aero_rm_filt[rel_mask .< 40] .= no_data_value  # only keep values with reliability of at least xx
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150, dstnodata)
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150)
         idx                                = findall(aero_rm_filt .!= no_data_value)
         aero_rm_filt[idx]                .-= geoid[idx]
         aero_rm_filt[aero_rm_filt .< 0.0] .= no_data_value
@@ -371,8 +417,8 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
     end
 
     # gdalwarp to desired grid
-    gdalwarp(aerodem_g150_file; gr, cut_shp=outline_shp_file, srcnodata=dstnodata, dest=aerodem_gr_file)
-    # gdalwarp(rm_g150_file; gr, srcnodata=dstnodata, dest=rm_gr_file)
+    gdalwarp(aerodem_g150_file; gr, cut_shp=outline_shp_file, srcnodata=string(no_data_value), dest=aerodem_gr_file)
+    # gdalwarp(rm_g150_file; gr, srcnodata=string(no_data_value), dest=rm_gr_file)
 
     return aerodem_g150_file, aerodem_gr_file
 end
@@ -396,7 +442,7 @@ function create_outline_mask(gr, outline_shp_file, sample_file)
     layername   = "mask"
     attributes = Dict(layername => Dict{String, Any}())
     save_netcdf(fname_ones, sample_file, [ones_m], [layername], attributes)
-    gdalwarp(fname_ones; gr, cut_shp=outline_shp_file, dest=outline_mask_file, dstnodata=string(no_data_value))
+    gdalwarp(fname_ones; gr, cut_shp=outline_shp_file, dest=outline_mask_file)
     rm(fname_ones, force=true)
     return outline_mask_file
 end
@@ -478,6 +524,19 @@ function get_atm_dh_file(ref_file, bedm_file, blockspacing; kw="")
     rm(dh_interpolated_file)
 
     return atm_dh_dest_file
+end
+
+function get_atm_grid(gr, ref_file, bedm_file, blockspacing=gr)
+    atm_dh_file   = get_atm_dh_file(ref_file, bedm_file, blockspacing)
+    println(atm_dh_file)
+    atm_grid_file = joinpath(dirname(atm_dh_file), "dh_ref_minus_atm_g$(gr).nc")
+    if isfile(atm_grid_file)
+        return atm_grid_file
+    end
+    println("Use gdalgrid to project atm flightline data on grid...")
+    gdalgrid(atm_dh_file; gr, dest=atm_grid_file)
+    println(atm_grid_file)
+    return atm_grid_file
 end
 
 function download_esa_cci(dest_file)

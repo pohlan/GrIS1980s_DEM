@@ -497,7 +497,7 @@ function geostats_interpolation(grid_kriging, grid_out;         # make kriging a
     aerodem_g150, obs_aero_file     = create_aerodem(grid_kriging, outline_shp_file, bedmachine_original, reference_file_g150)
     atm_dh_file                     = get_atm_dh_file(grimp_file, bedm_file, blockspacing)
     dhdt_file, _                    = create_dhdt_grid(;gr=grid_kriging, startyr=1994, endyr=2010)
-    mask_file                       = create_imbie_mask(;gr=grid_kriging, outline_shp_file, sample_path=aerodem_g150)
+    mask_file                       = create_outline_mask(grid_kriging, outline_shp_file, aerodem_g150)
 
     # get filename at grid_out
     aerodem_g150, obs_aero_file_gr_out = create_aerodem(grid_out, outline_shp_file, bedmachine_original, reference_file_g150)

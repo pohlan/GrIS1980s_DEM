@@ -50,17 +50,24 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, imbie_path, bedm_path, r, use_arpack)
+function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack)
     # get I_no_ocean
-    imbie_mask = ncread(imbie_path, "Band1")
-    grimp_mask = ncread(bedm_path, "mask")
-    I_no_ocean = findall( (vec(grimp_mask) .!= 1) .&& vec(imbie_mask) .> 0.0)
+    h_ref        = NCDataset(ref_file)["Band1"][:]
+    h_ref        = replace_missing(h_ref, 0.0)
+    outline_mask = ncread(outline_mask_file, "Band1")
+    grimp_mask   = ncread(bedm_file, "mask")
+    I_no_ocean   = findall( (vec(grimp_mask) .!= 1) .&& vec(outline_mask) .> 0.0)
 
-    # load model data
-    Data_ice = read_model_data(;model_files,I_no_ocean)
+    # load model data and calculate difference to reference DEM
+    Data_ice  = read_model_data(;model_files,I_no_ocean)
+
+    # calculate difference to reference DEM
+    data_ref  = h_ref[I_no_ocean]
+    Data_ice .= data_ref .- Data_ice
+
     # centering model data
-    Data_mean  = mean(Data_ice, dims=2)
-    Data_ice  .= Data_ice .- Data_mean
+    data_mean  = mean(Data_ice, dims=2)
+    Data_ice  .= Data_ice .- data_mean
 
     # compute SVD
     if use_arpack
@@ -73,16 +80,38 @@ function prepare_model(model_files, imbie_path, bedm_path, r, use_arpack)
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, I_no_ocean, Data_mean, Σ
+    return UΣ, I_no_ocean, data_mean, data_ref, Σ
 end
 
-function prepare_obs(obs_file, I_no_ocean, Data_mean)
-    # load observations
-    obs = ncread(obs_file, "Band1")
+function prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
+    # aerodem
+    h_aero                     = NCDataset(obs_aero_file)["Band1"][:]
+    idx_aero                   = findall(.!ismissing.(h_aero[I_no_ocean]))
+    h_aero                     = replace_missing(h_aero, 0.0)
+    h_ref                      = NCDataset(ref_file)["Band1"][:]
+    h_ref                      = replace_missing(h_ref, 0.0)
+    obs                        = zeros(size(h_aero))
+    obs[I_no_ocean[idx_aero]] .= h_ref[I_no_ocean[idx_aero]] .- h_aero[I_no_ocean[idx_aero]]
+
+    # atm
+    dh_atm                    = NCDataset(atm_dh_grid_file)["Band1"][:]
+    aero_dilated              = dilate(h_aero, r=10)
+    idx_atm                   = findall(.!ismissing.(dh_atm[I_no_ocean]) .&& aero_dilated[I_no_ocean] .== 0.0)
+    to_del                    = findall(abs.(dh_atm[I_no_ocean[idx_atm]]) .> 5 * mad(dh_atm[I_no_ocean[idx_atm]]))
+    deleteat!(idx_atm, to_del)    # there are some extreme dh atm values, better to filter them out
+    obs[I_no_ocean[idx_atm]] .= dh_atm[I_no_ocean[idx_atm]]
+
     # obtain I_obs
-    I_obs      = findall(obs[I_no_ocean] .> 0.0)
+    I_obs      = findall(obs[I_no_ocean] .!= 0.0)
+
     # center observations
-    x_data = obs[I_no_ocean][I_obs] .- Data_mean[I_obs]
+    x_data = obs[I_no_ocean][I_obs] .- data_mean[I_obs]
+
+    # save matrix of observations as nc and plot
+    gr = Int(diff(NCDataset(obs_aero_file)["x"][1:2])[1])
+    save_netcdf(joinpath(dirname(fig_dir),"obs_all_gr$(gr).nc"), obs_aero_file, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
+    Plots.heatmap(obs', clims=(-100,100), cmap=:bwr)
+    Plots.savefig(joinpath(fig_dir, "obs_all_g$(gr).png"))
     return x_data, I_obs
 end
 
@@ -95,17 +124,24 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     return x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_files::Vector{String}, do_figures=false, use_arpack=false)
+function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_files::Vector{String}, use_arpack=false)
+    # define output paths
+    main_output_dir = "output/SVD_reconstruction/"
+    fig_dir = joinpath(main_output_dir, "figures")
+    mkpath(main_output_dir)
+    mkpath(fig_dir)
+
     # get filenames
     bedmachine_original, bedm_file  = create_bedmachine_grid(gr)
     reference_file_g150, ref_file   = create_grimpv2(gr, bedmachine_original)
     aerodem_g150, obs_aero_file     = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
-    mask_file                       = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
+    atm_dh_grid_file                = get_atm_grid(gr, ref_file, bedm_file)
+    outline_mask_file               = create_outline_mask(gr, outline_shp_file, aerodem_g150)
 
-    UΣ, I_no_ocean, Data_mean, _ = prepare_model(model_files, mask_file, bedm_file, r, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                = prepare_obs(obs_aero_file, I_no_ocean, Data_mean)
-    r                            = min(size(UΣ,2), r)                                                    # truncation of SVD cannot be higher than the second dimension of U*Σ
-    x_rec                        = solve_optim(UΣ, I_obs, r, λ, x_data)                                  # derive analytical solution of regularized least squares
+    UΣ, I_no_ocean, data_mean, data_ref, _ = prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs                          = prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
+    r                                      = min(size(UΣ,2), r)                                                      # truncation of SVD cannot be higher than the second dimension of U*Σ
+    x_rec                                  = solve_optim(UΣ, I_obs, r, λ, x_data)                                    # derive analytical solution of regularized least squares
 
     # calculate error and print
     nx, ny                  = size(NCDataset(obs_aero_file)["Band1"])
@@ -115,29 +151,25 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_f
     @printf("Mean absolute error: %1.1f m\n", err_mean)
 
     # retrieve matrix of reconstructed DEM
-    dem_rec             = zeros(F, nx,ny)
-    dem_rec[I_no_ocean] = x_rec .+ Data_mean
-    # smoothing
-    dem_rec = mapwindow(median, dem_rec, (5,5))
+    dem_rec                 = zeros(F, nx,ny)
+    dem_rec[I_no_ocean]     = data_ref .- (x_rec .+ data_mean)
     dem_rec[dem_rec .== 0] .= no_data_value
 
     # save as nc file
-    mkpath("output/")
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
-    filename    = "output/rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"
+    filename    = joinpath(main_output_dir,"rec_lambda_1e$logλ"*"_g$gr"*"_r$r.nc")
     layername   = "surface"
     attributes  = Dict(layername => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
                         )
     save_netcdf(filename, obs_aero_file, [dem_rec], [layername], attributes)
+
     # plot and save difference between reconstruction and observations
-    if do_figures
-        save_netcdf("output/dif.nc", obs_aero_file, [dif], ["dif"], Dict("dif" => Dict()))
-        Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
-        Plots.savefig(filename[1:end-3]*".png")
-    end
+    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), obs_aero_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
+    Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
+    Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.png"))
 
     return filename
 end
