@@ -60,5 +60,6 @@ get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 include("gdal_helpers.jl")
 include("reconstruction_routines.jl")
 include("statistics_helpers.jl")
+include("plotting_tools.jl")
 
 end # module svd_IceSheetDEM
