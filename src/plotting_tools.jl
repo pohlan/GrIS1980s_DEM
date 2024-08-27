@@ -168,6 +168,7 @@ function interpolate_raster_to_profile(fname, xc, yc; band="Band1")
     ds = NCDataset(fname)
     Z  = ds[band][:,:]
     Z = replace_missing(Z, NaN)
+    Z[Z .== 0.0] .= NaN
     x  = ds["x"][:]
     y  = ds["y"][:]
     x0, y0 = x[1], y[2]
