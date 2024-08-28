@@ -40,13 +40,13 @@ function interp_raster(A::Matrix, px::T, py::T, x0::T, y0::T, Δx::T, Δy::T) wh
 end
 
 """
-    get_flowline_coords(vx, vy, x0, y0, Δx, Δy, step, L, px0, py0, glacier_name)
+    get_flowline_coords(vx, vy, x0, y0, Δx, Δy, lstep, L, px0, py0, glacier_name)
 
 ### Inputs
 - `vx`,`vy`      : matrix of velocities in x,y-direction
 - `x0`,`y0`      : first x,y-coordinate of `vx` and `vy` fields
 - `Δx`,`Δy`      : cell size in x,y direction of `vx` and `vy`
-- `step`         : step length between two points in the flowline
+- `lstep`         : lstep length between two points in the flowline
 - `L`            : length of profile
 - `px0`,`py0`    : coordinates of the starting point for the backpropagating algorithm
 - `glacier_name` : name of the glacier
@@ -54,7 +54,7 @@ end
 ### Output
 - String of the csv file the coordinates are saved in
 """
-function get_flowline_coords(vx::Matrix, vy::Matrix, x0::T, y0::T, Δx::T, Δy::T, step::T, L::T, px0::T, py0::T, glacier_name::String) where T <: Real
+function get_flowline_coords(vx_file::String, vy_file::String, lstep::T, L::T, px0::T, py0::T, glacier_name::String) where T <: Real
     # set up output directory
     output_dir = joinpath("output", "profiles")
     mkpath(output_dir)
@@ -64,6 +64,16 @@ function get_flowline_coords(vx::Matrix, vy::Matrix, x0::T, y0::T, Δx::T, Δy::
     if isfile(fname)
         return fname
     end
+
+    # read in
+    vx = NCDataset(vx_file)["vx"][:,:]
+    vy = NCDataset(vy_file)["vy"][:,:]
+    x  = NCDataset(vx_file)["x"][:]
+    x0 = x[1]
+    Δx = x[2]-x[1]
+    y  = NCDataset(vx_file)["y"][:]
+    y0 = y[1]
+    Δy = y[2]-y[1]
 
     # define a function to interpolate the velocity to any point, depends on x0, y0, Δx and Δy
     interp_v(v, px, py) = interp_raster(v, px, py, x0, y0, Δx, Δy)
@@ -80,11 +90,11 @@ function get_flowline_coords(vx::Matrix, vy::Matrix, x0::T, y0::T, Δx::T, Δy::
         if any(ismissing.([vx_interp,vy_interp]))
             break
         end
-        # take a step in opposite direction of velocity vector, with length = step
-        push!(px, px[end] - step / v_norm * vx_interp)
-        push!(py, py[end] - step / v_norm * vy_interp)
+        # take a step in opposite direction of velocity vector, with length = lstep
+        push!(px, px[end] - lstep / v_norm * vx_interp)
+        push!(py, py[end] - lstep / v_norm * vy_interp)
         nit += 1
-        dist_tot += step
+        dist_tot += lstep
     end
     # save as csv
     df_coords = DataFrame("X" => px, "Y" => py)
