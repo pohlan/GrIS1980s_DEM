@@ -50,7 +50,7 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack)
+function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack, output_dir)
     # get I_no_ocean
     h_ref        = NCDataset(ref_file)["Band1"][:]
     h_ref        = replace_missing(h_ref, 0.0)
@@ -78,9 +78,13 @@ function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, u
         U, Σ, V = svd(Data_ice)
     end
 
+    # save in dictionary for later
+    components_saved = joinpath(output_dir, "SVD_components.jld2")
+    jldsave(components_saved; U, Σ, V, I_no_ocean)
+
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, I_no_ocean, data_mean, data_ref, Σ
+    return UΣ, I_no_ocean, data_mean, data_ref, Σ, components_saved
 end
 
 function prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
@@ -121,7 +125,7 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
     v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
     x_rec         = UΣ[:,1:r]*v_rec
-    return x_rec
+    return v_rec, x_rec
 end
 
 function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_files::Vector{String}, use_arpack=false)
@@ -138,10 +142,17 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_f
     atm_dh_grid_file                = get_atm_grid(gr, ref_file, bedm_file)
     outline_mask_file               = create_outline_mask(gr, outline_shp_file, aerodem_g150)
 
-    UΣ, I_no_ocean, data_mean, data_ref, _ = prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    UΣ, I_no_ocean, data_mean, data_ref, _, saved_file = prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs                          = prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
     r                                      = min(size(UΣ,2), r)                                                      # truncation of SVD cannot be higher than the second dimension of U*Σ
-    x_rec                                  = solve_optim(UΣ, I_obs, r, λ, x_data)                                    # derive analytical solution of regularized least squares
+    v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                    # derive analytical solution of regularized least squares
+
+    # ad v_rec to output and save
+    to_save = load(saved_file)
+    to_save["v_rec"] = v_rec
+    jldopen(saved_file, "w") do f
+        [f[k] = m for (k,m) in to_save]
+    end
 
     # calculate error and print
     nx, ny                  = size(NCDataset(obs_aero_file)["Band1"])
@@ -171,7 +182,7 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_f
     Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
     Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.png"))
 
-    return filename
+    return filename, saved_file
 end
 
 function create_reconstructed_bedmachine(rec_file, bedmachine_file)
