@@ -6,16 +6,16 @@ using ArgParse
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
 
-using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile, JLD2
+using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile, JLD2, UnPack
 using Downloads, Cascadia, Gumbo, HTTP, PyCall
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
-using Arpack, LinearAlgebra, ImageMorphology
+using Arpack, LinearAlgebra, ImageMorphology, Geomorphometry
 using DataStructures: OrderedDict
 import Plots, StatsPlots
 
 export parse_commandline, get_ix, get_iy
-export SVD_reconstruction, create_reconstructed_bedmachine
+export SVD_reconstruction, create_reconstructed_bedmachine, prepare_obs
 export SVD_random_fields, geostats_interpolation
 
 const no_data_value = -9999.0
@@ -57,6 +57,7 @@ get_ix(i,nx) = i % nx == 0 ? nx : i % nx
 get_iy(i,nx) = cld(i,nx)
 get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 
+include("prepare_data.jl")
 include("gdal_helpers.jl")
 include("reconstruction_routines.jl")
 include("statistics_helpers.jl")

@@ -50,14 +50,7 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack, output_dir)
-    # get I_no_ocean
-    h_ref        = NCDataset(ref_file)["Band1"][:]
-    h_ref        = replace_missing(h_ref, 0.0)
-    outline_mask = ncread(outline_mask_file, "Band1")
-    grimp_mask   = ncread(bedm_file, "mask")
-    I_no_ocean   = findall( (vec(grimp_mask) .!= 1) .&& vec(outline_mask) .> 0.0)
-
+function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, output_dir)
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
 
@@ -65,7 +58,9 @@ function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, u
     data_ref  = h_ref[I_no_ocean]
     Data_ice .= data_ref .- Data_ice
 
-    # centering model data
+    # standardize model data
+    Data_ice  .= standardize(Data_ice, data_ref)
+    # subtract mean again for it to be truly centered
     data_mean  = mean(Data_ice, dims=2)
     Data_ice  .= Data_ice .- data_mean
 
@@ -84,38 +79,44 @@ function prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, u
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, I_no_ocean, data_mean, data_ref, Σ, components_saved
+    return UΣ, data_mean, data_ref, Σ, components_saved
 end
 
-function prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
-    # aerodem
-    h_aero                     = NCDataset(obs_aero_file)["Band1"][:]
-    idx_aero                   = findall(.!ismissing.(h_aero[I_no_ocean]))
-    h_aero                     = replace_missing(h_aero, 0.0)
-    h_ref                      = NCDataset(ref_file)["Band1"][:]
-    h_ref                      = replace_missing(h_ref, 0.0)
-    obs                        = zeros(size(h_aero))
-    obs[I_no_ocean[idx_aero]] .= h_ref[I_no_ocean[idx_aero]] .- h_aero[I_no_ocean[idx_aero]]
+function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
+    # retrieve standardized observations
+    df_all = CSV.read(csv_dest, DataFrame)
 
-    # atm
-    dh_atm                    = NCDataset(atm_dh_grid_file)["Band1"][:]
-    aero_dilated              = dilate(h_aero, r=10)
-    idx_atm                   = findall(.!ismissing.(dh_atm[I_no_ocean]) .&& aero_dilated[I_no_ocean] .== 0.0)
-    to_del                    = findall(abs.(dh_atm[I_no_ocean[idx_atm]]) .> 5 * mad(dh_atm[I_no_ocean[idx_atm]]))
-    deleteat!(idx_atm, to_del)    # there are some extreme dh atm values, better to filter them out
-    obs[I_no_ocean[idx_atm]] .= dh_atm[I_no_ocean[idx_atm]]
+    # use gdalgrid to rasterize atm point data
+    df_atm      = df_all[df_all.source .== "atm", ["x", "y", "dh_detrend"]]
+    rename!(df_atm, "dh_detrend" => "dh")
+    tempname_csv = "df_atm_temp.csv"
+    tempname_nc  = "df_atm_temp.nc"
+    CSV.write(tempname_csv, df_atm)
+    gdalgrid(tempname_csv; gr, dest=tempname_nc)
+    obs_atm = NCDataset(tempname_nc)["Band1"][:]
+    idx_atm = findall(.!ismissing.(obs_atm))
+    # remove temporary files
+    rm(tempname_csv)
+    rm(tempname_nc)
 
-    # obtain I_obs
+    # find aerodem indices
+    id_df_aero = findall(df_all.source .== "aerodem")
+
+    # merge everything in one matrix
+    obs = zero(obs_atm)
+    obs[df_all.idx[id_df_aero]] .= df_all.dh_detrend[id_df_aero]
+    obs[idx_atm]                .= obs_atm[idx_atm]
+
+    # obtain I_obs and x_data vector
     I_obs      = findall(obs[I_no_ocean] .!= 0.0)
+    x_data     = obs[I_no_ocean[I_obs]]
 
-    # center observations
-    x_data = obs[I_no_ocean][I_obs] .- data_mean[I_obs]
-
-    # save matrix of observations as nc and plot
-    gr = Int(diff(NCDataset(obs_aero_file)["x"][1:2])[1])
-    save_netcdf(joinpath(dirname(fig_dir),"obs_all_gr$(gr).nc"), obs_aero_file, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
-    Plots.heatmap(obs', clims=(-100,100), cmap=:bwr)
-    Plots.savefig(joinpath(fig_dir, "obs_all_g$(gr).png"))
+    if !isempty(fig_dir)
+        # save matrix of observations as nc and plot
+        save_netcdf(joinpath(dirname(fig_dir),"obs_all_gr$(gr).nc"), obs_aero_file, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
+        Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
+        Plots.savefig(joinpath(fig_dir, "obs_all.png"))
+    end
     return x_data, I_obs
 end
 
@@ -128,24 +129,28 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     return v_rec, x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_files::Vector{String}, use_arpack=false)
+function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{String}, csv_preproc, jld2_preproc, use_arpack=false)
     # define output paths
     main_output_dir = "output/SVD_reconstruction/"
     fig_dir = joinpath(main_output_dir, "figures")
     mkpath(main_output_dir)
     mkpath(fig_dir)
 
-    # get filenames
-    bedmachine_original, bedm_file  = create_bedmachine_grid(gr)
-    reference_file_g150, ref_file   = create_grimpv2(gr, bedmachine_original)
-    aerodem_g150, obs_aero_file     = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
-    atm_dh_grid_file                = get_atm_grid(gr, ref_file, bedm_file)
-    outline_mask_file               = create_outline_mask(gr, outline_shp_file, aerodem_g150)
+    # get reference DEM
+    bedmachine_original, _ = create_bedmachine_grid(gr)
+    _, ref_file            = create_grimpv2(gr, bedmachine_original)
+    h_ref        = NCDataset(ref_file)["Band1"][:]
+    h_ref        = replace_missing(h_ref, 0.0)
 
-    UΣ, I_no_ocean, data_mean, data_ref, _, saved_file = prepare_model(model_files, ref_file, outline_mask_file, bedm_file, r, use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                          = prepare_obs(obs_aero_file, ref_file, atm_dh_grid_file, I_no_ocean, data_mean, fig_dir)
-    r                                      = min(size(UΣ,2), r)                                                      # truncation of SVD cannot be higher than the second dimension of U*Σ
-    v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                    # derive analytical solution of regularized least squares
+    # get I_no_ocean and (de-)standardization functions
+    dict = load(jld2_preproc)
+    @unpack I_no_ocean = dict
+    standardize, destandardize = get_stddization_fcts(jld2_preproc)
+
+    x_data, I_obs                          = prepare_obs(gr, csv_preproc, I_no_ocean, fig_dir)
+    UΣ, data_mean, data_ref, _, saved_file = prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
+    r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
+    v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
     # ad v_rec to output and save
     to_save = load(saved_file)
@@ -155,15 +160,15 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_f
     end
 
     # calculate error and print
-    nx, ny                  = size(NCDataset(obs_aero_file)["Band1"])
+    nx, ny                  = size(NCDataset(ref_file)["Band1"])
     dif                     = zeros(F, nx,ny)
-    dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- x_data
+    dif[I_no_ocean[I_obs]] .= destandardize(x_rec[I_obs] .- x_data, h_ref[I_no_ocean[I_obs]], add_mean=false)
     err_mean                = mean(abs.(dif[I_no_ocean[I_obs]]))
     @printf("Mean absolute error: %1.1f m\n", err_mean)
 
     # retrieve matrix of reconstructed DEM
     dem_rec                 = zeros(F, nx,ny)
-    dem_rec[I_no_ocean]     = data_ref .- (x_rec .+ data_mean)
+    dem_rec[I_no_ocean]     = data_ref .- destandardize(x_rec .+ data_mean, data_ref)
     dem_rec[dem_rec .== 0] .= no_data_value
 
     # save as nc file
@@ -175,7 +180,7 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, outline_shp_file, model_f
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
                         )
-    save_netcdf(filename, obs_aero_file, [dem_rec], [layername], attributes)
+    save_netcdf(filename, ref_file, [dem_rec], [layername], attributes)
 
     # plot and save difference between reconstruction and observations
     save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), obs_aero_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
