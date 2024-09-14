@@ -95,9 +95,6 @@ function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
     gdalgrid(tempname_csv; gr, dest=tempname_nc)
     obs_atm = NCDataset(tempname_nc)["Band1"][:]
     idx_atm = findall(.!ismissing.(obs_atm))
-    # remove temporary files
-    rm(tempname_csv)
-    rm(tempname_nc)
 
     # find aerodem indices
     id_df_aero = findall(df_all.source .== "aerodem")
@@ -113,10 +110,15 @@ function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
 
     if !isempty(fig_dir)
         # save matrix of observations as nc and plot
-        save_netcdf(joinpath(dirname(fig_dir),"obs_all_gr$(gr).nc"), obs_aero_file, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
+        save_netcdf(joinpath(dirname(fig_dir),"obs_all_gr$(gr).nc"), tempname_nc, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
         Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
         Plots.savefig(joinpath(fig_dir, "obs_all.png"))
     end
+
+    # remove temporary files
+    rm(tempname_csv)
+    rm(tempname_nc)
+
     return x_data, I_obs
 end
 

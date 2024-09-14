@@ -1,95 +1,77 @@
-using svd_IceSheetDEM, NetCDF, NCDatasets, Meshes, Statistics, StatsBase, GeoStats, CSV, DataFrames, Printf, JLD2, Distributions, ImageMorphology
+using svd_IceSheetDEM, NetCDF, NCDatasets, Meshes, Statistics, StatsBase, GeoStats, CSV, DataFrames, Printf, JLD2, Distributions, ImageMorphology, StatsPlots, LaTeXStrings, Interpolations, UnPack
 import Plots
 
 # set target directories
-main_output_dir  = joinpath("output","geostats_interpolation")
-fig_dir          = joinpath(main_output_dir, "figures")
-fig_dir_krig     = joinpath(main_output_dir, "kriging", "figures")
-mkpath(fig_dir)
+main_output_dir = joinpath("output","validation")
 
 outline_shp_file      = "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp"
 gr = 1200
-
-# get filenames
-bedmachine_original, bedm_file = create_bedmachine_grid(gr)
-reference_file_g150, ref_file  = create_grimpv2(gr, bedmachine_original)
-aerodem_g150, obs_aero_file    = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
-obs_ATM_file                   = get_atm_file()
-dhdt_file, _                   = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
-mask_file                      = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
-atm_dh_dest_file               = joinpath(dirname(obs_ATM_file), "grimp_minus_atm.csv")
 
 ################################################
 # Preprocessing, standardization and variogram #
 ################################################
 
-# number of bins
-nbins1 = 7
-nbins2 = 12
-blockspacing = gr
+csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(gr, outline_shp_file; blockspacing=gr/3, nbins1=7, nbins2=12)
 
-df_all, varg, destand, I_no_ocean, idx_aero = svd_IceSheetDEM.prepare_interpolation(ref_file, bedm_file, obs_aero_file, obs_ATM_file, dhdt_file, mask_file, fig_dir, atm_dh_dest_file;
-                                                                                    nbins1, nbins2, blockspacing)
+# get I_no_ocean, (de-)standardization functions and variogram from pre-processing
+df_all = CSV.read(csv_preprocessing, DataFrame)
+dict   = load(jld2_preprocessing)
+@unpack I_no_ocean, idx_aero, params = dict
+@unpack destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
+varg = svd_IceSheetDEM.custom_var(params)
 
+# make geotable
 geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
-xpl = [first(geom.coords) for geom in geotable.geometry]
-ypl = [last(geom.coords) for geom in geotable.geometry]
-Plots.scatter(xpl./1e3, ypl./1e3, marker_z=geotable.Z, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-5,5), aspect_ratio=1, xlims=(-7e2,8e2), xlabel="Easting [km]", ylabel="Northing [km]", colorbar_title="[m]", title="dh standardized", grid=false, wsize=(1700,1800))
+
+# xpl = [first(geom.coords) for geom in geotable.geometry]
+# ypl = [last(geom.coords) for geom in geotable.geometry]
+# Plots.scatter(xpl./1e3, ypl./1e3, marker_z=geotable.Z, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-5,5), aspect_ratio=1, xlims=(-7e2,8e2), xlabel="Easting [km]", ylabel="Northing [km]", colorbar_title="[m]", title="dh standardized", grid=false, wsize=(1700,1800))
 
 #######################################################
 # Standard cross-validation, leave block/ball/one out #
 #######################################################
 
 # create sets of training and test data
-ℓ    = 2e4
+ℓ    = 2e5
 flds = folds(geotable, BlockFolding(ℓ))
 # flds = folds(geotable, BallFolding(MetricBall(ℓ)))
 # flds = folds(geotable, OneFolding())
 
-maxns = [10,50,100,500,800,1000]
+maxn = 100
 
-methods_name = ["median", "mean", "nmad", "std", "L2norm"]
-methods_fct  = [median, mean, mad, std, norm]
-dict = Dict{String,Array}(n => zeros(length(maxns)) for n in methods_name)
-dict["maxn"] = maxns
-m_difs = [Float32[] for i in eachindex(maxns)]
-m_dists = [Float32[] for i in eachindex(maxns)]
-for (im,maxn) in enumerate(maxns)
-    println("maxn = $maxn")
-    function evaluate_fun(i_train,i_test)
-        interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
-        return interp.Z
-    end
-    tic = Base.time()
-    difs, dists = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_distances=true)
-    toc = Base.time() - tic
-    @printf("Kriging took %1.1f minutes. \n", toc / 60)
-    for (mn, mf) in zip(methods_name, methods_fct)
-        dict[mn][im] = mf(difs)
-    end
-    # save dists and difs
-    m_difs[im]  = difs
-    m_dists[im] = dists
+function evaluate_fun(i_train,i_test)
+    interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
+    return interp.Z
 end
-logℓ = round(log(10,ℓ),digits=1)
-dest      = joinpath(main_output_dir,"dict_cv_block_$(logℓ).jld2")
-save(dest, dict)
+difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
 
-# plot histogram
-ph = Plots.plot()
-for difs in m_difs
-    Plots.histogram!(ph, difs, normalize=:pdf, linecolor=nothing)
+# get indices
+idxs = [Int[] for i in flds]
+for (i,fs) in enumerate(flds)
+    idxs[i] = fs[2]
 end
-Plots.savefig(joinpath(fig_dir_krig,"validation_histogram"))
+idx = vcat(idxs...)
 
-# analyze error vs. distance to nearest neighbor, using binning
-p = Plots.plot(xlabel="distance to nearest neighbor (km)", ylabel="mean error", legend_title="max # neighbors:", size=(1300,800), leftmargin=10Plots.mm, topmargin=10Plots.mm, bottommargin=10Plots.mm, legend=:top) #, palette = :Blues_7)
-for (dists,difs,maxn) in zip(m_dists, m_difs, maxns) # eachrow(matrix_difs)
-    dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_sample_size(dists, difs, 4000)
-    Plots.plot!(bin_centers[1:end-1]./1e3, median.(dh_binned[1:end-1]), marker=:circle, markersize=6, markerstrokewidth=0, label=maxn)
+logℓ      = round(log10(ℓ),digits=1)
+dest = joinpath(main_output_dir,"dict_cv_block_1e$(logℓ)_gr$(gr)_kriging.jld2")
+jldsave(dest; difs, xc, yc, idx, h_ref=df_all.h_ref[idx], gr, method="kriging")
+
+
+
+#######################################################
+
+# plot map of difs
+p = Plots.scatter(xc,yc,marker_z=difs, cmap=:bwr, clims=(-4,4), markersize=0.7, markerstrokewidth=0, label="", aspect_ratio=1, size=(500,700))
+# p = Plots.plot()
+for (j,fs) in enumerate(flds)
+    stest = view(domain(geotable), fs[2])
+    ch    = GeoStats.convexhull(stest).rings[1].vertices.data
+    xx    = first.(a.coords for a in ch)
+    yy    = last.(a.coords for a in ch)
+    Plots.plot!(p, xx,yy, lw=1, color="black", label="")
 end
-Plots.plot(p)
-Plots.savefig(joinpath(fig_dir_krig,"error_vs_distance.png"))
+Plots.plot(p, size=(500,700))
+Plots.savefig(joinpath(fig_dir, "map_validation_maxn$maxn.png"))
 
 #######################################################
 # Determine good maxns through morphological gradient #

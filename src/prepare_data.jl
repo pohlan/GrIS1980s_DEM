@@ -55,6 +55,13 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     fig_path         = joinpath(main_output_dir, "figures/")
     mkpath(fig_path)
 
+    # check if files exist already
+    csv_dest = joinpath(main_output_dir, "input_data_gr$(target_grid).csv")
+    dict_dest = joinpath(main_output_dir, "params_gr$(target_grid).jld2")
+    if all(isfile.([csv_dest, dict_dest]))
+        return csv_dest, dict_dest
+    end
+
     # get filenames at specified grid resolution
     bedmachine_original, bedm_file  = create_bedmachine_grid(target_grid)
     reference_file_g150, ref_file   = create_grimpv2(target_grid, bedmachine_original)
@@ -105,10 +112,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     display(custom_var(ff.param))
 
     # save
-    csv_dest = joinpath(main_output_dir, "input_data.csv")
     CSV.write(csv_dest, df_all)
-
-    dict_dest = joinpath(main_output_dir, "other_params.jld2")
     to_save = (; interp_data..., params = ff.param, I_no_ocean, idx_aero)
     jldsave(dict_dest; to_save...)
     return csv_dest, dict_dest
