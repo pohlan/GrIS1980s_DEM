@@ -101,9 +101,14 @@ function replace_missing(A,c)
     return A
 end
 
-function get_ATM_df(fname, x, y, h_ref, df_aero; mindist=5e4, I_no_ocean)
+function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=5e4, I_no_ocean, force=false)
+    dest_file = joinpath(main_output_dir, "df_atm_non-standardized.csv")
+    if isfile(dest_file) && !force
+        return CSV.read(dest_file, DataFrame)
+    end
     df_atm = CSV.read(fname, DataFrame)
     df_atm[!,:source] .= :atm
+    df_atm[!,:h]      .= df_atm.h_ref .- df_atm.dh
     sort!(unique!(x))   # necessary for interpolation
     sort!(unique!(y))
     m_href      = Matrix{F}(replace_missing(h_ref, 0.0))    # bin1_fct doesn't accept type missing
@@ -129,6 +134,9 @@ function get_ATM_df(fname, x, y, h_ref, df_aero; mindist=5e4, I_no_ocean)
     # already remove some outliers here, improves standardization
     atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
     deleteat!(df_atm, atm_to_delete)
+
+    # save so it's faster next time
+    CSV.write(dest_file, df_atm)
     return df_atm
 end
 
@@ -140,6 +148,7 @@ function get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
                          :h_ref    => h_ref[idx_aero],
                          :bfield_1 => bin_field_1[idx_aero],
                          :dh       => h_ref[idx_aero] - h_aero[idx_aero],
+                         :h        => h_aero[idx_aero],
                          :idx      => idx_aero,
                          :source  .=> :aerodem )
     return df_aero
@@ -192,7 +201,7 @@ function get_itp_interp(bin_centers_1, bin_centers_2, field)
     return itp
 end
 
-function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_path)
+function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_path)
     bin_field_1 = df[!,:bfield_1]
     bin_field_2 = df[!,:h_ref]
     y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2)

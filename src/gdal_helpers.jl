@@ -501,7 +501,7 @@ end
 function get_atm_dh_file(ref_file, bedm_file, blockspacing; kw="")
     raw_atm_data_file = get_atm_raw_file(kw)
 
-    atm_dh_dest_file = joinpath(dirname(raw_atm_data_file), "dh_ref_minus_atm.csv")
+    atm_dh_dest_file = joinpath(dirname(raw_atm_data_file), "dh_ref_minus_atm_blocksize_$(blockspacing)m.csv")
     # if file exists already, do nothing
     if isfile(atm_dh_dest_file)
         return atm_dh_dest_file
@@ -585,7 +585,7 @@ function download_esa_cci(dest_file)
     return
 end
 
-function create_dhdt_grid(;gr::Int, startyr::Int, endyr::Int)
+function create_dhdt_grid(gr::Int; startyr::Int, endyr::Int)
     dhdt_dir       = "data/dhdt/"
     download_file  = joinpath(dhdt_dir, "CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09.nc")
     get_filename(starty, endy) = splitext(download_file)[1]*"_g$(gr)_$(starty)-$(endy).nc"

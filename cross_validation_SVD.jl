@@ -42,9 +42,13 @@ dict   = load(jld2_preprocessing)
 λs        = [5e6, 1e7, 5e7, 1e8]
 rs        = [150, 200, 250]
 
+# determine which input data to use ("h", "dh" or "h_detrend") and number of training files
+input = "dh_detrend"
+n_files = 2
+
 # load datasets, take full SVD (to be truncated with different rs later)
-x_data, I_obs                 = svd_IceSheetDEM.prepare_obs(gr, csv_preprocessing, I_no_ocean, fig_dir)
-UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files, standardize, h_ref, I_no_ocean, maximum(rs), use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
+x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(gr, csv_preprocessing, I_no_ocean, fig_dir; input)
+UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), use_arpack, main_output_dir; input) # read in model data and take svd to derive "eigen ice sheets"
 
 function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
     _, x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
@@ -61,9 +65,6 @@ geotable = svd_IceSheetDEM.make_geotable(x_data, x_Iobs, y_Iobs)
 flds = folds(geotable, BlockFolding(ℓ))
 
 # loop through λ and r values
-methods_name = ["median", "mean", "nmad", "std", "L2norm"]
-methods_fct  = [median, mean, mad, std, norm]
-dict = Dict{String,Any}(n => zeros(length(λs), length(rs)) for n in methods_name)
 m_difs  = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
 # m_dists = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
 m_xc = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
@@ -75,10 +76,7 @@ for (iλ,λ) in enumerate(λs)
         evaluate_fun(i_train,i_test) = predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
         difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
         # , dists, xc, yc
-        for (mn, mf) in zip(methods_name, methods_fct)
-            dict[mn][iλ,ir] = mf(difs)
-        end
-        m_difs[iλ,ir] = difs
+          m_difs[iλ,ir] = difs
         # m_dists[iλ,ir] = dists
         m_xc[iλ,ir] = xc
         m_yc[iλ,ir] = yc
@@ -92,7 +90,7 @@ end
 idx = vcat(idxs...)
 
 # save
-to_save = (; dict, gr, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, method="SVD", h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
+to_save = (; dict, gr, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, method="SVD_"*input, h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
 logℓ = round(log(10,ℓ),digits=1)
-dest = joinpath(main_output_dir,"dict_cv_block_1e$(logℓ)_gr$(gr)_SVD.jld2")
+dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(gr)_"*input*"_n_files$(n_files).jld2")
 jldsave(dest; to_save...)

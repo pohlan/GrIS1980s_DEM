@@ -50,16 +50,20 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, output_dir)
+function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, output_dir; input="dh_detrend")
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
 
     # calculate difference to reference DEM
     data_ref  = h_ref[I_no_ocean]
-    Data_ice .= data_ref .- Data_ice
+    if input !== "h"
+        Data_ice .= data_ref .- Data_ice
+    end
 
     # standardize model data
-    Data_ice  .= standardize(Data_ice, data_ref)
+    if input == "dh_detrend"
+        Data_ice  .= standardize(Data_ice, data_ref)
+    end
     # subtract mean again for it to be truly centered
     data_mean  = mean(Data_ice, dims=2)
     Data_ice  .= Data_ice .- data_mean
@@ -75,24 +79,26 @@ function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpac
 
     # save in dictionary for later
     components_saved = joinpath(output_dir, "SVD_components.jld2")
-    jldsave(components_saved; U, Σ, V, I_no_ocean)
+    jldsave(components_saved; U, Σ, V, data_mean, data_ref)
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
     return UΣ, data_mean, data_ref, Σ, components_saved
 end
 
-function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
+function prepare_obs_SVD(gr, csv_dest, I_no_ocean, output_dir, fig_dir=""; input="dh_detrend")
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
     # use gdalgrid to rasterize atm point data
-    df_atm      = df_all[df_all.source .== "atm", ["x", "y", "dh_detrend"]]
-    rename!(df_atm, "dh_detrend" => "dh")
-    tempname_csv = "df_atm_temp.csv"
-    tempname_nc  = "df_atm_temp.nc"
-    CSV.write(tempname_csv, df_atm)
-    gdalgrid(tempname_csv; gr, dest=tempname_nc)
+    df_atm      = df_all[df_all.source .== "atm", ["x", "y", input]]
+    rename!(df_atm, input => "dh")    # just because gdalgrid is hard-wired here to look for "dh" variable
+    tempname_csv = joinpath(output_dir, "dh_atm_temp.csv")
+    tempname_nc  = joinpath(output_dir, "dh_atm_temp.nc")
+    if !isfile(tempname_nc)
+        CSV.write(tempname_csv, df_atm)
+        gdalgrid(tempname_csv; gr, dest=tempname_nc)
+    end
     obs_atm = NCDataset(tempname_nc)["Band1"][:]
     idx_atm = findall(.!ismissing.(obs_atm))
 
@@ -101,7 +107,7 @@ function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
 
     # merge everything in one matrix
     obs = zero(obs_atm)
-    obs[df_all.idx[id_df_aero]] .= df_all.dh_detrend[id_df_aero]
+    obs[df_all.idx[id_df_aero]] .= df_all[id_df_aero, input]
     obs[idx_atm]                .= obs_atm[idx_atm]
 
     # obtain I_obs and x_data vector
@@ -116,8 +122,8 @@ function prepare_obs(gr, csv_dest, I_no_ocean, fig_dir="")
     end
 
     # remove temporary files
-    rm(tempname_csv)
-    rm(tempname_nc)
+    # rm(tempname_csv)
+    # rm(tempname_nc)
 
     return x_data, I_obs
 end
@@ -149,7 +155,7 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     @unpack I_no_ocean = dict
     standardize, destandardize = get_stddization_fcts(jld2_preproc)
 
-    x_data, I_obs                          = prepare_obs(gr, csv_preproc, I_no_ocean, fig_dir)
+    x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, fig_dir)
     UΣ, data_mean, data_ref, _, saved_file = prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares

@@ -85,7 +85,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     df_aero = get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
 
     # atm
-    df_atm  = get_ATM_df(atm_dh_file, x, y, h_ref, df_aero; I_no_ocean)
+    df_atm  = get_ATM_df(atm_dh_file, x, y, h_ref, df_aero, main_output_dir; I_no_ocean)
 
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:union)
@@ -105,10 +105,10 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     param_cond(params) = all(params .> 0) && all(params[4:6].<1.0) && all(params[1:3] .< 1.5e6) && params[7] .< 0.5
     # initial guess for parameters
     p0 = [6e4, 3e5, 9e5, 0.3, 0.5, 0.2, 0.25]
-    _, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=1.5e6, nlags=200, custom_var, param_cond, sample_frac=1.0, p0, fig_path)
+    _, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=7e5, nlags=200, custom_var, param_cond, sample_frac=0.5, p0, fig_path)
 
-    # force overall variance of variogram to be one
-    ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
+    # force overall variance of variogram to be one ???
+    # ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
     display(custom_var(ff.param))
 
     # save

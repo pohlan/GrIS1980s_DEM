@@ -20,7 +20,7 @@ x = ncread(template_file, "x")
 const gr = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
 
 # Pre-process and standardize data #
-csv_preprocessing, jld2_preprocessing, = prepare_obs(gr, outline_shp_file)
+csv_preprocessing, jld2_preprocessing, = prepare_obs(gr, outline_shp_file, blockspacing=gr/3, nbins1=7, nbins2=13)
 
 
 # -------------------------- #
