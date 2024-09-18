@@ -107,8 +107,8 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     p0 = [6e4, 3e5, 9e5, 0.3, 0.5, 0.2, 0.25]
     _, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=7e5, nlags=200, custom_var, param_cond, sample_frac=0.5, p0, fig_path)
 
-    # force overall variance of variogram to be one ???
-    # ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
+    # force overall variance of variogram to be one --> total sill has to be the same as std of whole dataset for kriging
+    ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
     display(custom_var(ff.param))
 
     # save

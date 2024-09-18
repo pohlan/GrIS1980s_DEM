@@ -48,7 +48,7 @@ n_files = 2
 
 # load datasets, take full SVD (to be truncated with different rs later)
 x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(gr, csv_preprocessing, I_no_ocean, fig_dir; input)
-UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), use_arpack, main_output_dir; input) # read in model data and take svd to derive "eigen ice sheets"
+UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), main_output_dir; input, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
 
 function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
     _, x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])

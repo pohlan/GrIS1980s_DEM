@@ -50,7 +50,7 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, output_dir; input="dh_detrend")
+function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, output_dir; use_arpack=false, input="dh_detrend")
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
 
@@ -156,7 +156,7 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     standardize, destandardize = get_stddization_fcts(jld2_preproc)
 
     x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, fig_dir)
-    UΣ, data_mean, data_ref, _, saved_file = prepare_model(model_files, standardize, h_ref, I_no_ocean, r, use_arpack, main_output_dir) # read in model data and take svd to derive "eigen ice sheets"
+    UΣ, data_mean, data_ref, _, saved_file = prepare_model(model_files, standardize, h_ref, I_no_ocean, r, main_output_dir; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 

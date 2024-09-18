@@ -145,9 +145,9 @@ function get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
     bin_field_1 = bin1_fct(m_href)
     df_aero  = DataFrame(:x        => x[get_ix.(idx_aero, length(x))],
                          :y        => y[get_iy.(idx_aero, length(x))],
-                         :h_ref    => h_ref[idx_aero],
+                         :h_ref    => m_href[idx_aero],
                          :bfield_1 => bin_field_1[idx_aero],
-                         :dh       => h_ref[idx_aero] - h_aero[idx_aero],
+                         :dh       => m_href[idx_aero] - h_aero[idx_aero],
                          :h        => h_aero[idx_aero],
                          :idx      => idx_aero,
                          :source  .=> :aerodem )
