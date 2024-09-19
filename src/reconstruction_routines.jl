@@ -62,7 +62,9 @@ function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, output_di
 
     # standardize model data
     if input == "dh_detrend"
-        Data_ice  .= standardize(Data_ice, data_ref)
+        for dc in eachcol(Data_ice)
+            dc .= standardize(dc, data_ref)
+        end
     end
     # subtract mean again for it to be truly centered
     data_mean  = mean(Data_ice, dims=2)
@@ -93,8 +95,9 @@ function prepare_obs_SVD(gr, csv_dest, I_no_ocean, output_dir, fig_dir=""; input
     # use gdalgrid to rasterize atm point data
     df_atm      = df_all[df_all.source .== "atm", ["x", "y", input]]
     rename!(df_atm, input => "dh")    # just because gdalgrid is hard-wired here to look for "dh" variable
-    tempname_csv = joinpath(output_dir, "dh_atm_temp.csv")
-    tempname_nc  = joinpath(output_dir, "dh_atm_temp.nc")
+    tempname_csv = joinpath(output_dir, "dh_atm_temp_g$(gr).csv")
+    tempname_nc  = joinpath(output_dir, "dh_atm_temp_g$(gr).nc")
+
     if !isfile(tempname_nc)
         CSV.write(tempname_csv, df_atm)
         gdalgrid(tempname_csv; gr, dest=tempname_nc)
