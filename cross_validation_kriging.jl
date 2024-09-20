@@ -3,9 +3,10 @@ import Plots
 
 # set target directories
 main_output_dir = joinpath("output","validation")
+fig_dir         = joinpath(main_output_dir, "figures")
 
 outline_shp_file      = "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp"
-gr = 1200
+gr = 600
 
 ################################################
 # Preprocessing, standardization and variogram #
@@ -76,29 +77,36 @@ Plots.savefig(joinpath(fig_dir, "map_validation_maxn$maxn.png"))
 #######################################################
 # Determine good maxns through morphological gradient #
 #######################################################
+bedmachine_original, bedm_file = svd_IceSheetDEM.create_bedmachine_grid(gr)
+reference_file_g150, ref_file  = svd_IceSheetDEM.create_grimpv2(gr, bedmachine_original)
 
 # derive indices for cells to interpolate, this time interpolate the points we don't know, technically no validation!
 ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
-x           = NCDataset(obs_aero_file)["x"][:]
-y           = NCDataset(obs_aero_file)["y"][:]
+x           = NCDataset(ref_file)["x"][:]
+y           = NCDataset(ref_file)["y"][:]
 grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[get_ix.(ir_sim, length(x))], y[get_iy.(ir_sim, length(x))])])
-geotable    = svd_IceSheetDEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
 
 # loop through maxns and calculate the morphological gradient each time; if high, good indication that maxn is too low
-maxns = [10,50,100,200,300,500]
+maxns = [200,300,500,800]
 ∑grad = zeros(length(maxns))
+wallt = zeros(length(maxns))
 for (im,maxn) in enumerate(maxns)
+    println("maxn = $maxn")
     tic = Base.time()
     interp = svd_IceSheetDEM.do_kriging(grid_output, geotable, varg; maxn)
     toc = Base.time() - tic
     m_interp = zeros(length(x),length(y))
-    m_interp[ir_sim] .= interp.Z
+    m_interp[ir_sim] .= mean.(interp.Z)
     grad = mgradient(m_interp)
     ∑grad[im] = sum(grad)
-    p1 = Plots.heatmap(m_interp[200:600,1:600]',cmap=:bwr, clims=(-4,4))
-    p2 = Plots.heatmap(grad[200:600,1:600]')
+    wallt[im] = toc
+    p1 = Plots.heatmap(m_interp[700:1200,300:1200]',cmap=:bwr, clims=(-4,4))
+    p2 = Plots.heatmap(grad[700:1200,300:1200]')
     Plots.plot(p1,p2)
-    Plots.savefig(joinpath(fig_dir_krig, "kriging_maxn$(maxn)_g(gr).png"))
+    Plots.savefig(joinpath(fig_dir, "kriging_maxn$(maxn)_g$(gr).png"))
+    tt = round(toc ./ 60, digits=1)
+    sgrd = ∑grad[im]
+    print("Wall time: $tt, "); println("sumgrad = $sgrd")
 end
 Plots.plot(maxns, ∑grad, marker=:circle, label="", xlabel="max  # neighbors kriging", title="Beucher morphological gradient", ylabel="sum(gradient)")
-Plots.savefig(joinpath(fig_dir_krig, "maxn_vs_gradient.png"))
+Plots.savefig(joinpath(fig_dir, "maxn_vs_gradient.png"))

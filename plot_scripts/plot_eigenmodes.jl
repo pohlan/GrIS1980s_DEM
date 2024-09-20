@@ -11,9 +11,11 @@ fig_dir = "output/SVD_reconstruction/figures"
 n_modes = 4
 
 # load
-d = load("output/SVD_reconstruction/SVD_components.jld2")
+d = load("output/data_preprocessing/SVD_components.jld2")
 U = d["U"][:,1:n_modes]
-I_no_ocean = d["I_no_ocean"]
+
+prms = load("output/data_preprocessing/params_gr600.jld2")
+I_no_ocean = prms["I_no_ocean"]
 
 nx, ny = 2640, 4560   # hard-coded for 600m
 

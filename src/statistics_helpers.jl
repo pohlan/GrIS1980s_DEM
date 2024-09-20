@@ -487,6 +487,7 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
     h_ref                = replace_missing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
+    std_predict          = zeros(size(h_aero))
 
     if method == :sgs  # sequential gaussian simulations
         output_path = joinpath(main_output_dir, "SEQ_simulations/")
@@ -508,10 +509,15 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
         println("Kriging...")
         interp = do_kriging(grid_output, geotable, varg; maxn)
         # 'fill' aerodem with de-standardized kriging output, save as netcdf
-        h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(interp.Z, h_ref[ir_sim])
+        h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), h_ref[ir_sim])
         h_predict[h_predict .<= 0.] .= no_data_value
         dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")
         save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+
+        std_predict[ir_sim]         .= destandardize(std.(interp.Z), h_ref[ir_sim], add_mean=false)
+        dest_file_gr_kriging_std     = joinpath(output_path, "std_kriging_g$(grid_kriging).nc")
+        save_netcdf(dest_file_gr_kriging_std, obs_aero_file, [std_predict], ["std"], Dict("std" => Dict{String,Any}()))
+
         # gdalwarp to higher resolution
         # dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")
         # gdalwarp(dest_file_gr_kriging; gr=grid_out, srcnodata=string(no_data_value), dest=dest_file_gr_out)
@@ -524,7 +530,7 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
 
         # save interp.Z directly
         m_interp = zeros(size(h_predict))
-        m_interp[ir_sim]            .= interp.Z
+        m_interp[ir_sim]            .= mean.(interp.Z)
         # df_aero = df_all[df_all.source .== :aerodem,:]   # also plot aerodem data that was used
         # m_interp[df_aero.idx]       .= df_aero.dh_detrend
         dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")

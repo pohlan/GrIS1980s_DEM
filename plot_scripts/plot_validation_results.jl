@@ -9,7 +9,7 @@ output_dir = "output/validation/"
 fig_dir    = joinpath(output_dir, "figures/")
 mkpath(fig_dir)
 
-grd = 1200
+grd = 600
 
 f_dict = glob("output/validation/dict_cv_block_1e5.3_gr$(grd)_*.jld2")
 
@@ -74,19 +74,46 @@ savefig(joinpath(fig_dir, "error_variogram.png"))
 
 # for SVD only
 
-f_SVD = "output/validation/*gr$(grd)_*_SVD_dh_detrend.jld2"
+f_SVD = glob("output/validation/*gr$(grd)*.jld2")[1]
 
-@unpack xc, yc, idx, h_ref, gr, method, m_difs, λs, rs, dict = load(f_SVD)
+@unpack xc, yc, idx, h_ref, grd, method, m_difs, λs, rs, dict = load(f_SVD)
 
-methods_name = ["median", "mean", "nmad", "std", "L2norm"]
-methods_fct  = [median, mean, mad, std, norm]
+methods_name = ["mean", "L2norm"]
+methods_fct  = [mean, norm]
 ## for SVD: plot mean, norm etc for different λ and r values
 # see https://juliagraphics.github.io/ColorSchemes.jl/stable/basics/#Pre-defined-schemes-1 for more pre-defined, color-blind friendly schemes
 for (m, fc) in zip(methods_name, methods_fct)
     p = plot(xscale=:log10, xlabel="λ", ylabel=m, size=(1300,800), leftmargin=10Plots.mm, topmargin=10Plots.mm, bottommargin=10Plots.mm, legend=:top, palette = :tol_light)
     for i in eachindex(rs)
-        plot!(λs, abs.(fc.(m_difs[:,i])), label="r="*string(rs[i]), marker=:circle, markersize=6, markerstrokewidth=0, lw=3.5)
+        md_abs = [abs.(md) for md in m_difs[:,i] ]
+        plot!(λs, fc.(md_abs), label="r="*string(rs[i]), marker=:circle, markersize=6, markerstrokewidth=0, lw=3.5)
     end
     plot(p)
-    savefig(joinpath(fig_dir,m*"_abs_gr$(gr)_"*method*".png"))
+    savefig(joinpath(fig_dir,m*"_abs_gr$(grd)_"*method*".png"))
 end
+
+# plot error vs elevation for different λ and r
+# p_median = plot(xlabel="Elevation of reference DEM (m)", ylabel=L"Median $\epsilon$ (m)")
+# p_std    = plot(xlabel="Elevation of reference DEM (m)", ylabel=L"Std $\epsilon$ (m)")
+# for (iλ, λ) in zip(axes(m_difs,1), λs)
+#     # for (ir, r) in zip(axes(m_difs,2), rs)
+#     ir = 3
+#     dif_destd = m_difs[iλ, ir]
+#     # error vs elevation
+#     p = Plots.plot()
+#     dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(h_ref, dif_destd, 20)
+#     # plot only mean and std as a line plot
+#     md_abs = [abs.(md) for md in dh_binned ]
+#     plot!(p_median, bin_centers, norm.(md_abs), label=L"$\lambda=$"*"$(λ), r=$ir"; attr...)
+#     plot!(p_std,    bin_centers, std.(dh_binned), label=L"$\lambda=$"*"$(λ), r=$ir"; attr...)
+#     # end
+# end
+# plot(p_median, legend=:topright)
+
+
+
+# plot results for different number of training files
+
+
+
+
