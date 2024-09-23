@@ -92,7 +92,7 @@ function do_validation_and_save(f)
     jldsave(dest; to_save...)
 end
 
-fs = glob("output/data_preprocessing/SVD_components_nfiles*.jld2")
+fs = glob("output/data_preprocessing/SVD_components_*_nfiles*.jld2")
 
 for f in fs
     do_validation_and_save(f)

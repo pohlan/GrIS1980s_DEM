@@ -81,7 +81,7 @@ function prepare_model(model_files, standardize, h_ref, I_no_ocean, r, output_di
 
     # save in dictionary for later
     nfiles = length(model_files)
-    components_saved = joinpath(output_dir, "SVD_components_nfiles$(nfiles).jld2")
+    components_saved = joinpath(output_dir, "SVD_components_$(input)_nfiles$(nfiles).jld2")
     jldsave(components_saved; U, Σ, V, data_mean, data_ref, input, nfiles)
 
     # prepare least square fit problem
