@@ -41,9 +41,6 @@ dict   = load(jld2_preprocessing)
 λs        = [1e4, 1e5, 1e6, 1e7, 1e8]
 rs        = [10, 50, 100, 150, 200, 250]
 
-# determine which input data to use ("h", "dh" or "h_detrend") and number of training files
-input = "dh_detrend"
-
 # load datasets, take full SVD (to be truncated with different rs later)
 x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir, fig_dir; input)
 # UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), main_output_dir; input, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
@@ -58,13 +55,8 @@ geotable = svd_IceSheetDEM.make_geotable(x_data, x_Iobs, y_Iobs)
 flds = folds(geotable, BlockFolding(ℓ))
 
 function do_validation_and_save(f)
-    # determine number of files from filename
-    rx = rx = r"nfiles(..)"
-    m = match(rx, f)
-    n_files = parse(Int, m.captures[1])
-
     # load data
-    @unpack U, Σ, data_mean, data_ref = load(f)
+    @unpack U, Σ, data_mean, data_ref, nfiles, input = load(f)
     UΣ = U*diagm(Σ)
     function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
         _, x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
@@ -94,9 +86,9 @@ function do_validation_and_save(f)
     idx = vcat(idxs...)
 
     # save
-    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, method="SVD_"*input, h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
+    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, nfiles, method="SVD_"*input, h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
     logℓ = round(log(10,ℓ),digits=1)
-    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_"*input*"_nfiles$(n_files).jld2")
+    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_SVD_"*input*"_nfiles$(nfiles).jld2")
     jldsave(dest; to_save...)
 end
 
