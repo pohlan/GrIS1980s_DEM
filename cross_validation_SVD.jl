@@ -41,15 +41,6 @@ dict   = load(jld2_preprocessing)
 λs        = [1e4, 1e5, 1e6, 1e7, 1e8]
 rs        = [10, 50, 100, 150, 200, 250]
 
-# load datasets, take full SVD (to be truncated with different rs later)
-x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir, fig_dir; input)
-# UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), main_output_dir; input, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-
-# create geotable (for GeoStats)
-x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
-y_Iobs   = y[get_iy.(I_no_ocean[I_obs],length(x))]
-geotable = svd_IceSheetDEM.make_geotable(x_data, x_Iobs, y_Iobs)
-
 # create sets of training and test data
 ℓ    = 2e5
 flds = folds(geotable, BlockFolding(ℓ))
@@ -58,6 +49,16 @@ function do_validation_and_save(f)
     # load data
     @unpack U, Σ, data_mean, data_ref, nfiles, input = load(f)
     UΣ = U*diagm(Σ)
+
+    # load datasets, take full SVD (to be truncated with different rs later)
+    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir, fig_dir; input)
+    # UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), main_output_dir; input, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+
+    # create geotable (for GeoStats)
+    x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
+    y_Iobs   = y[get_iy.(I_no_ocean[I_obs],length(x))]
+    geotable = svd_IceSheetDEM.make_geotable(x_data, x_Iobs, y_Iobs)
+
     function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
         _, x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
         return x_rec[I_obs[i_test]]
