@@ -443,7 +443,7 @@ end
 
 function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, varg::Variogram; maxn::Int)
     model  = Kriging(varg)
-    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn)
+    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn, prob=true)
     return interp
 end
 
@@ -511,12 +511,12 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
         # 'fill' aerodem with de-standardized kriging output, save as netcdf
         h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), h_ref[ir_sim])
         h_predict[h_predict .<= 0.] .= no_data_value
-        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")
-        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
-
+        # field of estimated errors
         std_predict[ir_sim]         .= destandardize(std.(interp.Z), h_ref[ir_sim], add_mean=false)
-        dest_file_gr_kriging_std     = joinpath(output_path, "std_kriging_g$(grid_kriging).nc")
-        save_netcdf(dest_file_gr_kriging_std, obs_aero_file, [std_predict], ["std"], Dict("std" => Dict{String,Any}()))
+        std_predict[h_predict .== no_data_value] .= no_data_value
+        # save as netcdf
+        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")
+        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_predict], ["surface", "std_error"], Dict("surface" => Dict{String,Any}(), "std_error" => Dict{String,Any}()))
 
         # gdalwarp to higher resolution
         # dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")

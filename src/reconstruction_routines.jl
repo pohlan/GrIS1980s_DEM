@@ -195,23 +195,24 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     save_netcdf(filename, ref_file, [dem_rec], [layername], attributes)
 
     # plot and save difference between reconstruction and observations
-    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), obs_aero_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
+    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), ref_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
     Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
     Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.png"))
 
     return filename, saved_file
 end
 
-function create_reconstructed_bedmachine(rec_file, bedmachine_file)
-    # load datasets
+function create_reconstructed_bedmachine(rec_file)
+    # load reconstruction and determine grid size
     surfaceDEM = ncread(rec_file, "surface")
-    bedDEM     = ncread(bedmachine_file, "bed")
-    bedm_mask  = ncread(bedmachine_file, "mask")
-    ice_mask   = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
-
-    # retrieve grid size
     x          = ncread(rec_file, "x")
-    gr         = Int(x[2] - x[1])
+    gr         = x[2] - x[1]
+
+    # load bedmachine
+    _, bedmachine_file = create_bedmachine_grid(gr)
+    bedDEM             = ncread(bedmachine_file, "bed")
+    bedm_mask          = ncread(bedmachine_file, "mask")
+    ice_mask           = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
 
     # calculate floating mask
     ρw            = 1030

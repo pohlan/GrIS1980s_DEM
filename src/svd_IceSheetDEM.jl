@@ -49,6 +49,10 @@ function parse_commandline(args)
             help     = "If this is set to true, then the Arpack svd is used instead of the standard LinearAlgebra algorithm. Arpack is iterative and matrix free and thus useful when memory becomes limiting, but it can be slower."
             arg_type = Bool
             default  = false
+        "--maxn"
+            help     = "Maximum number of neighbors used for kriging."
+            arg_type = Int
+            default  = 1600
     end
     return parse_args(args,s)
 end

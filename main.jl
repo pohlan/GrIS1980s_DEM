@@ -41,14 +41,19 @@ use_arpack  = parsed_args["use_arpack"]
 rec_file, dict_file = SVD_reconstruction(λ, r, gr, training_data_files, csv_preprocessing, jld2_preprocessing, use_arpack)
 
 # 3.) calculate the floating mask and create nc file according to the bedmachine template
-create_reconstructed_bedmachine(rec_file, bedmachine_file)  # ToDo --> after rf gneration??
+create_reconstructed_bedmachine(rec_file)  # ToDo --> after rf gneration??
 
 # 4.) standardize residual, evaluate variogram and generate random fields
-rf_files = SVD_random_fields(rec_file; n_fields=10)
+# rf_files = SVD_random_fields(rec_file; n_fields=10)
 
 
 # ------------------------------ #
 # Part B: Interpolation approach #
 # ------------------------------ #
-grid_kriging = gr*2
-interp_rec_file = geostats_interpolation(grid_kriging, gr, outline_shp_file, csv_preprocessing, jld2_preprocessing; maxn=10)
+maxn = parsed_args["maxn"]
+
+grid_kriging = gr
+tic = Base.time()
+interp_rec_file = geostats_interpolation(grid_kriging, gr, outline_shp_file, csv_preprocessing, jld2_preprocessing; maxn)
+toc = Base.time() - tic
+println(toc ./ 3600)
