@@ -101,7 +101,7 @@ function replace_missing(A,c)
     return A
 end
 
-function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=5e4, I_no_ocean, force=false)
+function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=1e4, I_no_ocean, force=false)
     dest_file = joinpath(main_output_dir, "df_atm_non-standardized.csv")
     if isfile(dest_file) && !force
         return CSV.read(dest_file, DataFrame)
@@ -116,6 +116,9 @@ function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=5e4, I
     itp = interpolate((x, y), bin_field_1, Gridded(Linear()))
     df_atm[!,:bfield_1] = itp.(df_atm.x, df_atm.y)
     # max_dhdt = std(dhdt[dhdt .!= 0])
+    # prepare neighbor search to filter out values too close to aerodem or overlapping
+    d        = PointSet([Point(xi, yi) for (xi,yi) in zip(df_aero.x,df_aero.y)])
+    searcher = BallSearch(d, MetricBall(mindist))
     function choose_atm(x_, y_)::Bool
         ix    = findmin(abs.(x_ .- x))[2]
         iy    = findmin(abs.(y_ .- y))[2]
@@ -123,8 +126,8 @@ function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=5e4, I
         # filter values outside the ice sheet
         is_in_icesheet = iglob ∈ I_no_ocean
         # filter values overlapping or close to aerodem
-        dist_to_aero = minimum(pairwise(Distances.euclidean, [x_ y_], [df_aero.x df_aero.y], dims=1)[:])
-        is_above_mindist = dist_to_aero > mindist
+        inds = search(Point(x_, y_), searcher)            # find aerodem points that are in neighborhood of atm points
+        is_above_mindist = isempty(inds)                  # if empty -> further than mindist away from any aerodem point
         # filter values with high absolute dhdt
         # has_low_dhdt = 0.0 < abs(dhdt_) < max_dhdt
         return is_in_icesheet & is_above_mindist # & has_low_dhdt
@@ -145,9 +148,9 @@ function get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
     bin_field_1 = bin1_fct(m_href)
     df_aero  = DataFrame(:x        => x[get_ix.(idx_aero, length(x))],
                          :y        => y[get_iy.(idx_aero, length(x))],
-                         :h_ref    => m_href[idx_aero],
+                         :h_ref    => h_ref[idx_aero],
                          :bfield_1 => bin_field_1[idx_aero],
-                         :dh       => m_href[idx_aero] - h_aero[idx_aero],
+                         :dh       => h_ref[idx_aero] - h_aero[idx_aero],
                          :h        => h_aero[idx_aero],
                          :idx      => idx_aero,
                          :source  .=> :aerodem )
@@ -215,7 +218,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     # standardize
     df.dh_detrend   = (df.dh .- itp_bias.(bin_field_1,bin_field_2)) ./ itp_var.(bin_field_1,bin_field_2)
     # remove outliers after standardizing
-    all_to_delete = findall(abs.(df.dh_detrend) .> 7 .* mad(df.dh_detrend))
+    all_to_delete = findall(abs.(df.dh_detrend) .> 9 .* mad(df.dh_detrend))
     deleteat!(df, all_to_delete)
     # make sure it's truly centered around zero and has std=1 exactly
     std_y          = std(df.dh_detrend)
@@ -391,7 +394,7 @@ function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, 
         @assert length(sdat.Z) > length(stest)
 
         y_pred = evaluate_fun(fs[1],fs[2])
-        dif_blocks[j] = y_pred .- geotable.Z[fs[2]]
+        dif_blocks[j] = mean.(y_pred) .- geotable.Z[fs[2]]
 
         # if j == 4
         #     x_ = [first(stest.domain.geoms[i[1]].coords) for i in fs[1]]
@@ -488,6 +491,7 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
     std_predict          = zeros(size(h_aero))
+    bin_field_1          = bin1_fct(h_ref)
 
     if method == :sgs  # sequential gaussian simulations
         output_path = joinpath(main_output_dir, "SEQ_simulations/")
@@ -509,10 +513,10 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
         println("Kriging...")
         interp = do_kriging(grid_output, geotable, varg; maxn)
         # 'fill' aerodem with de-standardized kriging output, save as netcdf
-        h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), h_ref[ir_sim])
+        h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
         h_predict[h_predict .<= 0.] .= no_data_value
         # field of estimated errors
-        std_predict[ir_sim]         .= destandardize(std.(interp.Z), h_ref[ir_sim], add_mean=false)
+        std_predict[ir_sim]         .= destandardize(std.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim], add_mean=false)
         std_predict[h_predict .== no_data_value] .= no_data_value
         # save as netcdf
         dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")

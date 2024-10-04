@@ -38,7 +38,7 @@ end
 r           = parsed_args["r"]
 do_figures  = parsed_args["do_figures"]
 use_arpack  = parsed_args["use_arpack"]
-rec_file, dict_file = SVD_reconstruction(λ, r, gr, training_data_files, csv_preprocessing, jld2_preprocessing, use_arpack)
+rec_file, dict_file = SVD_reconstruction(λ, r, gr, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)
 
 # 3.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file)  # ToDo --> after rf gneration??

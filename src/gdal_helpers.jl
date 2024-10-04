@@ -102,7 +102,6 @@ function gdalgrid(filenm::String; gr::Real, kwargs...)
                "-txe", string(lims.x_min), string(lims.x_max),
                "-tye", string(lims.y_min), string(lims.y_max),
                "-tr", "$gr", "$gr"]
-    display(options)
     # call gdalgrid
     ds = AG.read(filenm_noext*".vrt") do source
         AG.gdalgrid(source, options; kwargs...) do gridded

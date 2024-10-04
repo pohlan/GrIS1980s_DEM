@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NCDatasets, Glob, CSV, DataFrames, Shapefile
+using svd_IceSheetDEM, NCDatasets, Glob, CSV, DataFrames, Shapefile, Plots
 
 #####################################
 # calculate flowlines from velocity #
@@ -40,12 +40,12 @@ mkpath(fig_dir)
 # SVD_RF_files = glob("output/SVD_RF/simulations/rec_rand_id_*.nc")
 files        = ["data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc",
                 "data/bedmachine/bedmachine_g600.nc",
-                "output/rec_files/rec_lambda_1e7_g600_r200.nc",
+                "output/SVD_reconstruction/rec_lambda_1e7_g600_r300_dh_detrend.nc",
                 "output/geostats_interpolation/kriging/rec_kriging_g600.nc"
                ]
 labels = ["Korsgaard et al., 2016", "GrIMP (Howat et al., 2015)", "SVD reconstruction", "Kriging"]
 bandnm = ["Band1", "surface", "surface", "surface"]
-cols   = [:darkorchid, :orange, :olive, :orchid]
+cols   = Plots.palette(:tol_bright)[2:end]
 lstls  = [:solid, :solid, :dot, :dot]
 lw     = 4
 z_orders = [1,1,1,1]
@@ -81,8 +81,9 @@ for (ip, pf) in enumerate(prof_files) #[[3,4,5,6]])
             Plots.plot!(dist./1e3, vals; label, color, ls, lw, z_order, xlims)
         else
             xmax = Plots.xlims(p_i)[2]
-            im   = findmin(abs.(xmax .- dist./1e3))[2]
-            ylims=(-1.0, maximum(vals[1:im])+200)
+            i_nonan = findall(.!isnan.(vals))
+            im   = findmin(abs.(xmax .- dist[i_nonan]./1e3))[2]
+            ylims=(-1.0, maximum(vals[i_nonan][1:im])+100)
             Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
         end
     end

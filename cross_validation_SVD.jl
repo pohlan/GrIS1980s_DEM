@@ -43,12 +43,11 @@ rs        = [10, 50, 100, 150, 200, 250]
 
 function do_validation_and_save(f)
     # load data
-    @unpack U, Σ, data_mean, data_ref, nfiles, input = load(f)
+    @unpack U, Σ, data_mean, data_binfield1, nfiles, input = load(f)
     UΣ = U*diagm(Σ)
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir, fig_dir; input)
-    # UΣ, data_mean, data_ref, Σ, _ = svd_IceSheetDEM.prepare_model(model_files[1:n_files], standardize, h_ref, I_no_ocean, maximum(rs), main_output_dir; input, use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir, fig_dir; input)
 
     # create geotable (for GeoStats)
     x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
@@ -87,14 +86,14 @@ function do_validation_and_save(f)
     idx = vcat(idxs...)
 
     # save
-    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, nfiles, method="SVD_"*input, h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
+    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx, nfiles, method="SVD_"*input, binfield1=Float32.(data_binfield1[I_obs[idx]]), h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
     logℓ = round(log(10,ℓ),digits=1)
     dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_SVD_"*input*"_nfiles$(nfiles).jld2")
     jldsave(dest; to_save...)
 end
 
-fs = glob("output/data_preprocessing/SVD_components_*_nfiles*.jld2")
+fls = glob("output/SVD_reconstruction/SVD_components_*_nfiles*.jld2")
 
-for f in fs
+for f in fls
     do_validation_and_save(f)
 end

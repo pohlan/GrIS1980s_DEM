@@ -25,19 +25,15 @@ function get_stddization_fcts(dict_file)
     itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
     itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
 
-    function standardize(dh, h_ref)
-        bin_field_1 = bin1_fct(h_ref)
-        bin_field_2 = h_ref
-        dh_centered = dh .- itp_bias.(bin_field_1, bin_field_2) .- mean_y
-        dh_std      = itp_var.(bin_field_1, bin_field_2) .* std_y
-        return dh_centered ./ dh_std
+    function standardize(dh, bin_field_1::Vector, bin_field_2::Vector)
+        dh_detrend  = (dh .- itp_bias.(bin_field_1, bin_field_2)) ./  itp_var.(bin_field_1, bin_field_2)
+        dh_detrend .= (dh_detrend .- mean_y) ./ std_y
+        return dh_detrend
     end
-    function destandardize(dh, h_ref; add_mean=true)
-        bin_field_1 = bin1_fct(h_ref)
-        bin_field_2 = h_ref
+    function destandardize(dh, bin_field_1::Vector, bin_field_2::Vector; add_mean=true)
         dh_std      = dh .* std_y .* itp_var.(bin_field_1,bin_field_2)
         if !add_mean return dh_std end
-        dh_mean     = itp_bias.(bin_field_1,bin_field_2) .+ mean_y
+        dh_mean     = itp_bias.(bin_field_1,bin_field_2) .+ itp_var.(bin_field_1,bin_field_2) .* mean_y
         return dh_std + dh_mean
     end
     return (;standardize, destandardize)
@@ -48,6 +44,17 @@ end
 custom_var(params) = SphericalVariogram(range=params[1], sill=params[4]) +
                      SphericalVariogram(range=params[2], sill=params[5]) +
                      SphericalVariogram(range=params[3], sill=params[6], nugget=params[7])
+
+function plot_data(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
+    id_df_aero = findall(df_all.source .== :aerodem)
+    m_plot = zeros(dims)
+    m_plot[df_all.idx[id_df_aero]] .= df_all[!,sm][id_df_aero]
+    Plots.heatmap(x, y, m_plot', cmap=:RdBu, aspect_ratio=1, xlims=(-7e5,8e5); clims)
+    id_df_atm = findall(df_all.source .== :atm)
+    Plots.scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=0.5, markerstrokewidth=0, cmap=:RdBu, aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(1700,1800); title, clims)
+    Plots.savefig(fname)
+    return
+end
 
 function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nbins1=7, nbins2=12)
     # define names of output directories
@@ -91,15 +98,13 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     df_all = vcat(df_aero, df_atm, cols=:union)
 
     # plot before standardizing
-    Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-50,50), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="dh non-standardized", grid=false, wsize=(1700,1800))
-    Plots.savefig(joinpath(fig_path,"data_non-standardized.png"))
+    plot_data(df_all, :dh, x, y, size(h_ref), joinpath(fig_path,"data_non-standardized.png"), clims=(-50,50), title="Elevation difference (GrIMP - historic)")
 
     # standardization
     df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
 
     # plot after standardizing
-    Plots.scatter(df_all.x, df_all.y, marker_z=df_all.dh_detrend, label="", markersize=2.0, markerstrokewidth=0, cmap=:RdBu, clims=(-4,4), aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", title="Standardized elevation difference (GrIMP - historic)", grid=false, wsize=(1700,1800))
-    Plots.savefig(joinpath(fig_path,"data_standardized.png"))
+    plot_data(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_path,"data_standardized.png"), clims=(-4,4), title="Standardized elevation difference (GrIMP - historic)")
 
     # variogram
     param_cond(params) = all(params .> 0) && all(params[4:6].<1.0) && all(params[1:3] .< 1.5e6) && params[7] .< 0.5
@@ -115,5 +120,11 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     CSV.write(csv_dest, df_all)
     to_save = (; interp_data..., params = ff.param, I_no_ocean, idx_aero)
     jldsave(dict_dest; to_save...)
+
+    # make sure standardize and destandardize functions are correct
+    standardize, destandardize = get_stddization_fcts(dict_dest)
+    @assert all(df_all.dh_detrend .≈ standardize(df_all.dh, df_all.bfield_1, df_all.h_ref))
+    @assert all(df_all.dh         .≈ destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.h_ref))
+    @assert all(df_all.h          .≈ df_all.h_ref .- destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.h_ref))
     return csv_dest, dict_dest
 end
