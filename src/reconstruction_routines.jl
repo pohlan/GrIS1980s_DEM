@@ -50,7 +50,7 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, standardize, destandardize, h_ref, I_no_ocean, r, output_dir; use_arpack=false, input="dh_detrend")
+function prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, output_dir; use_arpack=false, input="dh_detrend")
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
     data_check = Data_ice[:,1]
@@ -63,11 +63,14 @@ function prepare_model(model_files, standardize, destandardize, h_ref, I_no_ocea
     end
 
     # standardize model data
-    data_binfield1 = bin1_fct(h_ref)[I_no_ocean]
+    bin_field_1 = NCDataset(bfields_file)["bf_1"][:]
+    bin_field_2 = NCDataset(bfields_file)["bf_2"][:]
+    data_binfield1 = bin_field_1[I_no_ocean]
+    data_binfield2 = bin_field_2[I_no_ocean]
     if input == "dh_detrend"
         println("Standardizing model geometries.")
         for dc in eachcol(Data_ice)
-            dc .= standardize(dc, data_binfield1, data_ref)
+            dc .= standardize(dc, data_binfield1, data_binfield2)
         end
     end
     # subtract mean again for it to be truly centered
@@ -76,7 +79,7 @@ function prepare_model(model_files, standardize, destandardize, h_ref, I_no_ocea
 
     # check that reversing of standardization leads back to original data
     if input == "dh_detrend"
-        @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1] .+ data_mean, data_binfield1, data_ref), atol=1e-3))
+        @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1] .+ data_mean, data_binfield1, data_binfield2), atol=1e-2))
     elseif input == "dh"
         @assert all(isapprox.(data_check, data_ref .- (Data_ice[1,:] .+ data_mean), atol=1e-3))
     end
@@ -93,11 +96,11 @@ function prepare_model(model_files, standardize, destandardize, h_ref, I_no_ocea
     # save in dictionary for later
     nfiles = length(model_files)
     components_saved = joinpath(output_dir, "SVD_components_$(input)_nfiles$(nfiles).jld2")
-    jldsave(components_saved; U, Σ, V, data_mean, data_binfield1, data_ref, input, nfiles)
+    jldsave(components_saved; U, Σ, V, data_mean, data_binfield1, data_binfield2, data_ref, input, nfiles)
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, data_mean, data_binfield1, data_ref, Σ, components_saved
+    return UΣ, data_mean, data_binfield1, data_binfield2, data_ref, Σ, components_saved
 end
 
 function prepare_obs_SVD(gr, csv_dest, I_no_ocean, data_mean, output_dir, fig_dir=""; input="dh_detrend")
@@ -161,18 +164,14 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     mkpath(main_output_dir)
     mkpath(fig_dir)
 
-    # get reference DEM
-    bedmachine_original, _ = create_bedmachine_grid(gr)
-    _, ref_file            = create_grimpv2(gr, bedmachine_original)
-    h_ref        = NCDataset(ref_file)["Band1"][:]
-    h_ref        = replace_missing(h_ref, 0.0)
-
     # get I_no_ocean and (de-)standardization functions
     dict = load(jld2_preproc)
-    @unpack I_no_ocean = dict
+    @unpack I_no_ocean, bfields_file, href_file = dict
     standardize, destandardize = get_stddization_fcts(jld2_preproc)
 
-    UΣ, data_mean, data_binfield1, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
+    h_ref        = NCDataset(href_file)["surface"][:]
+
+    UΣ, data_mean, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, data_mean, main_output_dir, fig_dir; input)
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
@@ -185,11 +184,11 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     end
 
     # calculate error and print
-    nx, ny                  = size(NCDataset(ref_file)["Band1"])
+    nx, ny                  = size(h_ref)
     dif                     = zeros(F, nx,ny)
     dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- x_data
     if input == "dh_detrend"
-        dif[I_no_ocean[I_obs]] .= destandardize(dif[I_no_ocean[I_obs]], data_binfield1[I_obs], data_ref[I_obs], add_mean=false)
+        dif[I_no_ocean[I_obs]] .= destandardize(dif[I_no_ocean[I_obs]], data_binfield1[I_obs], data_binfield2[I_obs], add_mean=false)
     end
     err_mean                = mean(abs.(dif[I_no_ocean[I_obs]]))
     @printf("Mean absolute error: %1.1f m\n", err_mean)
@@ -198,7 +197,13 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     dem_rec                  = zeros(F, nx,ny)
     dem_rec[I_no_ocean]     .= x_rec .+ data_mean
     if input == "dh_detrend"
-        dem_rec[I_no_ocean] .=  destandardize(dem_rec[I_no_ocean], data_binfield1, data_ref)
+        dem_rec[I_no_ocean] .=  destandardize(dem_rec[I_no_ocean], data_binfield1, data_binfield2)
+        # check that x_data, destandardized, gives back original observations
+        h_aero           = NCDataset("data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc")["Band1"][:]
+        h_aero_c         = nomissing(h_aero, NaN)[I_no_ocean[I_obs]]
+        h_aero_recovered = data_ref[I_obs] .- destandardize(x_data .+ data_mean[I_obs], data_binfield1[I_obs], data_binfield2[I_obs])
+        i_c              = findall(.!isnan.(h_aero_c) .&& .!isnan.(h_aero_recovered))
+        @assert all(isapprox.(h_aero_c[i_c], h_aero_recovered[i_c], atol=1e-2))
     end
     if input !== "h"
         dem_rec[I_no_ocean] .= data_ref .- dem_rec[I_no_ocean]
@@ -214,10 +219,10 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
                         )
-    save_netcdf(filename, ref_file, [dem_rec], [layername], attributes)
+    save_netcdf(filename, href_file, [dem_rec], [layername], attributes)
 
     # plot and save difference between reconstruction and observations
-    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), ref_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
+    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
     Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
     Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.png"))
 

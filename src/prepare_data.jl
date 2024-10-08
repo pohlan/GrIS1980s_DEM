@@ -56,6 +56,8 @@ function plot_data(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), t
     return
 end
 
+bin1_fct(x) = mgradient(x, r=4)
+
 function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nbins1=7, nbins2=12)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
@@ -83,16 +85,54 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     h_aero       = NCDataset(obs_aero_file)["Band1"][:]
     glacier_mask = NCDataset(mask_file)["Band1"][:]
     bedm_mask    = NCDataset(bedm_file)["mask"][:]
+    h_bedm       = ncread(bedm_file,"surface")
+    h_ref[h_bedm .== 0.0] .= missing  # grimpv2 has weird values in parts of the ocean
+    # In areas where h_ref is NaN but h_aero is not, h_ref should be 0 instead, otherwise dh is a NaN
+    id_zero = findall(ismissing.(h_ref) .&& .!ismissing.(h_aero))
+    h_ref[id_zero] .= 0.0
+    # don't consider the couple of negative values of h_aero
+    h_aero[nomissing(h_aero,NaN) .< 0.0] .= missing
 
     # indices
-    I_no_ocean = findall(vec(.!ismissing.(glacier_mask) .&& (bedm_mask .!= 1)))
-    idx_aero   = findall(vec(.!ismissing.(h_aero) .&& (h_aero  .> 0) .&& .!ismissing.(h_ref) .&& (bedm_mask .!= 1.0) .&& .!ismissing.(glacier_mask) .&& (abs.(h_ref .- h_aero ) .> 0.0)))
+    I_no_ocean = findall(vec(nomissing(.!ismissing.(h_ref) .&& .!ismissing.(glacier_mask) .&& (bedm_mask .!= 1.0) .&& .!(nomissing(abs.(h_ref .- h_aero),NaN)  .< 0.0), false)))
+    idx_aero   = findall(vec(nomissing(.!ismissing.(h_ref) .&& .!ismissing.(glacier_mask) .&& (bedm_mask .!= 1.0) .&& .!(nomissing(abs.(h_ref .- h_aero),NaN)  .< 0.0), false) .&& .!ismissing.(h_aero)))
+
+    # calculate bin_field on h_ref
+    m_href        = nomissing(h_ref, NaN)    # bin1_fct doesn't accept type missing
+    bin_field_1   = svd_IceSheetDEM.bin1_fct(m_href)
+    # calculate bin_field on h_aero to fill gaps at the terminus where h_ref is NaN (because glaciers have retreated)
+    m_haero       = nomissing(h_aero, NaN)   # bin1_fct doesn't accept type missing
+    b1_haero      = svd_IceSheetDEM.bin1_fct(m_haero)
+    # fill those gaps with b1_haero
+    idx_aero_b1   = findall(vec(m_href .== 0.0 .&& .!isnan.(b1_haero)))
+    bin_field_1[idx_aero_b1] .= b1_haero[idx_aero_b1]
+    # there are still some NaN values at the edges where grimpv2 is also NaN, but h_aero has a value -> interpolate
+    x_int  = x[svd_IceSheetDEM.get_ix.(I_no_ocean, length(x))]
+    y_int  = y[svd_IceSheetDEM.get_iy.(I_no_ocean, length(x))]
+    gtb    = svd_IceSheetDEM.make_geotable(bin_field_1[I_no_ocean], x_int, y_int)
+    out    = gtb |> InterpolateNaN(IDW())
+    i_nans = findall(isnan.(bin_field_1[I_no_ocean]))
+    bin_field_1[I_no_ocean[i_nans]] .= out.Z[i_nans]
+    # bin_field_2, also can't have NaN values so replace with h_aero values where applicable
+    bin_field_2 = copy(m_href)
+    # bin_field_2[.!ismissing.(h_aero)] .= h_aero[.!ismissing.(h_aero)]
+    # save as netcdf
+    @assert !any(isnan.(bin_field_1[I_no_ocean]))
+    @assert !any(isnan.(bin_field_2[I_no_ocean]))
+    bin_field_1[isnan.(bin_field_1)] .= no_data_value
+    bin_field_2[isnan.(bin_field_2)] .= no_data_value
+    bfields_file  = joinpath(main_output_dir, "bin_fields_g$(target_grid).nc")
+    save_netcdf(bfields_file, ref_file, [bin_field_1, bin_field_2], ["bf_1", "bf_2"], Dict("bf_1" => Dict{String,Any}(), "bf_2" => Dict{String,Any}()))
+    href_file     = joinpath(main_output_dir, "h_ref_g$(target_grid).nc")
+    # save h_ref as well, with the modifications
+    h_ref = nomissing(h_ref, no_data_value)
+    save_netcdf(href_file, ref_file, [h_ref], ["surface"], Dict("surface" => Dict{String,Any}()))
 
     # aerodem
-    df_aero = get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
+    df_aero = get_aerodem_df(h_aero, bin_field_1, bin_field_2, h_ref, x, y, idx_aero)
 
     # atm
-    df_atm  = get_ATM_df(atm_dh_file, x, y, h_ref, df_aero, main_output_dir; I_no_ocean)
+    df_atm  = get_ATM_df(atm_dh_file, x, y, bin_field_1, df_aero, main_output_dir; I_no_ocean)
 
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:union)
@@ -110,7 +150,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     param_cond(params) = all(params .> 0) && all(params[4:6].<1.0) && all(params[1:3] .< 1.5e6) && params[7] .< 0.5
     # initial guess for parameters
     p0 = [6e4, 3e5, 9e5, 0.3, 0.5, 0.2, 0.25]
-    _, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=7e5, nlags=200, custom_var, param_cond, sample_frac=0.5, p0, fig_path)
+    _, ff = fit_variogram(F.(df_all.x), F.(df_all.y), F.(df_all.dh_detrend); maxlag=7e5, nlags=200, custom_var, param_cond, sample_frac=1.0, p0, fig_path)
 
     # force overall variance of variogram to be one --> total sill has to be the same as std of whole dataset for kriging
     ff.param[4:6] .= ff.param[4:6] ./ sum(ff.param[4:6])
@@ -118,13 +158,13 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
 
     # save
     CSV.write(csv_dest, df_all)
-    to_save = (; interp_data..., params = ff.param, I_no_ocean, idx_aero)
+    to_save = (; interp_data..., params = ff.param, I_no_ocean, idx_aero, bfields_file, href_file)
     jldsave(dict_dest; to_save...)
 
     # make sure standardize and destandardize functions are correct
     standardize, destandardize = get_stddization_fcts(dict_dest)
-    @assert all(df_all.dh_detrend .≈ standardize(df_all.dh, df_all.bfield_1, df_all.h_ref))
-    @assert all(df_all.dh         .≈ destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.h_ref))
-    @assert all(df_all.h          .≈ df_all.h_ref .- destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.h_ref))
+    @assert all(df_all.dh_detrend .≈ standardize(df_all.dh, df_all.bfield_1, df_all.bfield_2))
+    @assert all(df_all.dh         .≈ destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.bfield_2))
+    @assert all(df_all.h          .≈ df_all.h_ref .- destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.bfield_2))
     return csv_dest, dict_dest
 end

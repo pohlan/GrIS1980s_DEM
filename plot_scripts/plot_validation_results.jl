@@ -11,7 +11,7 @@ mkpath(fig_dir)
 
 grd = 600
 
-f_svd = glob("output/validation/cv_1e5.3_gr$(grd)_SVD_*nfiles30.jld2")
+f_svd = glob("output/validation/cv_1e5.3_gr$(grd)_SVD_*nfiles70.jld2")
 f_krig = glob("output/validation/cv_1e5.3_gr$(grd)_kriging.jld2")
 f_dict = vcat(f_svd, f_krig)
 
@@ -100,17 +100,17 @@ savefig(joinpath(fig_dir, "error_variogram.png"))
 
 # for SVD only
 
-fs_SVD = glob("output/validation/cv_*gr$(grd)*SVD_*_nfiles30.jld2")
+fs_SVD = glob("output/validation/cv_*gr$(grd)*SVD_dh_detrend_nfiles70.jld2")
 
 for f_SVD in fs_SVD
     @unpack xc, yc, idx, h_ref, grd, method, m_difs, λs, rs, dict, nfiles = load(f_SVD)
 
-    methods_name = ["mean", "L2norm", "L1norm"]
-    methods_fct  = [mean, norm, x->norm(x,1)]
+    methods_name = ["mean"] #, "L2norm", "L1norm"]
+    methods_fct  = [mean] #, norm, x->norm(x,1)]
     ## for SVD: plot mean, norm etc for different λ and r values
     # see https://juliagraphics.github.io/ColorSchemes.jl/stable/basics/#Pre-defined-schemes-1 for more pre-defined, color-blind friendly schemes
     for (m, fc) in zip(methods_name, methods_fct)
-        p = plot(xscale=:log10, xlabel="λ", ylabel=m, size=(1300,800), leftmargin=10Plots.mm, topmargin=10Plots.mm, bottommargin=10Plots.mm, legend=:top, palette = :tol_light)
+        p = plot(xscale=:log10, xlabel="λ", ylabel="mean absolute error (m)", size=(1300,800), leftmargin=10Plots.mm, topmargin=10Plots.mm, bottommargin=10Plots.mm, legend=:top, palette = :tol_light)
         for i in eachindex(rs)
             md_abs = [abs.(md) for md in m_difs[:,i] ]
             plot!(λs, fc.(md_abs), label="r="*string(rs[i]), marker=:circle, markersize=6, markerstrokewidth=0, lw=3.5)
@@ -149,7 +149,7 @@ fs_SVD = glob("output/validation/cv_1e5.3_gr$(grd)_SVD_dh_detrend_*nfiles*.jld2"
 
 ms = []
 p = plot()
-for (color,f_SVD) in zip(cols, fs_SVD)
+for f_SVD in fs_SVD[2:end]
     @unpack binfield1, h_ref, m_difs, λs, rs, nfiles = load(f_SVD)
     difs = m_difs[iλ, ir]
 
@@ -158,7 +158,7 @@ for (color,f_SVD) in zip(cols, fs_SVD)
 
     dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(h_ref, dif_destd, 20)
     md_abs = [abs.(md) for md in dh_binned ]
-    plot!(p, bin_centers, std.(md_abs), label="nfiles=$(n_files)", ylabel=L"Median $\epsilon$ (m)"; color, xlabel, attr...)
+    plot!(p, bin_centers, median.(dh_binned), label="nfiles=$(nfiles)", ylabel=L"Median $\epsilon$ (m)"; xlabel, attr...)
     hline!(p, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
     push!(ms, norm(dif_destd,1))
 end

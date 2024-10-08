@@ -101,7 +101,7 @@ function replace_missing(A,c)
     return A
 end
 
-function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=1e4, I_no_ocean, force=false)
+function get_ATM_df(fname, x, y, bin_field_1, df_aero, main_output_dir; mindist=1e4, I_no_ocean, force=false)
     dest_file = joinpath(main_output_dir, "df_atm_non-standardized.csv")
     if isfile(dest_file) && !force
         return CSV.read(dest_file, DataFrame)
@@ -111,10 +111,9 @@ function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=1e4, I
     df_atm[!,:h]      .= df_atm.h_ref .- df_atm.dh
     sort!(unique!(x))   # necessary for interpolation
     sort!(unique!(y))
-    m_href      = Matrix{F}(replace_missing(h_ref, 0.0))    # bin1_fct doesn't accept type missing
-    bin_field_1 = bin1_fct(m_href)
     itp = interpolate((x, y), bin_field_1, Gridded(Linear()))
     df_atm[!,:bfield_1] = itp.(df_atm.x, df_atm.y)
+    df_atm[!,:bfield_2] = df_atm.h_ref
     # max_dhdt = std(dhdt[dhdt .!= 0])
     # prepare neighbor search to filter out values too close to aerodem or overlapping
     d        = PointSet([Point(xi, yi) for (xi,yi) in zip(df_aero.x,df_aero.y)])
@@ -143,13 +142,12 @@ function get_ATM_df(fname, x, y, h_ref, df_aero, main_output_dir; mindist=1e4, I
     return df_atm
 end
 
-function get_aerodem_df(h_aero, h_ref, x, y, idx_aero)
-    m_href      = Matrix{F}(replace_missing(h_ref, 0.0))    # bin1_fct doesn't accept type missing
-    bin_field_1 = bin1_fct(m_href)
-    df_aero  = DataFrame(:x        => x[get_ix.(idx_aero, length(x))],
+function get_aerodem_df(h_aero, bin_field_1, bin_field_2, h_ref, x, y, idx_aero)
+      df_aero  = DataFrame(:x        => x[get_ix.(idx_aero, length(x))],
                          :y        => y[get_iy.(idx_aero, length(x))],
                          :h_ref    => h_ref[idx_aero],
                          :bfield_1 => bin_field_1[idx_aero],
+                         :bfield_2 => bin_field_2[idx_aero],
                          :dh       => h_ref[idx_aero] - h_aero[idx_aero],
                          :h        => h_aero[idx_aero],
                          :idx      => idx_aero,
@@ -196,8 +194,6 @@ function remove_small_bins(bin_centers_1::Vector, bin_centers_2::Vector, A_binne
     return bin_centers_1, bin_centers_2, A_binned
 end
 
-bin1_fct(x) = mgradient(x, r=1)
-
 function get_itp_interp(bin_centers_1, bin_centers_2, field)
     itp  = interpolate((bin_centers_1, bin_centers_2), field, Gridded(Linear()))
     itp  = extrapolate(itp, Interpolations.Flat())
@@ -206,7 +202,7 @@ end
 
 function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_path)
     bin_field_1 = df[!,:bfield_1]
-    bin_field_2 = df[!,:h_ref]
+    bin_field_2 = df[!,:bfield_2]
     y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2)
     bin_centers_1, bin_centers_2, y_binned = remove_small_bins(bin_centers_1, bin_centers_2, y_binned; min_n_sample)
     # variance
@@ -246,12 +242,12 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     # nmad interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
     x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="absolute elevation change over specified time period (m)", ylabel="surface elevation (m)", title="NMAD (-)")
+    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="absolute elevation change over specified time period (m)", ylabel="Beucher gradient (-)", title="NMAD (-)")
     Plots.savefig(joinpath(fig_path,"nmad_interpolation.png"))
     # medians interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
     x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_bias.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="absolute elevation change over specified time period (m)", ylabel="surface elevation (m)", title="median (m)")
+    Plots.heatmap(x1, x2, itp_bias.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="Beucher gradient (-)", ylabel="surface elevation (m)", title="median (m)")
     Plots.savefig(joinpath(fig_path,"median_interpolation.png"))
 
     # return all relevant parameters so standardization function can be retrieved later
@@ -287,13 +283,15 @@ function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, m
         return f.(x)
     end
     # fit a covariance function
+    # i_nonzero = findall(gamma.ordinate .== 0)
     ff = LsqFit.curve_fit(get_γ, gamma.abscissa, gamma.ordinate, p0);
     varg = custom_var(ff.param)
 
     # plot
     if !isempty(fig_path)
-        Plots.scatter(gamma.abscissa .* 1e-3, gamma.ordinate, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance [km]", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
-        Plots.plot!([1e-5;gamma.abscissa] .* 1e-3, varg.([1e-5;gamma.abscissa]), label="Variogram fit", lw=2, ylims=(0,1.1))
+        absc_nounits = sort(map(x -> x.val, gamma.abscissa))
+        Plots.scatter(absc_nounits .* 1e-3, gamma.ordinate, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance [km]", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
+        Plots.plot!([1e-5;absc_nounits] .* 1e-3, varg.([1e-5;absc_nounits]), label="Variogram fit", lw=2, ylims=(0,1.1))
         Plots.savefig(joinpath(fig_path,"variogram.png"))
     end
     if p0 == ff.param @warn "Fitting of variogram failed, choose better initial parameters or reduce nlags." end
