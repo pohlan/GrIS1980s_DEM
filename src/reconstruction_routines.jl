@@ -81,7 +81,7 @@ function prepare_model(model_files, standardize, destandardize, bfields_file, h_
     if input == "dh_detrend"
         @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1] .+ data_mean, data_binfield1, data_binfield2), atol=1e-2))
     elseif input == "dh"
-        @assert all(isapprox.(data_check, data_ref .- (Data_ice[1,:] .+ data_mean), atol=1e-3))
+        @assert all(isapprox.(data_check, data_ref .- (Data_ice[:,1] .+ data_mean), atol=1e-3))
     end
 
     # compute SVD

@@ -34,7 +34,7 @@ csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
-@unpack I_no_ocean, idx_aero, params = dict
+@unpack I_no_ocean, idx_aero = dict
 @unpack standardize, destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
 
 # give λ and r values to loop through

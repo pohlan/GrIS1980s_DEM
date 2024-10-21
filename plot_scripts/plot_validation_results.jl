@@ -22,7 +22,7 @@ dict = load(jld2_preprocessing)
 @unpack I_no_ocean = dict
 
 # choose SVD parameterization (λ and r)
-λ0 = 1e7
+λ0 = 1e5
 r0 = 300
 
 xlabel = "Elevation of reference DEM (m)"
@@ -81,7 +81,7 @@ for (f,color) in zip(f_dict, cols)
         # variogram
         data = svd_IceSheetDEM.make_geotable(dif_destd, xc, yc)
         U = data |> UniqueCoords()
-        gamma = EmpiricalVariogram(U, :Z; estimator=:cressie, nlags=200,  maxlag=5e5)
+        gamma = EmpiricalVariogram(U, :Z; estimator=:cressie, nlags=200,  maxlag=1e5)
         id_plot = findall(gamma.ordinate .!= 0.0)
         scatter!(p_variog, gamma.abscissa[id_plot], gamma.ordinate[id_plot], markersize=2, label=method; attr...)
     end

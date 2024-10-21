@@ -102,10 +102,6 @@ function replace_missing(A,c)
 end
 
 function get_ATM_df(fname, x, y, bin_field_1, df_aero, main_output_dir; mindist=1e4, I_no_ocean, force=false)
-    dest_file = joinpath(main_output_dir, "df_atm_non-standardized.csv")
-    if isfile(dest_file) && !force
-        return CSV.read(dest_file, DataFrame)
-    end
     df_atm = CSV.read(fname, DataFrame)
     df_atm[!,:source] .= :atm
     df_atm[!,:h]      .= df_atm.h_ref .- df_atm.dh
@@ -136,9 +132,6 @@ function get_ATM_df(fname, x, y, bin_field_1, df_aero, main_output_dir; mindist=
     # already remove some outliers here, improves standardization
     atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
     deleteat!(df_atm, atm_to_delete)
-
-    # save so it's faster next time
-    CSV.write(dest_file, df_atm)
     return df_atm
 end
 
@@ -214,7 +207,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     # standardize
     df.dh_detrend   = (df.dh .- itp_bias.(bin_field_1,bin_field_2)) ./ itp_var.(bin_field_1,bin_field_2)
     # remove outliers after standardizing
-    all_to_delete = findall(abs.(df.dh_detrend) .> 9 .* mad(df.dh_detrend))
+    all_to_delete = findall(abs.(df.dh_detrend) .> 10 .* mad(df.dh_detrend))
     deleteat!(df, all_to_delete)
     # make sure it's truly centered around zero and has std=1 exactly
     std_y          = std(df.dh_detrend)
@@ -230,7 +223,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     Plots.heatmap(bin_centers_1, bin_centers_2, meds')
     Plots.savefig(joinpath(fig_path, "medians_2Dbinning.png"))
     # histograms
-    Plots.histogram(df.dh_detrend, label="Standardized observations", xlims=(-10,10), normalize=:pdf, nbins=1000, wsize=(600,500), linecolor=nothing)
+    Plots.histogram(df.dh_detrend, label="Standardized observations", xlims=(-10,10), normalize=:pdf, nbins=1000, wsize=(800,700), linecolor=nothing)
     Plots.plot!(Normal(), lw=1, label="Normal distribution", color="black")
     Plots.savefig(joinpath(fig_path,"histogram_standardization.png"))
     # qqplot
@@ -242,7 +235,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     # nmad interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
     x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="absolute elevation change over specified time period (m)", ylabel="Beucher gradient (-)", title="NMAD (-)")
+    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="Beucher gradient (-)", ylabel="surface elevation (m)", title="NMAD (-)")
     Plots.savefig(joinpath(fig_path,"nmad_interpolation.png"))
     # medians interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
@@ -263,7 +256,7 @@ function make_geotable(input::Vector, x::Vector, y::Vector)
     return geotable
 end
 
-function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, maxlag=7e5, custom_var, param_cond, p0, fig_path="", sample_frac=1) where T <: Real
+function fit_variogram(x::AbstractVector{T}, y::AbstractVector{T}, input::AbstractVector{T}; nlags=90, maxlag=7e5, fig_path="", sample_frac=1) where T <: Real
     println("Estimating variogram...")
     data = make_geotable(input, x, y)
     if sample_frac < 1
@@ -274,28 +267,19 @@ function fit_variogram(x::Vector{T}, y::Vector{T}, input::Vector{T}; nlags=90, m
     # compute empirical variogram
     U = data |> UniqueCoords()
     gamma = EmpiricalVariogram(U, :Z; estimator=:cressie, nlags,  maxlag) # for some reason the lsqfit has more problems fitting a good line for larger nlags
-    # gi    = findall(gamma.ordinate .!= 0)   # sometimes there are γ=0 values, not sure why
-    function get_γ(x, params)
-        if !param_cond(params)  # some parameters are not accepted
-            return -9999.0 .* ones(length(x))
-        end
-        f = custom_var(params)
-        return f.(x)
-    end
+    xvals, yvals = values(gamma)
     # fit a covariance function
-    # i_nonzero = findall(gamma.ordinate .== 0)
-    ff = LsqFit.curve_fit(get_γ, gamma.abscissa, gamma.ordinate, p0);
-    varg = custom_var(ff.param)
+    varg = get_var(gamma; adjust_sill=false)
 
     # plot
     if !isempty(fig_path)
-        absc_nounits = sort(map(x -> x.val, gamma.abscissa))
-        Plots.scatter(absc_nounits .* 1e-3, gamma.ordinate, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance [km]", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
-        Plots.plot!([1e-5;absc_nounits] .* 1e-3, varg.([1e-5;absc_nounits]), label="Variogram fit", lw=2, ylims=(0,1.1))
+        Plots.scalefontsizes()
+        Plots.scalefontsizes(1.9)
+        Plots.scatter(ustrip.(xvals) .* 1e-3, yvals, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance (km)", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
+        Plots.plot!([1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]), label="Variogram fit", lw=3, ylims=(0,1.1))
         Plots.savefig(joinpath(fig_path,"variogram.png"))
     end
-    if p0 == ff.param @warn "Fitting of variogram failed, choose better initial parameters or reduce nlags." end
-    return varg, ff
+    return gamma
 end
 
 function generate_random_fields(output_dir; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file, n_fields)
@@ -417,9 +401,9 @@ function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, 
         end
         if save_coords
             # save coordinates of the test points
-            crds = coordinates.(stest)
-            xcoord_blocks[j] = first.(crds)
-            ycoord_blocks[j] = last.(crds)
+            crds = coords.(stest)
+            xcoord_blocks[j] = [ustrip(c.x) for c in crds]
+            ycoord_blocks[j] = [ustrip(c.y) for c in crds]
         end
     end
     rt = (vcat(dif_blocks...),)

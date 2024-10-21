@@ -12,14 +12,15 @@ grd = 600
 # Preprocessing, standardization and variogram #
 ################################################
 
-csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file; blockspacing=grd/3, nbins1=7, nbins2=12)
+csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file)
 
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
-@unpack I_no_ocean, idx_aero, params = dict
+@unpack I_no_ocean, idx_aero, gamma = dict
 @unpack destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
-varg = svd_IceSheetDEM.custom_var(params)
+# varg = svd_IceSheetDEM.custom_var(params)
+varg = svd_IceSheetDEM.get_var(gamma)
 
 # make geotable
 geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
