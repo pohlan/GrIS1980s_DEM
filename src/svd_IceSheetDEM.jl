@@ -10,7 +10,7 @@ using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoForma
 using Downloads, Cascadia, Gumbo, HTTP, PyCall
 using Printf, ProgressMeter
 using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
-using Arpack, LinearAlgebra, ImageMorphology
+using Arpack, LinearAlgebra, ImageMorphology, Geomorphometry
 using DataStructures: OrderedDict
 import Plots, StatsPlots
 

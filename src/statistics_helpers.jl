@@ -193,16 +193,37 @@ function get_itp_interp(bin_centers_1, bin_centers_2, field)
     return itp
 end
 
-function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_path)
+function interp_nans!(bin_centers_1, field)
+    b1     = get_ix.(1:length(field), length(bin_centers_1))
+    b2     = get_iy.(1:length(field), length(bin_centers_1))
+    gtb    = make_geotable(vec(field), b1, b2)
+    out    = gtb |> InterpolateNaN(IDW())
+    field .= reshape(out.Z, size(field))
+    return
+end
+
+function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_path)
     bin_field_1 = df[!,:bfield_1]
     bin_field_2 = df[!,:bfield_2]
     y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2)
-    bin_centers_1, bin_centers_2, y_binned = remove_small_bins(bin_centers_1, bin_centers_2, y_binned; min_n_sample)
+    for yb in y_binned[length.(y_binned) .< min_n_sample]
+        deleteat!(yb, 1:length(yb))
+        push!(yb, NaN)
+    end
+
     # variance
-    nmads       = mad.(y_binned, normalize=true)
+    nmads       = std.(y_binned)
+    Plots.heatmap(bin_centers_1, bin_centers_2, nmads')
+    Plots.savefig(joinpath(fig_path, "nmads_2Dbinning_withnans.png"))
+    interp_nans!(bin_centers_1, nmads)
+    @assert !any(isnan.(nmads))
     itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
     # bias
     meds        = median.(y_binned)
+    Plots.heatmap(bin_centers_1, bin_centers_2, meds')
+    Plots.savefig(joinpath(fig_path, "medians_2Dbinning_withnans.png"))
+    interp_nans!(bin_centers_1, meds)
+    @assert !any(isnan.(meds))
     itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
     # standardize
     df.dh_detrend   = (df.dh .- itp_bias.(bin_field_1,bin_field_2)) ./ itp_var.(bin_field_1,bin_field_2)
@@ -235,12 +256,12 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=30, fig_pa
     # nmad interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
     x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="Beucher gradient (-)", ylabel="surface elevation (m)", title="NMAD (-)")
+    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="slope (°)", ylabel="surface elevation (m)", title="NMAD (-)")
     Plots.savefig(joinpath(fig_path,"nmad_interpolation.png"))
     # medians interpolation
     x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
     x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_bias.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="Beucher gradient (-)", ylabel="surface elevation (m)", title="median (m)")
+    Plots.heatmap(x1, x2, itp_bias.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="slope (°)", ylabel="surface elevation (m)", title="median (m)")
     Plots.savefig(joinpath(fig_path,"median_interpolation.png"))
 
     # return all relevant parameters so standardization function can be retrieved later
@@ -473,7 +494,7 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
     std_predict          = zeros(size(h_aero))
-    bin_field_1          = bin1_fct(h_ref)
+    bin_field_1          = bin1_fct(h_ref, grid_kriging)
 
     if method == :sgs  # sequential gaussian simulations
         output_path = joinpath(main_output_dir, "SEQ_simulations/")

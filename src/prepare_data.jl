@@ -42,7 +42,7 @@ end
 
 # define variogram function to fit
 function get_var(gamma; adjust_sill=true)
-    varg = GeoStatsFunctions.fit(Variogram, gamma, maxnugget=0.08)
+    varg = GeoStatsFunctions.fit(Variogram, gamma, maxnugget=0.04)
     vfct = typeof(varg).name.wrapper
     if adjust_sill
         varg = vfct(varg.ball; sill=1.0, nugget=varg.nugget)
@@ -61,7 +61,7 @@ function plot_data(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), t
     return
 end
 
-bin1_fct(x) = mgradient(x, r=4)
+bin1_fct(x, grd) = slope(x, cellsize=grd)
 
 function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nbins1=7, nbins2=14)
     # define names of output directories
@@ -104,10 +104,10 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
 
     # calculate bin_field on h_ref
     m_href        = nomissing(h_ref, NaN)    # bin1_fct doesn't accept type missing
-    bin_field_1   = svd_IceSheetDEM.bin1_fct(m_href)
+    bin_field_1   = svd_IceSheetDEM.bin1_fct(m_href, target_grid)
     # calculate bin_field on h_aero to fill gaps at the terminus where h_ref is NaN (because glaciers have retreated)
     m_haero       = nomissing(h_aero, NaN)   # bin1_fct doesn't accept type missing
-    b1_haero      = svd_IceSheetDEM.bin1_fct(m_haero)
+    b1_haero      = svd_IceSheetDEM.bin1_fct(m_haero, target_grid)
     # fill those gaps with b1_haero
     idx_aero_b1   = findall(vec(m_href .== 0.0 .&& .!isnan.(b1_haero)))
     bin_field_1[idx_aero_b1] .= b1_haero[idx_aero_b1]
@@ -149,10 +149,10 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
 
     # plot after standardizing
-    plot_data(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_path,"data_standardized.png"), clims=(-4,4), title="Standardized elevation difference (GrIMP - historic)")
+    plot_data(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_path,"data_standardized.png"), clims=(-3,3), title="Standardized elevation difference (GrIMP - historic)")
 
     # variogram
-    gamma = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=7e5, nlags=500, fig_path)
+    gamma = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=5e5, nlags=500, fig_path)
 
     # save
     CSV.write(csv_dest, df_all)
