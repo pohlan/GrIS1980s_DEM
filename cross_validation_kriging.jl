@@ -68,8 +68,8 @@ p = Plots.scatter(xc,yc,marker_z=difs, cmap=:bwr, clims=(-4,4), markersize=0.7, 
 for (j,fs) in enumerate(flds)
     stest = view(domain(geotable), fs[2])
     ch    = GeoStats.convexhull(stest).rings[1].vertices.data
-    xx    = first.(a.coords for a in ch)
-    yy    = last.(a.coords for a in ch)
+    xx    = [ustrip.(a.coords.x) for a in ch]
+    yy    = [ustrip.(a.coords.y) for a in ch]
     Plots.plot!(p, xx,yy, lw=1, color="black", label="")
 end
 Plots.plot(p, size=(500,700))

@@ -237,15 +237,16 @@ function create_bedmachine_grid(gr)
     return bedmachine_original, dest_file
 end
 
-function create_grimpv2(gr, bedmachine_original; kw="")
+function create_grimpv2(grd_target, grd_coreg, bedmachine_original; kw="")
     data_path = joinpath("data","grimpv2")
-    get_dest_file(gr) = joinpath(data_path, "grimpv2_geoid_corrected_g$(gr).nc")
-    dest_g150_file    = get_dest_file(150)
-    dest_gr_file      = get_dest_file(gr)
+    get_dest_file(grd_target) = joinpath(data_path, "grimpv2_geoid_corrected_g$(Int(grd_target)).nc")
+    dest_grd_coreg_file       = get_dest_file(grd_coreg)
+    dest_grd_target_file      = get_dest_file(grd_target)
+    merged_grd_coreg          = joinpath(data_path,"merged_grimpv2_g$(Int(grd_coreg)).nc")
 
-    if isfile(dest_gr_file)
-        return dest_g150_file, dest_gr_file
-    elseif !isfile(dest_g150_file)
+    if isfile(dest_grd_target_file) && isfile(dest_grd_coreg_file)
+        return merged_grd_coreg, dest_grd_coreg_file, dest_grd_target_file
+    elseif !isfile(dest_grd_coreg_file)
 
         # set up paths
         raw_path = joinpath(data_path, "raw")
@@ -264,32 +265,35 @@ function create_grimpv2(gr, bedmachine_original; kw="")
         # gdalwarp
         grimp_files = readdir(raw_path, join=true)
         filter!(endswith(".tif"),grimp_files)
-        merged_g150 = joinpath(data_path,"merged_grimpv2_g150.nc")
         println("Using gdalwarp to merge the grimpv2 mosaics into one DEM, taking a while..")
-        grimp_g150  = gdalwarp(grimp_files; gr=150, srcnodata="0.0", dest=merged_g150)
+        grimp_g150  = gdalwarp(grimp_files; gr=grd_coreg, srcnodata="0.0", dest=merged_grd_coreg)
         grimp_g150  = grimp_g150[:,end:-1:1]
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150)[:,end:-1:1]
-        idx   = findall(grimp_g150 .!= no_data_value .&& .!ismissing.(geoid))
-        grimp_g150[idx] .-= geoid[idx]
-        grimp_g150[grimp_g150 .< 0.0] .= no_data_value
-
-        # save as netcdf
-        sample_path = merged_g150
-        save_netcdf(dest_g150_file, sample_path, [grimp_g150], ["surface"], Dict("surface"=>Dict{String,Any}()))
-        rm(merged_g150)
+        mask  = gdalwarp("NETCDF:"*bedmachine_original*":mask";  gr=grd_coreg)[:,end:-1:1]
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=grd_coreg)[:,end:-1:1]
+        idx   = findall(grimp_g150 .!= no_data_value .&& .!ismissing.(geoid) .&& mask .!= 0 .&& mask .!= 4 .&& .!ismissing.(mask))
+        grimp_highres = zeros(size(grimp_g150))
+        grimp_highres[idx] .= grimp_g150[idx]
+        # overwrite merged DEM, here only relevant cells have a value
+        sample_path = merged_grd_coreg
+        grimp_highres[grimp_highres .<= 0.0] .= no_data_value
+        save_netcdf(merged_grd_coreg, sample_path, [grimp_highres], ["surface"], Dict("surface"=>Dict{String,Any}()))
+        # correct for geoid and save in different file
+        grimp_highres[idx] .-= geoid[idx]
+        grimp_highres[grimp_highres .<= 0.0] .= no_data_value
+        save_netcdf(dest_grd_coreg_file, sample_path, [grimp_highres], ["surface"], Dict("surface"=>Dict{String,Any}()))
     end
 
     # gdalwarp to desired grid
-    gdalwarp(dest_g150_file; gr, srcnodata=string(no_data_value), dest=dest_gr_file)
+    gdalwarp(dest_grd_coreg_file; gr=grd_target, srcnodata=string(no_data_value), dest=dest_grd_target_file)
 
-    return dest_g150_file, dest_gr_file
+    return merged_grd_coreg, dest_grd_coreg_file, dest_grd_target_file
 end
 
 function get_surface_file(ref1, bedm_file; remove_geoid=false)
     ds_ref1 = NCDataset(ref1)
-    surf    = ds_ref1["Band1"][:]
+    surf    = ds_ref1["surface"][:]
     if remove_geoid  # when comparing to elevation data that is not geoid corrected
         geoid    = NCDataset(bedm_file)["geoid"][:]
         surf   .+= geoid
@@ -344,18 +348,18 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150; kw="")
-    aerodem_path      = joinpath("data","aerodem")
-    get_aero_file(gr) = joinpath(aerodem_path, "aerodem_rm-filtered_geoid-corr_g$(gr).nc")
-    # get_rm_file(gr)   = aerodem_path * "rm_g$(gr).nc"
-    aerodem_g150_file = get_aero_file(150)
-    aerodem_gr_file   = get_aero_file(gr)
-    # rm_g150_file      = get_rm_file(150)
-    # rm_gr_file        = get_rm_file(gr)
+function create_aerodem(grd_target, grd_coreg, outline_shp_file, bedmachine_original, ref_coreg_file_geoid; kw="")
+    aerodem_path              = joinpath("data","aerodem")
+    get_aero_file(grd_target) = joinpath(aerodem_path, "aerodem_rm-filtered_geoid-corr_g$(Int(grd_target)).nc")
+    # get_rm_file(grd_target)   = aerodem_path * "rm_g$(grd_target).nc"
+    aerodem_highres_file      = get_aero_file(grd_coreg)
+    aerodem_gr_file           = get_aero_file(grd_target)
+    # rm_g150_file      = get_rm_file(grd_coreg)
+    # rm_gr_file        = get_rm_file(grd_target)
 
-    if isfile(aerodem_gr_file) #&& isfile(rm_gr_file)
-        return aerodem_g150_file, aerodem_gr_file #, rm_gr_file
-    elseif !isfile(aerodem_g150_file)
+    if isfile(aerodem_gr_file) && isfile(aerodem_highres_file) #&& isfile(rm_gr_file)
+        return aerodem_highres_file, aerodem_gr_file #, rm_gr_file
+    elseif !isfile(aerodem_highres_file)
 
         # create aerodem, for some reason the cutting with the shapefile outline only works for smaller grids
         # otherwise GDALError (CE_Failure, code 1): Cutline polygon is invalid.
@@ -384,14 +388,14 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
         merged_aero_dest = joinpath(aerodem_path, "merged_aerodem_g150.nc")
         merged_rm_dest   = joinpath(aerodem_path, "merged_rm_g150.nc")
         println("Using gdalwarp to merge the aerodem mosaics into one DEM, taking a while..")
-        aero_rm_filt     = gdalwarp(aerodem_files; gr=150, srcnodata=string(0.0), dest=merged_aero_dest)
-        rel_mask         = gdalwarp(     rm_files; gr=150, srcnodata=string(0.0), dest=merged_rm_dest)
+        aero_rm_filt     = gdalwarp(aerodem_files; gr=grd_coreg, srcnodata=string(0.0), dest=merged_aero_dest)
+        rel_mask         = gdalwarp(     rm_files; gr=grd_coreg, srcnodata=string(0.0), dest=merged_rm_dest)
 
         # filter for observations where reliability value is low
         aero_rm_filt[rel_mask .< 40] .= no_data_value  # only keep values with reliability of at least xx
 
         # apply geoid correction
-        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=150)
+        geoid = gdalwarp("NETCDF:"*bedmachine_original*":geoid";  gr=grd_coreg)
         idx                                = findall(aero_rm_filt .!= no_data_value)
         aero_rm_filt[idx]                .-= geoid[idx]
         aero_rm_filt[aero_rm_filt .< 0.0] .= no_data_value
@@ -403,23 +407,24 @@ function create_aerodem(gr, outline_shp_file, bedmachine_original, reference_fil
                                                           "standard_name" => "surface_altitude",
                                                           "units"         => "m")
                             )
-        not_aligned_file = splitext(aerodem_g150_file)[1]*"_not_aligned"*splitext(aerodem_g150_file)[2]
+        not_aligned_file = splitext(aerodem_highres_file)[1]*"_not_aligned"*splitext(aerodem_highres_file)[2]
         save_netcdf(not_aligned_file, sample_path, [aero_rm_filt[:,end:-1:1]], [layername], attributes)
         # save_netcdf(rm_g150_file, sample_path, [Float32.(rel_mask[:,end:-1:1])], ["reliability mask"], Dict("reliability mask" => Dict{String, Any}()))
 
         # co-registration
-        fig_name = joinpath(fig_path, "coregistration_before_after.jpg")
-        py_coregistration(reference_file_g150, not_aligned_file, aerodem_g150_file, outline_shp_file, fig_name) # note: output is upside down but will be reversed in gdalwarp below
+        fig_name = joinpath(fig_path, "coregistration_before_after.png")
+        py_coreg_raster(ref_coreg_file_geoid, not_aligned_file, aerodem_highres_file, outline_shp_file, fig_name) # note: output is upside down but will be reversed in gdalwarp below
 
         rm(merged_aero_dest)
         rm(merged_rm_dest)
+        rm(not_aligned_file)
     end
 
     # gdalwarp to desired grid
-    gdalwarp(aerodem_g150_file; gr, cut_shp=outline_shp_file, srcnodata=string(no_data_value), dest=aerodem_gr_file)
-    # gdalwarp(rm_g150_file; gr, srcnodata=string(no_data_value), dest=rm_gr_file)
+    gdalwarp(aerodem_highres_file; gr=grd_target, cut_shp=outline_shp_file, srcnodata=string(no_data_value), dest=aerodem_gr_file)
+    # gdalwarp(rm_g150_file; gr=grd_target, srcnodata=string(no_data_value), dest=rm_gr_file)
 
-    return aerodem_g150_file, aerodem_gr_file
+    return aerodem_highres_file, aerodem_gr_file
 end
 
 function create_outline_mask(gr, outline_shp_file, sample_file)
@@ -497,10 +502,11 @@ function get_atm_raw_file(kw)
     return atm_file
 end
 
-function get_atm_dh_file(ref_file, bedm_file, blockspacing; kw="")
+function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_shp_file, blockspacing; kw="")
+    # get raw data
     raw_atm_data_file = get_atm_raw_file(kw)
 
-    atm_dh_dest_file = joinpath(dirname(raw_atm_data_file), "dh_ref_minus_atm_blocksize_$(blockspacing)m.csv")
+    atm_dh_dest_file = joinpath(dirname(raw_atm_data_file), "dh_ref_minus_atm_blocksize_$(Int(blockspacing))m.csv")
     # if file exists already, do nothing
     if isfile(atm_dh_dest_file)
         return atm_dh_dest_file
@@ -508,34 +514,24 @@ function get_atm_dh_file(ref_file, bedm_file, blockspacing; kw="")
 
     # need a file with only one band for interp_points operation in xdem python;
     # plus need to reference to ellipsoid to be consistent with atm before differencing the two
-    ref_surface_ellipsoid = get_surface_file(ref_file, bedm_file, remove_geoid=true)
-    ref_surface_geoid     = get_surface_file(ref_file, bedm_file, remove_geoid=false)
+
+    # co-registration
+    atm_data_aligned  = splitext(raw_atm_data_file)[1]*"_aligned"*splitext(raw_atm_data_file)[2]
+    py_coreg_points(ref_coreg_file_ellips, raw_atm_data_file, atm_data_aligned, outline_shp_file)
+
     # interpolate GrIMP DEM on ATM points and calculate difference
     dh_interpolated_file = joinpath(dirname(raw_atm_data_file), "atm_dh_interpolated.csv")
-    py_point_interp(ref_surface_ellipsoid, ref_surface_geoid, raw_atm_data_file, dh_interpolated_file)
+    py_point_interp(ref_coreg_file_ellips, ref_coreg_file_geoid, atm_data_aligned, dh_interpolated_file)
 
     # block reduce with python package verde; average data that is heavily oversampled in direction of flight
+    println("Doing blockreduce...")
     py_block_reduce(dh_interpolated_file, atm_dh_dest_file, blockspacing)
 
     # delete all temporary files
-    rm(ref_surface_ellipsoid)
-    rm(ref_surface_geoid)
+    rm(atm_data_aligned)
     rm(dh_interpolated_file)
 
     return atm_dh_dest_file
-end
-
-function get_atm_grid(gr, ref_file, bedm_file, blockspacing=gr)
-    atm_dh_file   = get_atm_dh_file(ref_file, bedm_file, blockspacing)
-    println(atm_dh_file)
-    atm_grid_file = joinpath(dirname(atm_dh_file), "dh_ref_minus_atm_g$(gr).nc")
-    if isfile(atm_grid_file)
-        return atm_grid_file
-    end
-    println("Use gdalgrid to project atm flightline data on grid...")
-    gdalgrid(atm_dh_file; gr, dest=atm_grid_file)
-    println(atm_grid_file)
-    return atm_grid_file
 end
 
 function download_esa_cci(dest_file)
@@ -624,77 +620,112 @@ function create_dhdt_grid(gr::Int; startyr::Int, endyr::Int)
 end
 
 # python functions
+const xdem = Ref{Py}()
+const np   = Ref{Py}()
+const pd   = Ref{Py}()
+const gpd  = Ref{Py}()
 function __init__()
-    py"""
-    import xdem
-    import geoutils as gu
-    import pandas as pd
-    import geopandas as gpd
-    import numpy as np
-    import verde as vd
-    import matplotlib.pyplot as plt
-
-    def point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out):
-        ref_DEM       = xdem.DEM(fname_ref)
-        ref_DEM_geoid = xdem.DEM(fname_ref_geoid)
-        # extract ATM points
-        df       = pd.read_csv(fname_atm)
-        geometry = gpd.points_from_xy(df.lon, df.lat, crs="WGS84")
-        g        = geometry.to_crs(ref_DEM.crs)
-        # interpolate
-        ref_pts       = ref_DEM.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
-        ref_pts_geoid = ref_DEM_geoid.interp_points(pts=list(zip(g.x, g.y)), prefilter=False, order=2)
-        # save
-        # note: "h_ref" below is referenced to geoid !!
-        # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
-        # however, for destandardization we need the geoid-referenced elevation of grimp)
-        ds_save = pd.DataFrame({"x": g.x, "y": g.y, "h_ref": ref_pts_geoid, "dh": (ref_pts-df.z)})
-        ds_save.to_csv(fname_out, index=False)
-
-    def block_reduce(fname_in, fname_out, spacing):
-        df                      = pd.read_csv(fname_in)
-        reducer                 = vd.BlockReduce(reduction=np.median, spacing=spacing)
-        coordinates, dh_reduced = reducer.filter((df.x, df.y), df.dh)
-        coordinates, h_reduced  = reducer.filter((df.x, df.y), df.h_ref)
-        xn, yn                  = coordinates
-        df_reduced              = pd.DataFrame({"x":xn, "y":yn, "h_ref":h_reduced, "dh":dh_reduced})
-        df_reduced.to_csv(fname_out, index=False)
-
-    def coregistration(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name):
-        dem_not_aligned = xdem.DEM(dem_file_not_aligned)
-        reference_dem   = xdem.DEM(reference_file)
-        # calculate dh before co-registration
-        diff_before     = reference_dem - dem_not_aligned
-        # Create a mask of stable terrain, removing outliers outside 3 NMAD
-        glacier_outlines = gu.Vector(outline_shp_file)
-        mask_noglacier   = ~glacier_outlines.create_mask(reference_dem)
-        mask_nooutliers  = np.abs(diff_before - np.nanmedian(diff_before)) < 3 * xdem.spatialstats.nmad(diff_before)
-        # Create inlier mask
-        inlier_mask      = mask_noglacier & mask_nooutliers
-        # co-register
-        nuth_kaab = xdem.coreg.NuthKaab()
-        print("Doing Nuth and Kaab co-registration...")
-        nuth_kaab.fit(reference_dem, dem_not_aligned, inlier_mask)
-        print(nuth_kaab._meta)
-        aligned_dem = nuth_kaab.apply(dem_not_aligned)
-        # calculate dh after co-registration
-        diff_after = reference_dem - aligned_dem
-        # make a zoomed-in plot to show the difference
-        plt.figure(figsize=(14,7))
-        plt.subplot(1,2,1)
-        plt.imshow(diff_before.data[1600:2150,3500:4300], cmap="coolwarm_r", vmin=-50, vmax=50, interpolation="None")
-        plt.colorbar()
-        plt.title("before co-registration")
-        plt.subplot(1,2,2)
-        plt.imshow(diff_after.data[1600:2150,3500:4300], cmap="coolwarm_r", vmin=-50, vmax=50, interpolation="None")
-        plt.colorbar()
-        plt.title("after co-registration")
-        plt.savefig(fig_name)
-        # save aligned dem
-        dem_xa = aligned_dem.to_xarray("surface")
-        dem_xa.to_netcdf(dest_file_aligned)
-    """
+    xdem[] = pyimport("xdem")
+    np[] = pyimport("numpy")
+    pd[] = pyimport("pandas")
+    gpd[] = pyimport("geopandas")
 end
-py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out) = py"point_interp"(fname_ref, fname_ref_geoid, fname_atm, fname_out)
-py_block_reduce(fname_in, fname_out, spacing) = py"block_reduce"(fname_in, fname_out, spacing)
-py_coregistration(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name) = py"coregistration"(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name)
+
+function py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out)
+    ref_DEM       = xdem[].DEM(fname_ref)
+    ref_DEM_geoid = xdem[].DEM(fname_ref_geoid)
+    # extract ATM points
+    df       = pd[].read_csv(fname_atm)
+    geometry = gpd[].points_from_xy(df.x, df.y, crs=ref_DEM.crs)
+    g        = geometry.to_crs(ref_DEM.crs)
+    # interpolate
+    ref_pts       = ref_DEM.interp_points(points=(g.x, g.y), prefilter=false)
+    ref_pts_geoid = ref_DEM_geoid.interp_points(points=(g.x, g.y), prefilter=false)
+    # save
+    # note: "h_ref" below is referenced to geoid !!
+    # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
+    # however, for destandardization we need the geoid-referenced elevation of grimp)
+    ds_save = pd[].DataFrame()
+    ds_save["x"]     = g.x
+    ds_save["y"]     = g.y
+    ds_save["h_ref"] = ref_pts_geoid
+    ds_save["dh"]    = ref_pts-df.z
+    ds_save.to_csv(fname_out, index=false)
+end
+
+function py_block_reduce(fname_in, fname_out, spacing)
+    df                      = pd[].read_csv(fname_in)
+    reducer                 = pyimport("verde").BlockReduce(reduction=np[].median, spacing=spacing)
+    coordinates, dh_reduced = reducer.filter((df.x, df.y), df.dh)
+    coordinates, h_reduced  = reducer.filter((df.x, df.y), df.h_ref)
+    xn, yn                  = coordinates
+    df_reduced              = pd[].DataFrame()
+    df_reduced["x"]         = xn
+    df_reduced["y"]         = yn
+    df_reduced["h_ref"]     = h_reduced
+    df_reduced["dh"]        = dh_reduced
+    df_reduced.to_csv(fname_out, index=false)
+end
+
+function py_coreg_raster(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name)
+    dem_not_aligned = xdem[].DEM(dem_file_not_aligned)
+    reference_dem   = xdem[].DEM(reference_file)
+    # calculate dh before co-registration
+    diff_before     = reference_dem - dem_not_aligned
+    # Create a mask of stable terrain, removing outliers outside 3 NMAD
+    glacier_outlines = pyimport("geoutils").Vector(outline_shp_file)
+    mask_noglacier   = ~glacier_outlines.create_mask(reference_dem)
+    mask_nooutliers  = np[].abs(diff_before - np[].nanmedian(diff_before)) < 3 * xdem[].spatialstats.nmad(diff_before)
+    # Create inlier mask
+    inlier_mask      = mask_noglacier & mask_nooutliers
+    # co-register
+    nuth_kaab = xdem[].coreg.NuthKaab()
+    println("Doing Nuth and Kaab co-registration...")
+    nuth_kaab.fit(reference_dem, dem_not_aligned, inlier_mask)
+    println(nuth_kaab._meta)
+    aligned_dem = nuth_kaab.apply(dem_not_aligned)
+    # calculate dh after co-registration
+    diff_after = reference_dem - aligned_dem
+    # make a zoomed-in plot to show the difference
+    diff_before_jl = PyArray(diff_before.data); diff_before_jl[PyArray(diff_before.data.mask)] .= NaN
+    diff_after_jl  = PyArray(diff_after.data);    diff_after_jl[PyArray(diff_after.data.mask)] .= NaN
+    p1 = heatmap(diff_before_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="before co-registration", aspect_ratio=1, size=(700,900))
+    p2 = heatmap(diff_after_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="after co-registration", aspect_ratio=1, size=(700,900))
+    plot(p1,p2,size=(1500,900))
+    savefig(fig_name)
+    # save aligned dem
+    dem_xa = aligned_dem.to_xarray("surface")
+    dem_xa.to_netcdf(dest_file_aligned)
+end
+
+# without calculating and plotting diff_before and diff_after
+function py_coreg_points(reference_file, point_data_file, dest_file_aligned, outline_shp_file)
+    # read reference DEM
+    ds            = pyimport("rioxarray").open_rasterio(reference_file)
+    reference_dem = xdem[].DEM.from_xarray(ds)
+    # read point data
+    df            = pd[].read_csv(point_data_file)
+    geometry      = gpd[].points_from_xy(df.lon, df.lat, crs="WGS84")
+    g             = geometry.to_crs(reference_dem.crs)
+    # GeoDataFrame
+    gdf      = gpd[].GeoDataFrame(geometry=g, crs=reference_dem.crs)
+    gdf["z"] = df.z
+    gdf["E"] = g.x   # xdem is expecting columns named "E" and "N"
+    gdf["N"] = g.y
+    # stable terrain mask (no outlier removal here, in contrast to raster version)
+    glacier_outlines = pyimport("geoutils").Vector(outline_shp_file)
+    mask_noglacier   = ~glacier_outlines.create_mask(reference_dem)
+    # coregistration
+    println("Doing Nuth and Kaab fit...")
+    nuth_kaab        = xdem[].coreg.NuthKaab()
+    nuth_kaab.fit(reference_dem, gdf, mask_noglacier)
+    gdf_aligned      = nuth_kaab.apply(gdf)
+    println(nuth_kaab.meta)
+    # save
+    df_save = pd[].DataFrame()
+    df_save["z"] = gdf_aligned.z
+    df_save["x"] = gdf_aligned.geometry.x
+    df_save["y"] = gdf_aligned.geometry.y
+    df_save.to_csv(dest_file_aligned, index=false)
+    return
+end

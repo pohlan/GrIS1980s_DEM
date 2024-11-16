@@ -66,7 +66,7 @@ end
 
 @testset "aerodem" begin
     ds150                 = NCDataset(aero_150_file)["surface"][:]
-    ds150 = svd_IceSheetDEM.replace_missing(ds150,0.0)[:,:,1]
+    ds150                 = nomissing(ds150,0.0)[:,:,1]
     dsgr                  = NCDataset(aero_gr_file )["Band1"][:]
     @test missmax(ds150)  ≈ 3602.2051
     @test sum(.!ismissing.(dsgr)) == 2306 && missmax(dsgr) ≈ 2823.4519

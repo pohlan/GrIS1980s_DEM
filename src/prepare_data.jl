@@ -42,28 +42,22 @@ end
 
 # define variogram function to fit
 function get_var(gamma; adjust_sill=true)
-    varg = GeoStatsFunctions.fit(Variogram, gamma, maxnugget=0.04)
-    vfct = typeof(varg).name.wrapper
+    varg = fit_varg(ExponentialVariogram, gamma, maxnugget=0.02, nVmax=2)
+    vfct = typeof(varg) <: NestedVariogram ? typeof(varg.γs[1]).name.wrapper : typeof(varg).name.wrapper
     if adjust_sill
-        varg = vfct(varg.ball; sill=1.0, nugget=varg.nugget)
+        if typeof(varg) <: NestedVariogram
+            sills = [γ.sill for γ in varg.γs]
+            varg = sum([vfct(γ.ball; sill=γ.sill / sum(sills) , nugget=γ.nugget) for γ in varg.γs])
+        else
+            varg = vfct(varg.ball; sill=1.0, nugget=varg.nugget)
+        end
     end
     return varg
 end
 
-function plot_data(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
-    id_df_aero = findall(df_all.source .== :aerodem)
-    m_plot = zeros(dims)
-    m_plot[df_all.idx[id_df_aero]] .= df_all[!,sm][id_df_aero]
-    Plots.heatmap(x, y, m_plot', cmap=:RdBu, aspect_ratio=1, xlims=(-7e5,8e5); clims)
-    id_df_atm = findall(df_all.source .== :atm .|| df_all.source .== "atm")
-    Plots.scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=0.5, markerstrokewidth=0, cmap=:RdBu, aspect_ratio=1, xlims=(-7e5,8e5), xlabel="Easting [m]", ylabel="Northing [m]", colorbar_title="[m]", grid=false, wsize=(1700,1800); title, clims)
-    Plots.savefig(fname)
-    return
-end
-
 bin1_fct(x, grd) = slope(x, cellsize=grd)
 
-function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nbins1=7, nbins2=14)
+function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40, nbins2=50, coreg_grid=150)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
     fig_path         = joinpath(main_output_dir, "figures/")
@@ -77,21 +71,19 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     end
 
     # get filenames at specified grid resolution
-    bedmachine_original, bedm_file  = create_bedmachine_grid(target_grid)
-    reference_file_g150, ref_file   = create_grimpv2(target_grid, bedmachine_original)
-    aerodem_g150, obs_aero_file     = create_aerodem(target_grid, outline_shp_file, bedmachine_original, reference_file_g150)
-    atm_dh_file                     = get_atm_dh_file(ref_file, bedm_file, blockspacing)
+    bedmachine_original, bedm_file         = create_bedmachine_grid(target_grid)
+    ref_coreg_file_ellips, ref_coreg_file_geoid, ref_file = create_grimpv2(target_grid, coreg_grid, bedmachine_original)
+    aerodem_g150, obs_aero_file     = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
+    atm_dh_file                     = get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_shp_file, blockspacing)
     mask_file                       = create_outline_mask(target_grid, outline_shp_file, aerodem_g150)
 
     # read in
-    h_ref        = NCDataset(ref_file)["Band1"][:]
+    h_ref        = NCDataset(ref_file)["Band1"][:,:]
     x            = NCDataset(ref_file)["x"][:]
     y            = NCDataset(ref_file)["y"][:]
-    h_aero       = NCDataset(obs_aero_file)["Band1"][:]
-    glacier_mask = NCDataset(mask_file)["Band1"][:]
-    bedm_mask    = NCDataset(bedm_file)["mask"][:]
-    h_bedm       = ncread(bedm_file,"surface")
-    h_ref[h_bedm .== 0.0] .= missing  # grimpv2 has weird values in parts of the ocean
+    h_aero       = NCDataset(obs_aero_file)["Band1"][:,:]
+    glacier_mask = NCDataset(mask_file)["Band1"][:,:]
+    bedm_mask    = NCDataset(bedm_file)["mask"][:,:]
     # In areas where h_ref is NaN but h_aero is not, h_ref should be 0 instead, otherwise dh is a NaN
     id_zero = findall(ismissing.(h_ref) .&& .!ismissing.(h_aero))
     h_ref[id_zero] .= 0.0
@@ -137,26 +129,20 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=target_grid, nb
     df_aero = get_aerodem_df(h_aero, bin_field_1, bin_field_2, h_ref, x, y, idx_aero)
 
     # atm
-    df_atm  = get_ATM_df(atm_dh_file, x, y, bin_field_1, df_aero, main_output_dir; I_no_ocean)
+    df_atm  = get_ATM_df(atm_dh_file, x, y, bin_field_1, df_aero; I_no_ocean, mindist=target_grid)
 
     # merge aerodem and atm data
     df_all = vcat(df_aero, df_atm, cols=:union)
 
-    # plot before standardizing
-    plot_data(df_all, :dh, x, y, size(h_ref), joinpath(fig_path,"data_non-standardized.png"), clims=(-20,20), title="Elevation difference (GrIMP - historic)")
-
     # standardization
     df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
-
-    # plot after standardizing
-    plot_data(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_path,"data_standardized.png"), clims=(-3,3), title="Standardized elevation difference (GrIMP - historic)")
 
     # variogram
     gamma = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=5e5, nlags=500, fig_path)
 
     # save
     CSV.write(csv_dest, df_all)
-    to_save = (; interp_data..., gamma, I_no_ocean, idx_aero, bfields_file, href_file)
+    to_save = (; interp_data..., gamma, I_no_ocean, idx_aero, bfields_file, href_file, coreg_grid)
     jldsave(dict_dest; to_save...)
 
     # make sure standardize and destandardize functions are correct

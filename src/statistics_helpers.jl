@@ -1,9 +1,8 @@
-function make_geotable(Z_data, xs, ys)
-    table    = (; Z=Float32.(Z_data))
-    coords   = [(xi,yi) for (xi,yi) in zip(xs, ys) ]
-    return georef(table,coords)
+function make_geotable(input::AbstractVector, x::AbstractVector, y::AbstractVector)
+    table    = (;Z = input)
+    crds   = [(xi, yi) for (xi,yi) in zip(x,y)]
+    return georef(table, crds)
 end
-
 function bin_equal_bin_size(x, y, n_bins)   # 1D
     bin_edges = range(extrema(x)..., n_bins+1)
     out = Vector{Vector{eltype(y)}}(undef,n_bins)
@@ -96,12 +95,7 @@ function filter_per_bin!(y_binned; cutoff=7.0)
     return is_deleted
 end
 
-function replace_missing(A,c)
-    A[ismissing.(A)] .= c
-    return A
-end
-
-function get_ATM_df(fname, x, y, bin_field_1, df_aero, main_output_dir; mindist=1e4, I_no_ocean, force=false)
+function get_ATM_df(fname, x, y, bin_field_1, df_aero; mindist=1e4, I_no_ocean)
     df_atm = CSV.read(fname, DataFrame)
     df_atm[!,:source] .= :atm
     df_atm[!,:h]      .= df_atm.h_ref .- df_atm.dh
@@ -236,45 +230,10 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_p
     df.dh_detrend  = (df.dh_detrend .- mean_y) ./ std_y
     @printf("Kurtosis after standardization: %1.2f\n", kurtosis(df.dh_detrend))
 
-    # plot and save figures
-    # nmads
-    Plots.heatmap(bin_centers_1, bin_centers_2, nmads')
-    Plots.savefig(joinpath(fig_path, "nmads_2Dbinning.png"))
-    # bias
-    Plots.heatmap(bin_centers_1, bin_centers_2, meds')
-    Plots.savefig(joinpath(fig_path, "medians_2Dbinning.png"))
-    # histograms
-    Plots.histogram(df.dh_detrend, label="Standardized observations", xlims=(-10,10), normalize=:pdf, nbins=1000, wsize=(800,700), linecolor=nothing)
-    Plots.plot!(Normal(), lw=1, label="Normal distribution", color="black")
-    Plots.savefig(joinpath(fig_path,"histogram_standardization.png"))
-    # qqplot
-    Plots.plot(
-        StatsPlots.qqplot(StatsPlots.Normal(), df.dh_detrend, title="standardized with binning", ylims=(-8,8)),
-        StatsPlots.qqplot(StatsPlots.Normal(), (df.dh .- mean(df.dh))./std(df.dh), title="standardized without binning", ylims=(-8,8))
-    )
-    Plots.savefig(joinpath(fig_path,"qqplot.png"))
-    # nmad interpolation
-    x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
-    x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_var.(x1, x2')', xlabel="slope (°)", ylabel="surface elevation (m)", title="NMAD (-)")
-    Plots.savefig(joinpath(fig_path,"nmad_interpolation.png"))
-    # medians interpolation
-    x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
-    x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-    Plots.heatmap(x1, x2, itp_bias.(x1, x2')', cmap=:bwr, clims=(-20,20), xlabel="slope (°)", ylabel="surface elevation (m)", title="median (m)")
-    Plots.savefig(joinpath(fig_path,"median_interpolation.png"))
-
     # return all relevant parameters so standardization function can be retrieved later
     interp_data = (;bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y)
 
     return df, interp_data
-end
-
-function make_geotable(input::Vector, x::Vector, y::Vector)
-    table    = (;Z = input)
-    coords   = [(xi, yi) for (xi,yi) in zip(x,y)]
-    geotable = georef(table, coords)
-    return geotable
 end
 
 function fit_variogram(x::AbstractVector{T}, y::AbstractVector{T}, input::AbstractVector{T}; nlags=90, maxlag=7e5, fig_path="", sample_frac=1) where T <: Real
@@ -288,19 +247,120 @@ function fit_variogram(x::AbstractVector{T}, y::AbstractVector{T}, input::Abstra
     # compute empirical variogram
     U = data |> UniqueCoords()
     gamma = EmpiricalVariogram(U, :Z; estimator=:cressie, nlags,  maxlag) # for some reason the lsqfit has more problems fitting a good line for larger nlags
-    xvals, yvals = values(gamma)
-    # fit a covariance function
-    varg = get_var(gamma; adjust_sill=false)
-
-    # plot
-    if !isempty(fig_path)
-        Plots.scalefontsizes()
-        Plots.scalefontsizes(1.9)
-        Plots.scatter(ustrip.(xvals) .* 1e-3, yvals, label="Empirical variogram", color=:black, markerstrokewidth=0, wsize=(1400,800), xlabel="Distance (km)", bottommargin=10Plots.mm, leftmargin=4Plots.mm)
-        Plots.plot!([1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]), label="Variogram fit", lw=3, ylims=(0,1.1))
-        Plots.savefig(joinpath(fig_path,"variogram.png"))
-    end
     return gamma
+end
+
+# next two functions mostly copied from https://github.com/JuliaEarth/GeoStatsFunctions.jl, modified to fit a sum of variograms with different ranges
+# modified from GeoStatsFunctions.jl fit(
+function fit_varg(F, f;  nVmax=3, kwargs...)
+    # fit each variogram type
+    res = [fit_impl(F, f, nVs; kwargs...) for nVs in 1:nVmax]
+    fs, ϵs = first.(res), last.(res)
+
+    # return best candidate
+    fs[argmin(ϵs)]
+end
+
+# modified from GeoStatsFunctions.jl _fit()
+function fit_impl(
+    V::Type{<:Variogram},
+    g::EmpiricalVariogram,
+    nVs=2;
+    range=nothing,
+    sill=nothing,
+    nugget=nothing,
+    maxrange=nothing,
+    maxsill=nothing,
+    maxnugget=nothing
+  )
+    # custom ball of given radius
+    ball(r) = MetricBall(r, g.distance)
+
+
+    # coordinates of empirical variogram
+    x = g.abscissa
+    y = g.ordinate
+    n = g.counts
+
+
+    # discard invalid bins
+    x = x[n .> 0]
+    y = y[n .> 0]
+    n = n[n .> 0]
+
+
+    # strip units of coordinates
+    ux = unit(eltype(x))
+    uy = unit(eltype(y))
+    x′ = ustrip.(x)
+    y′ = ustrip.(y)
+
+
+    # strip units of kwargs
+    range′ = isnothing(range) ? range : ustrip(ux, range)
+    sill′ = isnothing(sill) ? sill : ustrip(uy, sill)
+    nugget′ = isnothing(nugget) ? nugget : ustrip(uy, nugget)
+    maxrange′ = isnothing(maxrange) ? maxrange : ustrip(ux, maxrange)
+    maxsill′ = isnothing(maxsill) ? maxsill : ustrip(uy, maxsill)
+    maxnugget′ = isnothing(maxnugget) ? maxnugget : ustrip(uy, maxnugget)
+
+
+    # evaluate weights
+    f = nothing
+    w = isnothing(f) ? n / sum(n) : map(xᵢ -> ustrip(f(xᵢ)), x)
+
+
+    # objective function
+    function J(θ)
+      γ = sum([V(ball(rd); sill, nugget) for (rd, sill, nugget) in zip(θ[1:3:end], θ[2:3:end], θ[3:3:end])])
+      sum(i -> w[i] * (γ(x′[i]) - y′[i])^2, eachindex(w, x′, y′))
+    end
+
+
+    # linear constraint (sill ≥ nugget)
+    L(θ) = all(θ[2:3:end] .≥ θ[3:3:end]) ? 0.0 : maximum(θ[3:3:end] .- θ[2:3:end])
+
+
+    # penalty for linear constraint (J + λL)
+    λ = sum(yᵢ -> yᵢ^2, y′)
+
+
+    # maximum range, sill and nugget
+    xmax = maximum(x′)
+    ymax = maximum(y′)
+    rmax = isnothing(maxrange′) ? xmax : maxrange′
+    smax = isnothing(maxsill′) ? ymax : maxsill′
+    nmax = isnothing(maxnugget′) ? ymax : maxnugget′
+
+
+    # initial guess
+    rₒ = isnothing(range′) ? rmax / 3 : range′
+    sₒ = isnothing(sill′) ? 0.95 * smax : sill′
+    nₒ = isnothing(nugget′) ? 0.01 * smax : nugget′
+    # θₒ = repeat([rₒ, sₒ, nₒ], nVs)
+    θₒ = vcat([i*[rₒ, sₒ, nₒ] for i in 0.3.*(1:nVs)]...)
+
+    # box constraints
+    δ = 1e-8
+    rₗ, rᵤ = isnothing(range′) ? (zero(rmax), rmax) : (range′ - δ, range′ + δ)
+    sₗ, sᵤ = isnothing(sill′) ? (zero(smax), smax) : (sill′ - δ, sill′ + δ)
+    nₗ, nᵤ = isnothing(nugget′) ? (zero(nmax), nmax) : (nugget′ - δ, nugget′ + δ)
+    l = repeat([rₗ, sₗ, nₗ], nVs)
+    u = repeat([rᵤ, sᵤ, nᵤ], nVs)
+
+
+    # solve optimization problem
+    sol = Optim.optimize(θ -> J(θ) + λ * L(θ), l, u, θₒ)
+    ϵ = Optim.minimum(sol)
+    θ = Optim.minimizer(sol)
+
+
+    # optimal variogram (with units)
+    # γ = V(ball(θ[1] * ux), sill=θ[2] * uy, nugget=θ[3] * uy)
+    γ = sum([V(ball(rd); sill, nugget) for (rd, sill, nugget) in zip(θ[1:3:end].*ux, θ[2:3:end].*uy, θ[3:3:end].*uy)])
+
+
+    γ, ϵ
 end
 
 function generate_random_fields(output_dir; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file, n_fields)
@@ -422,7 +482,7 @@ function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, 
         end
         if save_coords
             # save coordinates of the test points
-            crds = coords.(stest)
+            crds = GeoStats.coords.(stest)
             xcoord_blocks[j] = [ustrip(c.x) for c in crds]
             ycoord_blocks[j] = [ustrip(c.y) for c in crds]
         end
@@ -453,20 +513,12 @@ function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, v
     return interp
 end
 
-function geostats_interpolation(grid_kriging, grid_out,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
+function geostats_interpolation(target_grid,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
                                 outline_shp_file,
                                 csv_preprocessing, jld2_preprocessing;
                                 maxn::Int,                      # maximum neighbors for interpolation method
                                 method::Symbol=:kriging,        # either :kriging or :sgs
                                 n_fields::Int=10)               # number of simulations in case of method=:sgs
-
-    # get filenames at grid_kriging
-    bedmachine_original, _        = create_bedmachine_grid(grid_kriging)
-    reference_file_g150, ref_file = create_grimpv2(grid_kriging, bedmachine_original)
-    _, obs_aero_file              = create_aerodem(grid_kriging, outline_shp_file, bedmachine_original, reference_file_g150)
-
-    # get filename at grid_out
-    # aerodem_g150, obs_aero_file_gr_out = create_aerodem(grid_out, outline_shp_file, bedmachine_original, reference_file_g150)
 
     # define names of output directories
     main_output_dir  = joinpath("output","geostats_interpolation")
@@ -476,9 +528,17 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
     # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
     df_all = CSV.read(csv_preprocessing, DataFrame)
     dict   = load(jld2_preprocessing)
-    @unpack I_no_ocean, idx_aero, params = dict
+    @unpack I_no_ocean, idx_aero, gamma, href_file, coreg_grid = dict
     @unpack destandardize = get_stddization_fcts(jld2_preprocessing)
-    varg = custom_var(params)
+    varg = get_var(gamma)
+
+    # get filenames at target_grid
+    bedmachine_original, _     = create_bedmachine_grid(target_grid)
+    _, ref_coreg_file_geoid, _ = create_grimpv2(target_grid, coreg_grid, bedmachine_original)
+    _, obs_aero_file           = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
+
+    # get filename at grid_out
+    # aerodem_g150, obs_aero_file_gr_out = create_aerodem(grid_out, outline_shp_file, bedmachine_original, reference_file_g150)
 
     # derive indices for cells to interpolate
     ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
@@ -489,8 +549,8 @@ function geostats_interpolation(grid_kriging, grid_out,         # make kriging a
 
     # prepare predicted field, fill with aerodem observations where available
     h_aero               = NCDataset(obs_aero_file)["Band1"][:]
-    h_ref                = NCDataset(ref_file)["Band1"][:]
-    h_ref                = replace_missing(h_ref, 0.0)
+    h_ref                = NCDataset(href_file)["surface"][:]
+    h_ref                = nomissing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
     std_predict          = zeros(size(h_aero))

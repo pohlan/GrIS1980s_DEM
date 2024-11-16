@@ -7,12 +7,12 @@ import ArchGDAL as AG
 import GeoFormatTypes as GFT
 
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile, JLD2, UnPack
-using Downloads, Cascadia, Gumbo, HTTP, PyCall
+using Downloads, Cascadia, Gumbo, HTTP, PythonCall
 using Printf, ProgressMeter
-using Statistics, GeoStats, StatsBase, Distributions, Interpolations, LsqFit, ImageFiltering, ParallelRandomFields.grf2D_CUDA
-using Arpack, LinearAlgebra, ImageMorphology, Geomorphometry
+using Statistics, GeoStats, StatsBase, Distributions, Interpolations, ImageFiltering, ParallelRandomFields.grf2D_CUDA
+using Arpack, LinearAlgebra, ImageMorphology, Geomorphometry, Optim
 using DataStructures: OrderedDict
-import Plots, StatsPlots
+using Plots, StatsPlots, LaTeXStrings
 
 export parse_commandline, get_ix, get_iy
 export SVD_reconstruction, create_reconstructed_bedmachine, prepare_obs

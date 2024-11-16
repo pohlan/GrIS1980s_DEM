@@ -2,8 +2,8 @@ using svd_IceSheetDEM, JLD2, UnPack, Glob, Plots, LaTeXStrings, Statistics, GeoS
 
 # plot
 Plots.scalefontsizes()
-Plots.scalefontsizes(1.9)
-attr = (;margin=10Plots.mm, size=(1000,700), lw=2, markerstrokewidth=0, marker=:circle)
+Plots.scalefontsizes(svd_IceSheetDEM.font_scaling)
+attr = (;margin=10Plots.mm, size=(svd_IceSheetDEM.wwidth,svd_IceSheetDEM.wheight), lw=2.5, markerstrokewidth=0, marker=:circle)
 
 output_dir = "output/validation/"
 fig_dir    = joinpath(output_dir, "figures/")
@@ -22,8 +22,12 @@ dict = load(jld2_preprocessing)
 @unpack I_no_ocean = dict
 
 # choose SVD parameterization (λ and r)
-λ0 = 1e5
-r0 = 300
+λ0 = Dict("SVD_dh" => 1e7,
+          "SVD_h"  => 1e7,
+          "SVD_dh_detrend" => 1e5)
+r0 = Dict("SVD_dh" => 700,
+          "SVD_h"  => 700,
+          "SVD_dh_detrend" => 300)
 
 xlabel = "Elevation of reference DEM (m)"
 cols   = Plots.palette(:tol_bright)[2:end]
@@ -34,15 +38,15 @@ p_median_lin = plot()
 p_std_lin    = plot()
 p_variog = plot()
 
-for (f,color) in zip(f_dict, cols)
+for f in f_dict
     @unpack xc, yc, idx, h_ref, grd, method = load(f)
     # if method == "SVD_h" continue end
     if method == "kriging"
         @unpack difs = load(f)
     else
         @unpack λs, rs, m_difs, nfiles = load(f)
-        iλ = findfirst(λs .== λ0)
-        ir = findfirst(rs .== r0)
+        iλ = findfirst(λs .== λ0[method])
+        ir = findfirst(rs .== r0[method])
         difs = m_difs[iλ, ir]
     end
 
@@ -53,6 +57,8 @@ for (f,color) in zip(f_dict, cols)
         @unpack binfield1 = load(f)
         dif_destd = destandardize(difs, binfield1, h_ref, add_mean=false)
     end
+
+    color = svd_IceSheetDEM.palette_dict[method]
 
     # heatmap
     scatter(xc, yc, marker_z=dif_destd, cmap=:bwr, clims=(-4,4), markersize=0.7, markerstrokewidth=0, label="", aspect_ratio=1, size=(500,700))
@@ -70,8 +76,9 @@ for (f,color) in zip(f_dict, cols)
     Plots.savefig(joinpath(fig_dir,"error_vs_elevation_boxplot_"*method*".png"))
     # plot only mean and std as a line plot
     abs_dh_binned = [abs.(dh) for dh in dh_binned]
-    plot!(p_median_all, bin_centers, median.(abs_dh_binned), label=method, ylabel=L"Median $|\epsilon|$ (m)", yscale=:log10; color, xlabel, attr...)
-    plot!(p_std_all,    bin_centers, std.(dh_binned), label=method, ylabel=L"Std $\epsilon$ (m)", yscale=:log10; color, xlabel, attr...)
+    plot!(p_median_all, bin_centers, median.(dh_binned), label=method, ylabel=L"Median $\epsilon$ (m)"; color, xlabel, attr...)
+    hline!(p_median_all, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
+    plot!(p_std_all,    bin_centers, std.(dh_binned), label=method, ylabel=L"Std $\epsilon$ (m)"; color, xlabel, attr...)
 
     if method == "kriging" || method == "SVD_dh_detrend"
         plot!(p_median_lin, bin_centers, median.(dh_binned), label=method, ylabel=L"Median $\epsilon$ (m)"; color, xlabel, attr...)
@@ -87,12 +94,16 @@ for (f,color) in zip(f_dict, cols)
     end
 end
 p_median_all = plot(p_median_all, legend=false)
+svd_IceSheetDEM.panel_annotate!(p_median_all, "a")
 p_std_all    = plot(p_std_all, legend=:bottomleft, legend_foreground_color=nothing)
+svd_IceSheetDEM.panel_annotate!(p_std_all, "b")
 p_both_all = plot(p_median_all, p_std_all, size=(1600,700), margin=10Plots.mm)
-savefig(joinpath(fig_dir, "error_metrics_vs_elevation_all_logscale.png"))
+savefig(joinpath(fig_dir, "error_metrics_vs_elevation_all.png"))
 p_median_lin = plot(p_median_lin, legend=false)
+svd_IceSheetDEM.panel_annotate!(p_median_lin, "a")
 p_std_lin = plot(p_std_lin, legend=:bottomleft, legend_foreground_color=nothing)
-p_both_lin = plot(p_median_lin, p_std_lin, size=(1600,700), margin=10Plots.mm)
+svd_IceSheetDEM.panel_annotate!(p_std_lin, "b")
+p_both_lin = plot(p_median_lin, p_std_lin, size=(2000,700), margin=15Plots.mm)
 savefig(joinpath(fig_dir, "error_metrics_vs_elevation.png"))
 plot(p_variog)
 savefig(joinpath(fig_dir, "error_variogram.png"))
@@ -143,14 +154,16 @@ end
 # plot results for different number of training files
 # iλ = findfirst(λs .== 1e7)
 # ir = findfirst(rs .== 250)
-iλ = 1
-ir = 1
+λ0 = 1e5
+r0 = 300
 fs_SVD = glob("output/validation/cv_1e5.3_gr$(grd)_SVD_dh_detrend_*nfiles*.jld2")
 
 ms = []
-p = plot()
-for f_SVD in fs_SVD[2:end]
+p = plot(palette=:batlow10, wsize=(svd_IceSheetDEM.wwidth, svd_IceSheetDEM.wheight))
+for f_SVD in fs_SVD
     @unpack binfield1, h_ref, m_difs, λs, rs, nfiles = load(f_SVD)
+    iλ = findfirst(λs .== λ0)
+    ir = findfirst(rs .== r0)
     difs = m_difs[iλ, ir]
 
     @unpack binfield1 = load(f_SVD)

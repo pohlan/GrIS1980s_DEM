@@ -1,3 +1,21 @@
+# Define colors for different DEMs / methods for DEM reconstruction
+pt1 = Plots.palette(:batlow10)
+pt2 = Plots.palette(:bamO25)
+# pt2 = Plots.palette(:bamO25)
+pt3 = Plots.palette(:berlin10)
+palette_dict = Dict("kriging"        => pt3[2],
+                    "SVD_dh_detrend" => pt2[6],
+                    "SVD_dh"         => pt2[4],
+                    "SVD_h"          => pt2[2],
+                    "aerodem"        => pt1[1],
+                    "GrIMP"          => pt1[7])
+
+font_scaling = 1.7
+wwidth  = 1000
+wheight = 700
+
+panel_annotate!(p, letter) = annotate!(p, (xlims(p)[1], ylims(p)[2]*1.05, Plots.text(L"\textbf{%$letter}", :left, 27)))
+
 """
     interp_raster(A, px, py, x0, y0, Δx, Δy) -> A_interp
 
@@ -177,7 +195,7 @@ function interpolate_raster_to_profile(fname, xc, yc; band="Band1")
     # read in netcdf file
     ds = NCDataset(fname)
     Z  = ds[band][:,:]
-    Z = replace_missing(Z, NaN)
+    Z  = nomissing(Z, NaN)
     Z[Z .== 0.0] .= NaN
     x  = ds["x"][:]
     y  = ds["y"][:]

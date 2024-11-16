@@ -117,7 +117,7 @@ function prepare_obs_SVD(gr, csv_dest, I_no_ocean, data_mean, output_dir, fig_di
         CSV.write(tempname_csv, df_atm)
         gdalgrid(tempname_csv; gr, dest=tempname_nc)
     end
-    obs_atm = NCDataset(tempname_nc)["Band1"][:]
+    obs_atm = NCDataset(tempname_nc)["Band1"][:,:]
     idx_atm = findall(.!ismissing.(obs_atm))
 
     # find aerodem indices
