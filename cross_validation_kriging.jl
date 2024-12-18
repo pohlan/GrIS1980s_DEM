@@ -39,24 +39,27 @@ flds = folds(geotable, BlockFolding(ℓ))
 # flds = folds(geotable, BallFolding(MetricBall(ℓ)))
 # flds = folds(geotable, OneFolding())
 
-maxn = 1600
+maxns = [300]
 
-function evaluate_fun(i_train,i_test)
-    interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
-    return interp.Z
+for maxn in maxns
+    println(maxn)
+    function evaluate_fun(i_train,i_test)
+        interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
+        return interp.Z
+    end
+    difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
+
+    # get indices
+    idxs = [Int[] for i in flds]
+    for (i,fs) in enumerate(flds)
+        idxs[i] = fs[2]
+    end
+    idx = vcat(idxs...)
+
+    logℓ      = round(log10(ℓ),digits=1)
+    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
+    jldsave(dest; maxn, difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
 end
-difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
-
-# get indices
-idxs = [Int[] for i in flds]
-for (i,fs) in enumerate(flds)
-    idxs[i] = fs[2]
-end
-idx = vcat(idxs...)
-
-logℓ      = round(log10(ℓ),digits=1)
-dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_kriging.jld2")
-jldsave(dest; difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
 
 
 
@@ -79,12 +82,12 @@ Plots.savefig(joinpath(fig_dir, "map_validation_maxn$maxn.png"))
 # Determine good maxns through morphological gradient #
 #######################################################
 bedmachine_original, bedm_file = svd_IceSheetDEM.create_bedmachine_grid(grd)
-reference_file_g150, ref_file  = svd_IceSheetDEM.create_grimpv2(grd, bedmachine_original)
+reference_file_g150, _, ref_file  = svd_IceSheetDEM.create_grimpv2(grd, dict["coreg_grid"], bedmachine_original)
 
 # derive indices for cells to interpolate, this time interpolate the points we don't know, technically no validation!
 ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
-xsp = 800:1150
-ysp = 500:850
+xsp = 650:1300
+ysp = 250:800
 x           = NCDataset(ref_file)["x"][:]
 y           = NCDataset(ref_file)["y"][:]
 ix = get_ix.(ir_sim, length(x))
@@ -97,9 +100,10 @@ geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend[ir_keep_df], df_all.x
 
 
 # loop through maxns and calculate the morphological gradient each time; if high, good indication that maxn is too low
-maxns = [1500, 2000, 2300]
-∑grad = zeros(length(maxns))
+maxns = [10, 100, 1500, 3000]∑grad = zeros(length(maxns))
 wallt = zeros(length(maxns))
+m_interps = zeros(length(xsp), length(ysp), length(maxns))
+grads     = zeros(length(xsp), length(ysp), length(maxns))
 for (im,maxn) in enumerate(maxns)
     println("maxn = $maxn")
     tic = Base.time()
@@ -107,7 +111,9 @@ for (im,maxn) in enumerate(maxns)
     toc = Base.time() - tic
     m_interp = zeros(length(x),length(y))
     m_interp[ir_sim[ir_keep]] .= mean.(interp.Z)
+    m_interps[:,:,im] = m_interp[xsp, ysp]
     grad = mgradient(m_interp)
+    grads[:,:,im] = grad[xsp, ysp]
     ∑grad[im] = sum(grad)
     wallt[im] = toc
     p1 = Plots.heatmap(m_interp[xsp,ysp]',cmap=:bwr, clims=(-4,4), aspect_ratio=1)
@@ -118,5 +124,40 @@ for (im,maxn) in enumerate(maxns)
     sgrd = ∑grad[im]
     print("Wall time: $tt minutes, "); println("sumgrad = $sgrd")
 end
+dict_to_save = (; maxns, wallt, m_interps, grads)
+jldsave("output/validation/kriging_findmaxn.jld2"; dict_to_save...)
+
 Plots.plot(maxns, ∑grad, marker=:circle, label="", xlabel="max  # neighbors kriging", title="Beucher morphological gradient", ylabel="sum(gradient)")
 Plots.savefig(joinpath(fig_dir, "maxn_vs_gradient.png"))
+
+
+outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"
+shp              = Shapefile.shapes(Shapefile.Table(outline_shp_file))
+
+Plots.scalefontsizes()
+Plots.scalefontsizes(1.6)
+@unpack maxns, m_interps = load("output/validation/kriging_findmaxn.jld2")
+ps = Plots.Plot{Plots.GRBackend}[]
+clims=(-4,4)
+cmap = :RdBu
+for m in axes(m_interps, 3)
+    # cbar = m == 3 ? true : false
+    yticks = m == 1 ? true : false
+    pi = heatmap(x[xsp], y[ysp], m_interps[:,:,m]', title="\n"*L"\mathrm{n_{obs}} = "*"$(maxns[m])", aspect_ratio=1, wsize=(1500,400), grid=false, cbar=false, tick_direction=:out, titlefontsize=18; clims, cmap)
+    if m !== 1
+        pi = plot(pi, ytickfontsize=1, ytickfontcolor=:white)
+    end
+    plot!(shp, xlims=extrema(x[xsp]), ylims=extrema(y[ysp]), fill=nothing, lw=0.5)
+    push!(ps, pi)
+end
+p_panels = plot(ps..., size=(3000, 500), layout=(1,4), leftmargin=10Plots.mm, rightmargin=10Plots.mm, topmargin=-10Plots.mm, bottommargin=-10Plots.mm)
+
+xx = range(clims...,1000)
+zz = zero(xx)' .+ xx
+p_c = heatmap(xx, xx, zz, ratio=15, xticks=false, legend=false, fc=cgrad(cmap), lims=(-4,4), framestyle=:box, left_margin=-200Plots.mm, top_margin=30Plots.mm, bottom_margin=30Plots.mm, ymirror=true) #, size=(10,100))
+annotate!(40, 0.0, text("m", 18, "Computer Modern", :left))
+plot(p_c)
+
+# plot again everything together
+plot(p_panels, p_c, right_margin=-10Plots.mm) #; bottom_margin=-40Plots.mm, size=(2100,600), top_margin=10Plots.mm)
+savefig("output/validation/figures/kriging_interp_maps_maxn.png")

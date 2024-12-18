@@ -23,10 +23,6 @@ x = NCDataset(template_file)["x"][:]
 y = NCDataset(template_file)["y"][:]
 const grd = Int(x[2] - x[1])
 
-# get data
-bedmachine_original, bedm_file = svd_IceSheetDEM.create_bedmachine_grid(grd)
-reference_file_g150, ref_file  = svd_IceSheetDEM.create_grimpv2(grd, bedmachine_original)
-
 csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file; blockspacing=grd/3, nbins1=7, nbins2=12)
 
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing

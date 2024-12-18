@@ -4,9 +4,9 @@ pt2 = Plots.palette(:bamO25)
 # pt2 = Plots.palette(:bamO25)
 pt3 = Plots.palette(:berlin10)
 palette_dict = Dict("kriging"        => pt3[2],
-                    "SVD_dh_detrend" => pt2[6],
+                    "SVD_dh_detrend" => pt2[2],
                     "SVD_dh"         => pt2[4],
-                    "SVD_h"          => pt2[2],
+                    "SVD_h"          => pt2[6],
                     "aerodem"        => pt1[1],
                     "GrIMP"          => pt1[7])
 
@@ -14,7 +14,9 @@ font_scaling = 1.7
 wwidth  = 1000
 wheight = 700
 
-panel_annotate!(p, letter) = annotate!(p, (xlims(p)[1], ylims(p)[2]*1.05, Plots.text(L"\textbf{%$letter}", :left, 27)))
+panel_annotate!(p, letter) = annotate!(p, (xlims(p)[1]+(xlims(p)[2]-xlims(p)[1])*0.02, ylims(p)[1]+(ylims(p)[2]-ylims(p)[1])*1.07, Plots.text(L"\textbf{%$letter}", :left, p.attr[:plot_titlefontsize]-1)))
+panel_annotate_xlog!(p, letter) = annotate!(p, (10 .^(log10(xlims(p)[1])+(log10(xlims(p)[2])-log10(xlims(p)[1]))*0.02), ylims(p)[1]+(ylims(p)[2]-ylims(p)[1])*1.07, Plots.text(L"\textbf{%$letter}", :left, p.attr[:plot_titlefontsize]-1)))
+panel_annotate_ylog!(p, letter) = annotate!(p, (xlims(p)[1]+(xlims(p)[2]-xlims(p)[1])*0.02, 10 .^(log10(ylims(p)[1])+(log10(ylims(p)[2])-log10(ylims(p)[1]))*1.07), Plots.text(L"\textbf{%$letter}", :left, p.attr[:plot_titlefontsize]-1)))
 
 """
     interp_raster(A, px, py, x0, y0, Δx, Δy) -> A_interp

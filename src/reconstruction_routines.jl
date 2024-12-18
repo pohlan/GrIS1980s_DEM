@@ -153,11 +153,12 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     U_A, Σ_A, V_A = svd(A)
     D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
     v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
+    # v_rec         = (transpose(A)*W*A + λ*I)^(-1) * transpose(A)*W*x_data
     x_rec         = UΣ[:,1:r]*v_rec
     return v_rec, x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false, input="dh_detrend")
+function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false, input="h")
     # define output paths
     main_output_dir = "output/SVD_reconstruction/"
     fig_dir = joinpath(main_output_dir, "figures")
@@ -169,11 +170,13 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     @unpack I_no_ocean, bfields_file, href_file = dict
     standardize, destandardize = get_stddization_fcts(jld2_preproc)
 
-    h_ref        = NCDataset(href_file)["surface"][:]
+    h_ref        = NCDataset(href_file)["surface"][:,:]
+    # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(gr).nc")["Band1"][:,:], 1)
 
     UΣ, data_mean, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, data_mean, main_output_dir, fig_dir; input)
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
+    # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
     # ad v_rec to output and save
@@ -210,16 +213,21 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     end
     dem_rec[dem_rec .<= 0] .= no_data_value
 
+    # estimated error from cross-validation
+    # std_error =     # read in std_error field saved in plot_validation_results
+
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
     filename    = joinpath(main_output_dir,"rec_lambda_1e$logλ"*"_g$gr"*"_r$(r)_$(input).nc")
-    layername   = "surface"
-    attributes  = Dict(layername => Dict{String, Any}("long_name" => "ice surface elevation",
+    attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
+                    #    "std_error" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
+                    #                                    "units" => "m")
                         )
-    save_netcdf(filename, href_file, [dem_rec], [layername], attributes)
+    # save_netcdf(filename, href_file, [dem_rec, std_error], ["surface", "std_error"], attributes)
+    save_netcdf(filename, href_file, [dem_rec], ["surface"], attributes)
 
     # plot and save difference between reconstruction and observations
     save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
@@ -264,7 +272,7 @@ function create_reconstructed_bedmachine(rec_file)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    dest        = "output/bedmachine1980_reconstructed_g$(gr).nc"
+    dest        = "output/bedmachine1980_reconstructed_g$(Int(gr)).nc"
     layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
     layernames  = ["surface", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)

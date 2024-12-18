@@ -434,6 +434,22 @@ function SVD_random_fields(rec_file::String; nbins1::Int=10, nbins2::Int=30,  # 
     return rf_files
 end
 
+function uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
+    itp         = interpolate(std.(dh_binned), BSpline(Quadratic(Interpolations.Flat(OnCell()))))
+    bin_c_range = range(extrema(bin_centers)..., length(bin_centers)) # convert array to range
+    itp = Interpolations.scale(itp, bin_c_range)
+    itp = extrapolate(itp, Interpolations.Flat())
+    # itp  = linear_interpolation(bin_centers, std.(dh_binned), extrapolation_bc=Interpolations.Flat())
+    # sitp = extrapolate(itp, Interpolations.Flat())
+
+    # save in matrix
+    rec_errors          = zeros(size(dem_ref)) .+ no_data_value
+    id_surf             = findall(nomissing(dem_ref .!= no_data_value, false) .|| .!ismissing.(dem_ref))
+    rec_errors[id_surf] = itp.(dem_ref[id_surf])
+
+    return itp, rec_errors
+end
+
 # for validation
 function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, save_coords=false)
     dif_blocks     = [Float64[] for i in flds]
@@ -548,13 +564,13 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     geotable    = make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
 
     # prepare predicted field, fill with aerodem observations where available
-    h_aero               = NCDataset(obs_aero_file)["Band1"][:]
-    h_ref                = NCDataset(href_file)["surface"][:]
+    h_aero               = NCDataset(obs_aero_file)["Band1"][:,:]
+    h_ref                = NCDataset(href_file)["surface"][:,:]
     h_ref                = nomissing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
     std_predict          = zeros(size(h_aero))
-    bin_field_1          = bin1_fct(h_ref, grid_kriging)
+    bin_field_1          = bin1_fct(h_ref, target_grid)
 
     if method == :sgs  # sequential gaussian simulations
         output_path = joinpath(main_output_dir, "SEQ_simulations/")
@@ -579,11 +595,12 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
         h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
         h_predict[h_predict .<= 0.] .= no_data_value
         # field of estimated errors
-        std_predict[ir_sim]         .= destandardize(std.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim], add_mean=false)
-        std_predict[h_predict .== no_data_value] .= no_data_value
+        # std_predict[ir_sim]         .= destandardize(std.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim], add_mean=false)
+        # std_predict[h_predict .== no_data_value] .= no_data_value
         # save as netcdf
-        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(grid_kriging).nc")
-        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_predict], ["surface", "std_error"], Dict("surface" => Dict{String,Any}(), "std_error" => Dict{String,Any}()))
+        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
+        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+        # save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_predict], ["surface", "std_error"], Dict("surface" => Dict{String,Any}(), "std_error" => Dict{String,Any}()))
 
         # gdalwarp to higher resolution
         # dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")

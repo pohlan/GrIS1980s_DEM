@@ -23,11 +23,8 @@ outl  = nomissing(outl, 0.0)
 # Heatmaps of data #
 ####################
 
-mg = mgradient(outl, mode=:external)
-i_outl = findall(vec(mg) .!= 0.)
-points = PointSet([Point(ix, iy) for (ix,iy) in zip(x[svd_IceSheetDEM.get_ix.(i_outl, length(x))], y[svd_IceSheetDEM.get_iy.(i_outl, length(x))])])
-xx    = [a.coords.x for a in points]
-yy    = [a.coords.y for a in points]
+outline_shp_crs = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"
+shp              = Shapefile.shapes(Shapefile.Table(outline_shp_crs))
 
 function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
     # plotting parameters
@@ -45,12 +42,12 @@ function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4
     i_nans = m_plot .== 0
     i_nans[I_no_ocean] .= false
     m_plot[i_nans] .= NaN
-    Plots.scatter(xx,yy, markersize=0.3, color="black", label="", markerstrokewidth=0)
     # Plots.heatmap(mg', cmap=:Blacks)
-    Plots.heatmap!(x, y, m_plot'; cmap) #, aspect_ratio=1, xlims=(-7e5,8e5); clims)
+    heatmap(x, y, m_plot'; cmap) #, aspect_ratio=1, xlims=(-7e5,8e5); clims)
     id_df_atm = findall(df_all.source .== :atm .|| df_all.source .== "atm")
-    Plots.scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=2.5, markerstrokewidth=0, aspect_ratio=1, xlims=(-7e5,8e5), ylims=(-3.32e6, -0.78e6), grid=false, bottommargin=0Plots.cm, rightmargin=8Plots.cm, leftmargin=10Plots.cm; wsize, xlabel, ylabel, colorbar_title, title, clims, cmap)
-    Plots.savefig(fname)
+    scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=6.0, markerstrokewidth=0, aspect_ratio=1, xlims=(-7e5,8e5), ylims=(-3.32e6, -0.78e6), grid=false, bottommargin=0Plots.cm, rightmargin=8Plots.cm, leftmargin=10Plots.cm; wsize, xlabel, ylabel, colorbar_title, title, clims, cmap)
+    plot!(shp, fill=nothing, lw=1)
+    savefig(fname)
     return
 end
 
@@ -106,8 +103,8 @@ annotate!(p_hist, (xlims(p_hist)[1], ylims(p_hist)[2]*1.05, text(L"\textbf{c}", 
 # variogram
 xvals, yvals = values(gamma)
 varg = svd_IceSheetDEM.get_var(gamma; adjust_sill=false)
-p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals, label="Empirical variogram", color=:cornflowerblue, markerstrokewidth=0, wsize=(wwidth,wheight), xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", margin=12Plots.mm)
-plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]), label="Variogram fit", lw=3.5, ylims=(0,1.1), color=:black, foreground_color_legend=nothing)
+p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:cornflowerblue, markerstrokewidth=0, wsize=(wwidth,wheight), xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", margin=12Plots.mm)
+plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing)
 annotate!(p_varg, (xlims(p_varg)[1], ylims(p_varg)[2]*1.05, text(L"\textbf{d}", :left, 27)))  #  "Times Bold", "Helvetica Bold"
 
 p_all = plot(p_std, p_bias, p_hist, p_varg, wsize=(2500, 1200), left_margin=30Plots.mm)

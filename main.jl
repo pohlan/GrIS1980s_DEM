@@ -54,6 +54,6 @@ maxn = parsed_args["maxn"]
 
 grid_kriging = gr
 tic = Base.time()
-interp_rec_file = geostats_interpolation(grid_kriging, gr, outline_shp_file, csv_preprocessing, jld2_preprocessing; maxn)
+interp_rec_file = geostats_interpolation(grid_kriging, outline_shp_file, csv_preprocessing, jld2_preprocessing; maxn)
 toc = Base.time() - tic
 println(toc ./ 3600)
