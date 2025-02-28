@@ -73,15 +73,12 @@ function prepare_model(model_files, standardize, destandardize, bfields_file, h_
             dc .= standardize(dc, data_binfield1, data_binfield2)
         end
     end
-    # subtract mean again for it to be truly centered
-    data_mean  = mean(Data_ice, dims=2)
-    Data_ice  .= Data_ice .- data_mean
 
     # check that reversing of standardization leads back to original data
     if input == "dh_detrend"
-        @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1] .+ data_mean, data_binfield1, data_binfield2), atol=1e-2))
+        @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1], data_binfield1, data_binfield2), atol=1e-2))
     elseif input == "dh"
-        @assert all(isapprox.(data_check, data_ref .- (Data_ice[:,1] .+ data_mean), atol=1e-3))
+        @assert all(isapprox.(data_check, data_ref .- (Data_ice[:,1]), atol=1e-3))
     end
 
     # compute SVD
@@ -96,14 +93,14 @@ function prepare_model(model_files, standardize, destandardize, bfields_file, h_
     # save in dictionary for later
     nfiles = length(model_files)
     components_saved = joinpath(output_dir, "SVD_components_$(input)_nfiles$(nfiles).jld2")
-    jldsave(components_saved; U, Σ, V, data_mean, data_binfield1, data_binfield2, data_ref, input, nfiles)
+    jldsave(components_saved; U, Σ, V, data_binfield1, data_binfield2, data_ref, input, nfiles)
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, data_mean, data_binfield1, data_binfield2, data_ref, Σ, components_saved
+    return UΣ, data_binfield1, data_binfield2, data_ref, Σ, components_saved
 end
 
-function prepare_obs_SVD(gr, csv_dest, I_no_ocean, data_mean, output_dir, fig_dir=""; input="dh_detrend")
+function prepare_obs_SVD(gr, csv_dest, I_no_ocean, output_dir, fig_dir=""; input="dh_detrend")
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
@@ -131,7 +128,7 @@ function prepare_obs_SVD(gr, csv_dest, I_no_ocean, data_mean, output_dir, fig_di
 
     # obtain I_obs and x_data vector
     I_obs      = findall(obs[I_no_ocean] .!= 0.0)
-    x_data     = obs[I_no_ocean[I_obs]] .- data_mean[I_obs]
+    x_data     = obs[I_no_ocean[I_obs]]
 
     if !isempty(fig_dir)
         # save matrix of observations as nc and plot
@@ -150,9 +147,7 @@ end
 
 function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_data) where T <: Real
     @views A      = UΣ[I_obs,1:r]
-    U_A, Σ_A, V_A = svd(A)
-    D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
-    v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
+    v_rec         = (transpose(A)*A + λ*I)^(-1) * transpose(A) * x_data
     # v_rec         = (transpose(A)*W*A + λ*I)^(-1) * transpose(A)*W*x_data
     x_rec         = UΣ[:,1:r]*v_rec
     return v_rec, x_rec
@@ -173,8 +168,8 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     h_ref        = NCDataset(href_file)["surface"][:,:]
     # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(gr).nc")["Band1"][:,:], 1)
 
-    UΣ, data_mean, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, data_mean, main_output_dir, fig_dir; input)
+    UΣ, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, main_output_dir, fig_dir; input)
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
@@ -198,13 +193,13 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
 
     # retrieve matrix of reconstructed DEM
     dem_rec                  = zeros(F, nx,ny)
-    dem_rec[I_no_ocean]     .= x_rec .+ data_mean
+    dem_rec[I_no_ocean]     .= x_rec
     if input == "dh_detrend"
         dem_rec[I_no_ocean] .=  destandardize(dem_rec[I_no_ocean], data_binfield1, data_binfield2)
         # check that x_data, destandardized, gives back original observations
         h_aero           = NCDataset("data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc")["Band1"][:]
         h_aero_c         = nomissing(h_aero, NaN)[I_no_ocean[I_obs]]
-        h_aero_recovered = data_ref[I_obs] .- destandardize(x_data .+ data_mean[I_obs], data_binfield1[I_obs], data_binfield2[I_obs])
+        h_aero_recovered = data_ref[I_obs] .- destandardize(x_data, data_binfield1[I_obs], data_binfield2[I_obs])
         i_c              = findall(.!isnan.(h_aero_c) .&& .!isnan.(h_aero_recovered))
         @assert all(isapprox.(h_aero_c[i_c], h_aero_recovered[i_c], atol=1e-2))
     end
