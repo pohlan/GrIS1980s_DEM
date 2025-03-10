@@ -42,7 +42,7 @@ end
 
 # define variogram function to fit
 function get_var(gamma; adjust_sill=true)
-    varg = fit_varg(ExponentialVariogram, gamma, maxnugget=0.02, nVmax=2)
+    varg = fit_varg(MaternVariogram, gamma, maxnugget=0.005, nVmax=2)
     vfct = typeof(varg) <: NestedVariogram ? typeof(varg.γs[1]).name.wrapper : typeof(varg).name.wrapper
     if adjust_sill
         if typeof(varg) <: NestedVariogram
