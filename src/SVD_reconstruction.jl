@@ -50,36 +50,9 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, output_dir; use_arpack=false, input="dh_detrend")
+function prepare_model(model_files, I_no_ocean, r, dest_file=""; use_arpack=false)
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
-    data_check = Data_ice[:,1]
-
-    # calculate difference to reference DEM
-    data_ref  = h_ref[I_no_ocean]
-    if input !== "h"
-        println("Calculating dh for model geometries.")
-        Data_ice .= data_ref .- Data_ice
-    end
-
-    # standardize model data
-    bin_field_1 = NCDataset(bfields_file)["bf_1"][:]
-    bin_field_2 = NCDataset(bfields_file)["bf_2"][:]
-    data_binfield1 = bin_field_1[I_no_ocean]
-    data_binfield2 = bin_field_2[I_no_ocean]
-    if input == "dh_detrend"
-        println("Standardizing model geometries.")
-        for dc in eachcol(Data_ice)
-            dc .= standardize(dc, data_binfield1, data_binfield2)
-        end
-    end
-
-    # check that reversing of standardization leads back to original data
-    if input == "dh_detrend"
-        @assert all(isapprox.(data_check, data_ref .- destandardize(Data_ice[:,1], data_binfield1, data_binfield2), atol=1e-2))
-    elseif input == "dh"
-        @assert all(isapprox.(data_check, data_ref .- (Data_ice[:,1]), atol=1e-3))
-    end
 
     # compute SVD
     if use_arpack
@@ -91,24 +64,25 @@ function prepare_model(model_files, standardize, destandardize, bfields_file, h_
     end
 
     # save in dictionary for later
-    nfiles = length(model_files)
-    components_saved = joinpath(output_dir, "SVD_components_$(input)_nfiles$(nfiles).jld2")
-    jldsave(components_saved; U, Σ, V, data_binfield1, data_binfield2, data_ref, input, nfiles)
+    if !isempty(dest_file)
+        nfiles = length(model_files)
+        jldsave(dest_file; U, Σ, V, nfiles)
+    end
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, data_binfield1, data_binfield2, data_ref, Σ, components_saved
+    return UΣ, Σ
 end
 
-function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir=""; input="dh_detrend")
+function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir="")
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
     # use gdalgrid to rasterize atm point data
-    df_atm      = df_all[df_all.source .== "atm", ["x", "y", input]]
-    rename!(df_atm, input => "dh")    # just because gdalgrid is hard-wired here to look for "dh" variable
-    tempname_csv = joinpath(output_dir, "$(input)_atm_temp_g$(grd).csv")
-    tempname_nc  = joinpath(output_dir, "$(input)_atm_temp_g$(grd).nc")
+    df_atm      = df_all[df_all.source .== "atm", ["x", "y", "h"]]
+    rename!(df_atm, "h" => "dh")    # just because gdalgrid is hard-wired here to look for "dh" variable
+    tempname_csv = joinpath(output_dir, "atm_temp_g$(grd).csv")
+    tempname_nc  = joinpath(output_dir, "atm_temp_g$(grd).nc")
 
     if !isfile(tempname_nc)
         CSV.write(tempname_csv, df_atm)
@@ -123,7 +97,7 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir=""; inpu
 
     # merge everything in one matrix
     obs = zero(obs_atm)
-    obs[df_all.idx[id_df_aero]] .= df_all[id_df_aero, input]
+    obs[df_all.idx[id_df_aero]] .= df_all[id_df_aero, "h"]
     obs[idx_atm]                .= obs_atm[idx_atm]
 
     # obtain I_obs and x_data vector
@@ -133,9 +107,9 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir=""; inpu
     if !isempty(fig_dir)
         # save matrix of observations as nc and plot
         obs[obs .== 0] .= no_data_value
-        save_netcdf(joinpath(output_dir,"obs_all_gr$(grd)_$(input).nc"), tempname_nc, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
+        save_netcdf(joinpath(output_dir,"obs_all_gr$(grd).nc"), tempname_nc, [obs], ["h"], Dict("h"=>Dict{String,Any}()))
         Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
-        Plots.savefig(joinpath(fig_dir, "obs_all.png"))
+        Plots.savefig(joinpath(fig_dir, "obs_SVD_all.png"))
     end
     return x_data, I_obs
 end
@@ -148,7 +122,7 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     return v_rec, x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false, input="h")
+function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false)
     # define output paths
     main_output_dir = "output/SVD_reconstruction/"
     fig_dir = joinpath(main_output_dir, "figures")
@@ -157,15 +131,15 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
 
     # get I_no_ocean and (de-)standardization functions
     dict = load(jld2_preproc)
-    @unpack I_no_ocean, bfields_file, href_file = dict
-    standardize, destandardize = get_stddization_fcts(jld2_preproc)
+    @unpack I_no_ocean, href_file = dict
 
-    h_ref        = NCDataset(href_file)["surface"][:,:]
+    h_ref        = NCDataset(href_file)["surface"]
     # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
-    UΣ, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                          = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir, fig_dir; input)
-    r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
+    saved_file    = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
+    UΣ, _         = prepare_model(model_files, I_no_ocean, r, saved_file; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir, fig_dir)
+    r             = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
@@ -180,27 +154,12 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     nx, ny                  = size(h_ref)
     dif                     = zeros(F, nx,ny)
     dif[I_no_ocean[I_obs]] .= x_rec[I_obs] .- x_data
-    if input == "dh_detrend"
-        dif[I_no_ocean[I_obs]] .= destandardize(dif[I_no_ocean[I_obs]], data_binfield1[I_obs], data_binfield2[I_obs], add_mean=false)
-    end
     err_mean                = mean(abs.(dif[I_no_ocean[I_obs]]))
     @printf("Mean absolute error: %1.1f m\n", err_mean)
 
     # retrieve matrix of reconstructed DEM
-    dem_rec                  = zeros(F, nx,ny)
-    dem_rec[I_no_ocean]     .= x_rec
-    if input == "dh_detrend"
-        dem_rec[I_no_ocean] .=  destandardize(dem_rec[I_no_ocean], data_binfield1, data_binfield2)
-        # check that x_data, destandardized, gives back original observations
-        h_aero           = NCDataset("data/aerodem/aerodem_rm-filtered_geoid-corr_g600.nc")["Band1"][:]
-        h_aero_c         = nomissing(h_aero, NaN)[I_no_ocean[I_obs]]
-        h_aero_recovered = data_ref[I_obs] .- destandardize(x_data, data_binfield1[I_obs], data_binfield2[I_obs])
-        i_c              = findall(.!isnan.(h_aero_c) .&& .!isnan.(h_aero_recovered))
-        @assert all(isapprox.(h_aero_c[i_c], h_aero_recovered[i_c], atol=1e-2))
-    end
-    if input !== "h"
-        dem_rec[I_no_ocean] .= data_ref .- dem_rec[I_no_ocean]
-    end
+    dem_rec                 = zeros(F, nx,ny)
+    dem_rec[I_no_ocean]    .= x_rec
     dem_rec[dem_rec .<= 0] .= no_data_value
 
     # estimated error from cross-validation
@@ -209,7 +168,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
-    filename    = joinpath(main_output_dir,"rec_lambda_1e$logλ"*"_g$grd"*"_r$(r)_$(input).nc")
+    filename    = joinpath(main_output_dir,"rec_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")

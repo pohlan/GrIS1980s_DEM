@@ -1,4 +1,4 @@
-name: myenv
+name: GrISenv
 channels:
   - conda-forge
 dependencies:

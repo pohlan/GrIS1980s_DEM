@@ -492,7 +492,7 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
     return atm_dh_dest_file
 end
 
-function create_reconstructed_bedmachine(rec_file)
+function create_reconstructed_bedmachine(rec_file, dest)
     # load reconstruction and determine grid size
     surfaceDEM = ncread(rec_file, "surface")
     x          = ncread(rec_file, "x")
@@ -527,7 +527,6 @@ function create_reconstructed_bedmachine(rec_file)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    dest        = "output/bedmachine1980_reconstructed_g$(Int(grd)).nc"
     layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
     layernames  = ["surface", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)

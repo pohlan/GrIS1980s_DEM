@@ -3,6 +3,8 @@
 [![CI](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml/badge.svg)](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml)
 
 ## Installation / setup
+
+### 1) Julia
 In the shell:
 ```
 $ git clone git@github.com:pohlan/svd_IceSheetDEM.git
@@ -18,7 +20,34 @@ $ julia --project      # --project directly activates the environment
 julia> ]               # takes you to the command line of the package manager
 (svd_IceSheetDEM) pkg> instantiate
 ```
-## Requirements
+### 2) Python
+This code relies on a few python packages which are called from Julia using the PythonCall package. Unfortunately, the more seemless CondaPkg setup does not work here due to some gdal incompabilities between Julia and Python packages.
+So instead one has to manually set up a conda environment for the python libraries and link those to PythonCall.
+
+First, create a conda enviroment using the environment.yml file
+```
+conda env create -f environment.yml
+```
+Get the environment path through
+```
+$ conda activate GrISenv
+$ which python
+/home/.../python
+```
+then link this environment to PythonCall by running the following in the shell / adding it to the .bashrc file:
+```
+export JULIA_CONDAPKG_BACKEND="Null"
+export JULIA_PYTHONCALL_EXE="/home/.../python"
+```
+This works best when running the julia files from the shell directly.
+When running the scripts interactively in a text editor, it may be necessary to instead add the following lines within the Julia script **before** loading the package with `using svd_IceSheetDEM`:
+```
+ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
+ENV["JULIA_PYTHONCALL_EXE"] = "/home/.../python"
+```
+
+
+## Additional requirements
 
 ### 1) Local files
 All training data and a shape file outlining the ice must be available locally.
@@ -32,47 +61,74 @@ password abcd123
 replacing `myusername` with the actual username and `abcd123` with the password.
 
 
-## Files
-- `main.jl`: Downloads the required data and performs preprocessing steps (only the first time). Then it solves the least square fit problem and saves a netcdf in the same format as a bedmachine file.
-- `SVD_lsqfit.tex`: tex file deriving the least squares solution
-- `params_vs_error.jl`: Plots the mean absolute error of the reconstruction with respect to the input data against different values of a certain parameter (L-curve approach). The parameter can either be the regularization parameter, the number of ensembles in the training data or the truncation of the SVD. Note that this is not the best approach since it is compared to the data that already went into the least square solution, but unfortunately there is no other validation data available.
-- `data_download_processing/`: retrieving ATM and bamber data, maybe needed at a later point
+## Running the scripts
 
-## Run the script from the shell
-The `main.jl` can be run directly from the shell with the following command line arguments:
+### Order in which to run from scratch (probably don't want to run everything in one go)
+The first script that is run will download all the data and do the pre-processing.
+1) `cross_validation_kriging.jl`: the 'shortest' but may still take several hours / a full day
+2) `cross_validation_SVD.jl`: high memory requirement (>64GB RAM)
+3) `kriging_reconstruction.jl`: may take several days
+4) `SVD_reconstruction.jl`: high memory requirement (>64GB RAM)
+4) `plot...`: Produce figures for the study, all from saved outputs.
+
+### Run a script from the shell
+The scripts above can be run directly from the shell with the following command line arguments:
 
 ```
-$ julia --project main.jl --help
+$ julia --project cross_validation_kriging.jl --help
 
-usage: main.jl [--λ Λ] [--r R] --training_data [TRAINING_DATA...]
-               [--imbie_shp_file IMBIE_SHP_FILE] [-h]
+usage: cross_validation_kriging.jl [--λ Λ] [--r R]
+                        --training_data [TRAINING_DATA...]
+                        --shp_file SHP_FILE [--use_arpack USE_ARPACK]
+                        [--maxn MAXN] [--grid_size GRID_SIZE] [-h]
 
 optional arguments:
   --λ, --lambda Λ       regularization parameter for the least squares
-                        problem (type: Float64, default: 100000.0)
+                        problem (type: Float64, default: 1.0e7)
   --r R                 truncation of SVD, default is a full SVD
                         (type: Int64, default: 5076944270305263616)
   --training_data [TRAINING_DATA...]
-                        training files, e.g. train_folder/usurf*.nc
-  --imbie_shp_file IMBIE_SHP_FILE
-                        shape file outlining the ice
+                        model-generated realizations of ice sheet
+                        elevation as netcdf files, e.g.
+                        train_folder/usurf*.nc
+  --shp_file SHP_FILE   shape file outlining the ice sheet
+  --use_arpack USE_ARPACK
+                        if set to true, the Arpack svd is used instead
+                        of the standard LinearAlgebra algorithm;
+                        Arpack is iterative and matrix free and thus
+                        useful when memory becomes limiting, but it
+                        can be slower (type: Bool, default: false)
+  --maxn MAXN           maximum number of neighbors used for kriging
+                        (type: Int64, default: 1500)
+  --grid_size GRID_SIZE
+                        cell size of grid, same in x and y direction;
+                        not needed for svd reconstruction where
+                        training_data is provided (type: Float64,
+                        default: 600.0)
   -h, --help            show this help message and exit
 ```
-By default it will thus run with regularization λ=1e5 and a full SVD (which happens when r is larger than the matrix size). The training data and imbie shape files always have to be provided locally and their paths have to be passed as a commandline argument, e.g.:
+The training data and the shape file outlining the ice sheet have to be provided locally and their paths have to be passed as a commandline argument. For kriging, only the `maxn`, `grid_size` and `shp_file` arguments have to be provided.
+For example:
 ```
-$ julia --project main.jl --training_data training_data/usurf_*.nc --imbie_shp_file imbie_data/gris-outline-imbie-1980_updated.shp
+$ julia --project cross_validation_kriging.jl --grid_size 600 --maxn 1500 --shp_file outline.shp
+$ julia --project cross_validation_SVD.jl --training_data training_data/usurf_*.nc --shp_file outline.shp --r 300 --lambda 1e6
 ```
 
 
 ## Run the script interactively in the REPL
 
-To change the command line arguments from within the REPL, uncomment the following section in `main.jl` and modify it for the desired parameters:
+To prescribe those parameters in interactive mode, every of the above mentioned script has a section that can be uncommented and adjusted according to the desired parameters. For instance for `cross_validation_kriging.jl`:
 
-https://github.com/pohlan/svd_IceSheetDEM/blob/4c36cb9a2046b1a6dfc8f6a7891a7da86403b645/main.jl#L7-L12
+```
+# for running the script interactively
+# ARGS = [
+#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--grid_size", 600.0]
+```
 
 Then run
 
 ```
 $ julia --project
-julia> include("main.jl")
+julia> include("cross_validation_kriging.jl")
 ```

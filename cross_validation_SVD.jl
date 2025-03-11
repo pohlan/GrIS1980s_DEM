@@ -28,11 +28,20 @@ csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
-@unpack I_no_ocean, idx_aero, href_file = dict
-@unpack standardize, destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
+@unpack I_no_ocean, idx_aero = dict
 
-h_ref        = NCDataset(href_file)["surface"][:]
-h_ref        = nomissing(h_ref, 0.0)
+# load datasets, take full SVD (to be truncated with different rs later) for different numbers of training data files
+# This step saves the output to files and is skipped if the files exist already; delete files to force
+n_training_files = [10,30,50,70]
+fnames_modes = ["" for i in eachindex(n_training_files)]
+for (i,nfils) in enumerate(n_training_files)
+    fname = joinpath(main_output_dir, "SVD_components_g$(grd)_nfiles$(nfils).jld2")
+    if isfile(fname)
+        continue
+    end
+	svd_IceSheetDEM.prepare_model(model_files[1:nfils], I_no_ocean, 200, main_output_dir) # read in model data and take svd to derive "eigen ice sheets
+    fnames_modes[i] = fname
+end
 
 # give λ and r values to loop through
 λs        = [1e4, 1e5, 1e6, 1e7, 1e8]
@@ -40,11 +49,11 @@ rs        = [10, 50, 100, 150, 200, 250]
 
 function do_validation_and_save(f)
     # load data
-    @unpack U, Σ, data_mean, data_binfield1, nfiles, input = load(f)
+    @unpack U, Σ, nfiles = load(f)
     UΣ = U*diagm(Σ)
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir, fig_dir; input)
+    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir, fig_dir)
 
     # create geotable (for GeoStats)
     x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
@@ -61,9 +70,9 @@ function do_validation_and_save(f)
     end
 
     # loop through λ and r values
-    m_difs  = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
-    m_xc = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
-    m_yc = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
+    m_difs = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
+    m_xc   = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
+    m_yc   = [Float32[] for i in eachindex(λs), j in eachindex(rs)]
     for (iλ,λ) in enumerate(λs)
         for (ir,r) in enumerate(rs)
             logλ = round(log(10, λ),digits=1)
@@ -83,14 +92,12 @@ function do_validation_and_save(f)
     idx = vcat(idxs...)
 
     # save
-    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx=I_no_ocean[I_obs[idx]], nfiles, method="SVD_"*input, binfield1=Float32.(data_binfield1[I_obs[idx]]), h_ref=Float32.(h_ref[I_no_ocean[I_obs[idx]]]))
+    to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx=I_no_ocean[I_obs[idx]], nfiles, method="SVD")
     logℓ = round(log(10,ℓ),digits=1)
-    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_SVD_"*input*"_nfiles$(nfiles).jld2")
+    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
     jldsave(dest; to_save...)
 end
 
-fls = glob("output/SVD_reconstruction/SVD_components_*_nfiles*.jld2")
-
-for f in fls
+for f in fnames_modes
     do_validation_and_save(f)
 end

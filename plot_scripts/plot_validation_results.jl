@@ -258,3 +258,38 @@ plot(p, p_std,size=(2000,700), margin=15Plots.mm )
 
 savefig(joinpath(fig_dir, "nfiles_comparison.png"))
 
+
+##############################################################
+# Figure S2: kriging interpolation for different maxn values #
+##############################################################
+
+outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"
+shp              = Shapefile.shapes(Shapefile.Table(outline_shp_file))
+
+Plots.scalefontsizes()
+Plots.scalefontsizes(1.6)
+@unpack maxns, m_interps = load("output/validation/kriging_findmaxn.jld2")
+ps = Plots.Plot{Plots.GRBackend}[]
+clims=(-4,4)
+cmap = :RdBu
+for m in axes(m_interps, 3)
+    # cbar = m == 3 ? true : false
+    yticks = m == 1 ? true : false
+    pi = heatmap(x[xsp], y[ysp], m_interps[:,:,m]', title="\n"*L"\mathrm{n_{obs}} = "*"$(maxns[m])", aspect_ratio=1, wsize=(1500,400), grid=false, cbar=false, tick_direction=:out, titlefontsize=18; clims, cmap)
+    if m !== 1
+        pi = plot(pi, ytickfontsize=1, ytickfontcolor=:white)
+    end
+    plot!(shp, xlims=extrema(x[xsp]), ylims=extrema(y[ysp]), fill=nothing, lw=0.5)
+    push!(ps, pi)
+end
+p_panels = plot(ps..., size=(3000, 500), layout=(1,4), leftmargin=10Plots.mm, rightmargin=10Plots.mm, topmargin=-10Plots.mm, bottommargin=-10Plots.mm)
+
+xx = range(clims...,1000)
+zz = zero(xx)' .+ xx
+p_c = heatmap(xx, xx, zz, ratio=15, xticks=false, legend=false, fc=cgrad(cmap), lims=(-4,4), framestyle=:box, left_margin=-200Plots.mm, top_margin=30Plots.mm, bottom_margin=30Plots.mm, ymirror=true) #, size=(10,100))
+annotate!(40, 0.0, text("m", 18, "Computer Modern", :left))
+plot(p_c)
+
+# plot again everything together
+plot(p_panels, p_c, right_margin=-10Plots.mm) #; bottom_margin=-40Plots.mm, size=(2100,600), top_margin=10Plots.mm)
+savefig("output/validation/figures/kriging_interp_maps_maxn.png")
