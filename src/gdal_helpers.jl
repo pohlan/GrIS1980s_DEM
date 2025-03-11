@@ -173,34 +173,6 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
     close(ds)
 end
 
-# """
-#     Do gdalwarp of mask manually because I couldn't find an option in gdalwarp to make the search radius larger
-#     Necessary because bedrock mask needs to be conservatively large not leaving too many individual ice cells in between.
-# """
-# function mask_downsample(bedmachine_fullres, templ, r)
-#     bedm_src = ncread(bedmachine_fullres, "mask")
-#     x_src    = ncread(bedmachine_fullres, "x")
-#     y_src    = ncread(bedmachine_fullres, "y")
-#     x_dst    = ncread(templ, "x")
-#     y_dst    = ncread(templ, "y")
-#     bedm_dst = zeros(Int8, length(x_dst), length(y_dst))
-#     @showprogress for iy in axes(bedm_dst, 2)
-#         for ix in axes(bedm_dst, 1)
-#             ix_src = findall(abs.(x_dst[ix] .- x_src) .< r)
-#             iy_src = findall(abs.(y_dst[iy] .- y_src) .< r)
-#             if !any(isempty.([ix_src, iy_src]))
-#                 pts_in_range = bedm_src[ix_src, iy_src]
-#                 if sum(pts_in_range .== 0) < 0.5*length(pts_in_range)
-#                     pts_in_range[pts_in_range .== 0] .= 10
-#                 end
-#                 bedm_dst[ix,iy] = minimum(pts_in_range)
-#             end
-#         end
-#     end
-#     return bedm_dst
-# end
-
-
 function create_bedmachine_grid(grd)
     bedmachine_path = "data/bedmachine/"
     dest_file = joinpath(bedmachine_path, "bedmachine_g$(grd).nc")
@@ -289,20 +261,6 @@ function create_grimpv2(grd_target, grd_coreg, bedmachine_original; kw="")
     gdalwarp(dest_grd_coreg_file; grd=grd_target, srcnodata=string(no_data_value), dest=dest_grd_target_file)
 
     return merged_grd_coreg, dest_grd_coreg_file, dest_grd_target_file
-end
-
-function get_surface_file(ref1, bedm_file; remove_geoid=false)
-    ds_ref1 = NCDataset(ref1)
-    surf    = ds_ref1["surface"][:]
-    if remove_geoid  # when comparing to elevation data that is not geoid corrected
-        geoid    = NCDataset(bedm_file)["geoid"][:]
-        surf   .+= geoid
-    end
-    surf[ismissing.(surf)] .= no_data_value
-    verticalrefname = remove_geoid ? "ellipsoid" : "geoid"
-    out_name = splitext(ref1)[1]*"_surface_"*verticalrefname*splitext(ref1)[2]
-    save_netcdf(out_name, ref1, [Float32.(surf)], ["surface"], Dict("surface" => Dict{String,Any}()))
-    return out_name
 end
 
 """
@@ -534,89 +492,59 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
     return atm_dh_dest_file
 end
 
-function download_esa_cci(dest_file)
-    ## the data access is a bit cumbersome in this case as the website asks for a name and affiliation which requires some tricks
-    # get csrfmiddlewaretoken
-    csrf_url = "http://products.esa-icesheets-cci.org/products/details/cci_sec_2021.zip/"
-    session  = HTTP.get(csrf_url; cookies=true)
-    body     = Gumbo.parsehtml(String(session.body))
-    inpts    = eachmatch(Selector("input"), body.root)
-    function get_token(inpts)
-        for inp in inpts
-            if !haskey(inp.attributes, "name")
-                continue
-            end
-            if getattr(inp, "name") == "csrfmiddlewaretoken"
-                return getattr(inp, "value")
-            end
-        end
-        @error "No token found."
+function create_reconstructed_bedmachine(rec_file)
+    # load reconstruction and determine grid size
+    surfaceDEM = ncread(rec_file, "surface")
+    x          = ncread(rec_file, "x")
+    grd         = x[2] - x[1]
+
+    # load bedmachine
+    _, bedmachine_file = create_bedmachine_grid(grd)
+    bedDEM             = ncread(bedmachine_file, "bed")
+    bedm_mask          = ncread(bedmachine_file, "mask")
+    ice_mask           = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
+
+    # calculate floating mask
+    ρw            = 1030
+    ρi            = 917
+    Pw            = - ρw * bedDEM
+    Pi            = ρi * (surfaceDEM - bedDEM)
+    floating_mask = (Pw .> Pi) .&& (ice_mask)  # floating where water pressure > ice pressure at the bed
+
+    # calculate mask
+    new_mask = ones(eltype(bedm_mask), size(bedm_mask))
+    new_mask[bedm_mask .== 0] .= 0 # ocean
+    new_mask[ice_mask] .= 2
+    new_mask[floating_mask]   .= 3
+
+    # make sure DEM is zero everywhere on the ocean and equal to bed DEM on bedrock
+    surfaceDEM[new_mask .== 0] .= no_data_value
+    surfaceDEM[new_mask .== 1] .= bedDEM[new_mask .== 1]
+
+    # calculate ice thickness
+    h_ice = zeros(size(surfaceDEM)) .+ no_data_value
+    h_ice[ice_mask] .= surfaceDEM[ice_mask] - bedDEM[ice_mask]
+    h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
+
+    # save to netcdf file
+    dest        = "output/bedmachine1980_reconstructed_g$(Int(grd)).nc"
+    layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
+    layernames  = ["surface", "bed", "thickness", "mask"]
+    template    = NCDataset(bedmachine_file)
+    attributes  = get_attr(template, layernames)
+    # overwrite some attributes
+    sources_rec = Dict("surface"   => "svd reconstruction",
+                       "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
+                       "thickness" => "computed from surface and bed",
+                       "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
+                       )
+    for l in layernames
+        attributes[l]["source"] = sources_rec[l]
     end
-    token = get_token(inpts)
+    attributes["mask"]["long_name"] = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
+    save_netcdf(dest, bedmachine_file, layers, layernames, attributes)
 
-    # send post
-    username    = "Peeves"
-    affiliation = "Hogwarts"
-    credentials = Dict(
-        "username" => username,
-        "affiliation" => affiliation,
-        "csrfmiddlewaretoken" => token
-    )
-    login_url = "http://products.esa-icesheets-cci.org/register_or_login_no_redirect/"
-    HTTP.post(login_url, body=credentials, cookies=true)
-
-    # download
-    file_url = "http://products.esa-icesheets-cci.org/products/download/cci_sec_2021.zip"
-    out = HTTP.download(file_url, cookies=true)
-
-    # read file out of zip folder
-    r            = ZipFile.Reader(out)
-    fnames       = [r.files[i].name for i in eachindex(r.files)]
-    fi           = findfirst(startswith.(fnames, "Release/CCI_GrIS_RA") .&& endswith.(fnames, "nc"))
-    file_to_read = r.files[fi]
-    write(dest_file, read(file_to_read, String));
-    close(r)
-    rm(out)
-    return
-end
-
-function create_dhdt_grid(grd::Int; startyr::Int, endyr::Int)
-    dhdt_dir       = "data/dhdt/"
-    download_file  = joinpath(dhdt_dir, "CCI_GrIS_RA_SEC_5km_Vers3.0_2021-08-09.nc")
-    get_filename(starty, endy) = splitext(download_file)[1]*"_g$(grd)_$(starty)-$(endy).nc"
-    if isfile(get_filename(startyr, endyr))
-        return get_filename(startyr, endyr), endyr-startyr
-    end
-    # download
-    if !isfile(download_file)
-        println("Downloading dhdt data...")
-        download_esa_cci(download_file)
-        @assert isfile(download_file)
-    end
-
-    # extract cumulative elevation change over certain years
-    println("Calculating cumulative elevation change...")
-    m0           = NCDataset(download_file)["SEC"]
-    t            = NCDataset(download_file)["time"] # center years, elevation change values are moving averages over 4yr time windows
-    ti1          = findmin(abs.(Year.(t) .- Year(startyr)))[2]
-    actual_start = Year(t[ti1]).value
-    if startyr != actual_start @warn "Given start year $startyr was not available, starting at the nearest year $actual_start instead." end
-    tin          = findmin(abs.(Year.(t) .- Year(endyr)))[2]
-    actual_end   = Year(t[tin]).value
-    if endyr != actual_end @warn "Given end year $endyr was not available, ending at the nearest year $actual_end instead." end
-
-    # sum up annual elevation change and save
-    n_years = actual_end - actual_start
-    msum    = sum(m0[ti1:tin,:,:], dims=1)[1,:,:]
-    msum[ismissing.(msum)] .= no_data_value
-    tempname = "temp.nc"
-    svd_IceSheetDEM.save_netcdf(tempname, download_file, [msum], ["msum"], Dict("msum"=> Dict{String, Any}()))
-
-    # gdalwarp to right grid
-    dest = get_filename(actual_start, actual_end)
-    gdalwarp(tempname; srcnodata="$no_data_value", grd, dest)[:,end:-1:1]
-    rm(tempname)
-    return dest, n_years
+    return dest
 end
 
 # python functions

@@ -1,104 +1,3 @@
-# Base.@kwdef mutable struct DataFiles
-
-# Base.@kwdef struct CustomVariogram
-#     params::Vector
-#     custom_var::Function
-#     varg::Variogram = custom_var(params)
-# end
-
-# function standardize(dh, bin_field_1, bin_field_2, itp_bias, itp_var)
-#     dh_centered = dh .- itp_bias.(bin_field_1, bin_field_2) .- mean_y
-#     dh_std      = itp_var.(bin_field_1, bin_field_2) .* std_y
-#      return dh_centered ./ dh_std
-# end
-# function destandardize(dh, bin_field_1, bin_field_2, itp_bias, itp_var; add_mean=true)
-#     dh_std      = dh .* std_y .* itp_var.(bin_field_1,bin_field_2)
-#     if !add_mean return dh_std end
-#     dh_mean     = itp_bias.(bin_field_1,bin_field_2) .+ mean_y
-#     return dh_std + dh_mean
-# end
-
-function get_stddization_fcts(dict_file)
-    dict = load(dict_file)
-    @unpack bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y = dict
-
-    itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
-    itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
-
-    function standardize(dh, bin_field_1::Vector, bin_field_2::Vector)
-        dh_detrend  = (dh .- itp_bias.(bin_field_1, bin_field_2)) ./  itp_var.(bin_field_1, bin_field_2)
-        dh_detrend .= (dh_detrend .- mean_y) ./ std_y
-        return dh_detrend
-    end
-    function destandardize(dh, bin_field_1::Vector, bin_field_2::Vector; add_mean=true)
-        dh_std      = dh .* std_y .* itp_var.(bin_field_1,bin_field_2)
-        if !add_mean return dh_std end
-        dh_mean     = itp_bias.(bin_field_1,bin_field_2) .+ itp_var.(bin_field_1,bin_field_2) .* mean_y
-        return dh_std + dh_mean
-    end
-    return (;standardize, destandardize)
-end
-
-
-# define variogram function to fit
-function get_var(gamma; adjust_sill=true)
-    varg = fit_varg(MaternVariogram, gamma, maxnugget=0.005, nVmax=2)
-    vfct = typeof(varg) <: NestedVariogram ? typeof(varg.γs[1]).name.wrapper : typeof(varg).name.wrapper
-    if adjust_sill
-        if typeof(varg) <: NestedVariogram
-            sills = [γ.sill for γ in varg.γs]
-            varg = sum([vfct(γ.ball; sill=γ.sill / sum(sills) , nugget=γ.nugget) for γ in varg.γs])
-        else
-            varg = vfct(varg.ball; sill=1.0, nugget=varg.nugget)
-        end
-    end
-    return varg
-end
-
-# copied and slightly edited from Geomorphometry.jl (https://github.com/Deltares/Geomorphometry.jl/blob/main/src/terrain.jl)
-# not importing that package to have control over dependencies
-const nbkernel = LocalFilters.Kernel{Int8,2}(reshape(1:9, 3, 3))
-@inline @inbounds function horn(v, a, b)
-    if b == 1
-        return (v[1], v[2] + a, v[3], v[4] + a, v[5])
-    elseif b == 2
-        return (v[1], v[2] + 2a, v[3], v[4], v[5])
-    elseif b == 3
-        return (v[1], v[2] + a, v[3] + a, v[4], v[5])
-    elseif b == 4
-        return (v[1], v[2], v[3], v[4] + 2a, v[5])
-    elseif b == 5
-        return v
-    elseif b == 6
-        return (v[1], v[2], v[3] + 2a, v[4], v[5])
-    elseif b == 7
-        return (v[1] + a, v[2], v[3], v[4] + a, v[5])
-    elseif b == 8
-        return (v[1] + 2a, v[2], v[3], v[4], v[5])
-    elseif b == 9
-        return (v[1] + a, v[2], v[3] + a, v[4], v[5])
-    end
-end
-"""
-    slope(dem::Matrix{<:Real}; cellsize=1.0, method=Horn())
-
-Slope is the rate of change between a cell and its neighbors as defined in Burrough, P. A., and McDonell, R. A., (1998, Principles of Geographical Information Systems).
-"""
-function slope(dem::AbstractMatrix{<:Real}; cellsize=1.0)
-    dst = copy(dem)
-    slope!(dst, dem, cellsize)
-end
-function slope!(dst, dem::AbstractMatrix{<:Real}, cellsize)  # hard-coded to Horn method
-    initial(A) = (zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), cellsize)
-    store!(d, i, v) = @inbounds d[i] = atand(
-        √(
-            ((v[1] - v[2]) / (8 * v[5]))^2 + ((v[3] - v[4]) / (8 * v[5]))^2
-        ))
-    return localfilter!(dst, dem, nbkernel, initial, horn, store!)
-end
-
-bin1_fct(x, grd) = slope(x, cellsize=grd)
-
 function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40, nbins2=50, coreg_grid=150)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
@@ -152,9 +51,8 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40,
     out    = gtb |> InterpolateNaN(IDW())
     i_nans = findall(isnan.(bin_field_1[I_no_ocean]))
     bin_field_1[I_no_ocean[i_nans]] .= out.Z[i_nans]
-    # bin_field_2, also can't have NaN values so replace with h_aero values where applicable
+    # bin_field_2
     bin_field_2 = copy(m_href)
-    # bin_field_2[.!ismissing.(h_aero)] .= h_aero[.!ismissing.(h_aero)]
     # save as netcdf
     @assert !any(isnan.(bin_field_1[I_no_ocean]))
     @assert !any(isnan.(bin_field_2[I_no_ocean]))
@@ -180,7 +78,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40,
     df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
 
     # variogram
-    gamma = fit_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=5e5, nlags=500, fig_path)
+    gamma = emp_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=5e5, nlags=500, fig_path)
 
     # save
     CSV.write(csv_dest, df_all)
@@ -193,4 +91,69 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40,
     @assert all(df_all.dh         .≈ destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.bfield_2))
     @assert all(df_all.h          .≈ df_all.h_ref .- destandardize(df_all.dh_detrend, df_all.bfield_1, df_all.bfield_2))
     return csv_dest, dict_dest
+end
+
+function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, varg::Variogram; maxn::Int)
+    model  = Kriging(varg)
+    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn, prob=true)
+    return interp
+end
+
+function geostats_interpolation(target_grid,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
+                                outline_shp_file,
+                                csv_preprocessing, jld2_preprocessing;
+                                maxn::Int)                      # maximum neighbors for interpolation method
+
+    # define names of output directories
+    main_output_dir  = joinpath("output","geostats_interpolation")
+    fig_dir          = joinpath(main_output_dir, "figures/")
+    mkpath(fig_dir)
+
+    # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
+    df_all = CSV.read(csv_preprocessing, DataFrame)
+    dict   = load(jld2_preprocessing)
+    @unpack I_no_ocean, idx_aero, gamma, href_file, coreg_grid = dict
+    @unpack destandardize = get_stddization_fcts(jld2_preprocessing)
+    varg = get_var(gamma)
+
+    # get filenames at target_grid
+    bedmachine_original, _     = create_bedmachine_grid(target_grid)
+    _, ref_coreg_file_geoid, _ = create_grimpv2(target_grid, coreg_grid, bedmachine_original)
+    _, obs_aero_file           = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
+
+    # derive indices for cells to interpolate
+    ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
+    x           = NCDataset(obs_aero_file)["x"][:]
+    y           = NCDataset(obs_aero_file)["y"][:]
+    grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[get_ix.(ir_sim, length(x))], y[get_iy.(ir_sim, length(x))])])
+    geotable    = make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
+
+    # prepare predicted field, fill with aerodem observations where available
+    h_aero               = NCDataset(obs_aero_file)["Band1"][:,:]
+    h_ref                = NCDataset(href_file)["surface"][:,:]
+    h_ref                = nomissing(h_ref, 0.0)
+    h_predict            = zeros(size(h_aero))
+    h_predict[idx_aero] .= h_aero[idx_aero]
+    std_predict          = zeros(size(h_aero))
+    bin_field_1          = bin1_fct(h_ref, target_grid)
+
+    output_path = joinpath(main_output_dir, "kriging")
+    mkpath(output_path)
+    # do the kriging
+    println("Kriging...")
+    interp = do_kriging(grid_output, geotable, varg; maxn)
+    # 'fill' aerodem with de-standardized kriging output, save as netcdf
+    h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
+    h_predict[h_predict .<= 0.] .= no_data_value
+    # save as netcdf
+    dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
+    save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+
+    # save interp.Z directly
+    m_interp = zeros(size(h_predict))
+    m_interp[ir_sim]            .= mean.(interp.Z)
+    m_interp[m_interp .== 0.0]  .= no_data_value
+    dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")
+    save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
+    return dest_file_gr_kriging
 end

@@ -3,6 +3,10 @@ function make_geotable(input::AbstractVector, x::AbstractVector, y::AbstractVect
     crds   = [(xi, yi) for (xi,yi) in zip(x,y)]
     return georef(table, crds)
 end
+
+"""
+Binning 1D based on equal bin size
+"""
 function bin_equal_bin_size(x, y, n_bins)   # 1D
     bin_edges = range(extrema(x)..., n_bins+1)
     out = Vector{Vector{eltype(y)}}(undef,n_bins)
@@ -68,33 +72,6 @@ function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2) # 2D
     return out, bin_centers_1, bin_centers_2
 end
 
-
-"""
-    filter_per_bin
-
-Input:
-- idx_binned
--
-"""
-function filter_per_bin!(y_binned; cutoff=7.0)
-    println("Removing outliers per bin..")
-    n_before = sum(length.(y_binned))
-    is_deleted = [Int[] for i in y_binned]
-    @showprogress for (i, (y_bin)) in enumerate(y_binned)
-        if !isempty(y_bin)
-            nmad_ = StatsBase.mad(y_bin, normalize=true)
-            i_to_delete = findall(abs.(y_bin) .> cutoff*nmad_)
-            sort!(unique!(i_to_delete))  # indices must be unique and sorted for keepat!
-            deleteat!(y_bin,  i_to_delete)
-            is_deleted[i] = i_to_delete
-        end
-    end
-    n_after  = sum(length.(y_binned))
-    perc_deleted = (n_before-n_after)*100 / n_before
-    @printf("%.2f %% of points removed as outliers.\n", perc_deleted)
-    return is_deleted
-end
-
 function get_ATM_df(fname, x, y, bin_field_1, df_aero; mindist=1e4, I_no_ocean)
     df_atm = CSV.read(fname, DataFrame)
     df_atm[!,:source] .= :atm
@@ -104,7 +81,6 @@ function get_ATM_df(fname, x, y, bin_field_1, df_aero; mindist=1e4, I_no_ocean)
     itp = interpolate((x, y), bin_field_1, Gridded(Linear()))
     df_atm[!,:bfield_1] = itp.(df_atm.x, df_atm.y)
     df_atm[!,:bfield_2] = df_atm.h_ref
-    # max_dhdt = std(dhdt[dhdt .!= 0])
     # prepare neighbor search to filter out values too close to aerodem or overlapping
     d        = PointSet([Point(xi, yi) for (xi,yi) in zip(df_aero.x,df_aero.y)])
     searcher = BallSearch(d, MetricBall(mindist))
@@ -118,10 +94,9 @@ function get_ATM_df(fname, x, y, bin_field_1, df_aero; mindist=1e4, I_no_ocean)
         inds = search(Point(x_, y_), searcher)            # find aerodem points that are in neighborhood of atm points
         is_above_mindist = isempty(inds)                  # if empty -> further than mindist away from any aerodem point
         # filter values with high absolute dhdt
-        # has_low_dhdt = 0.0 < abs(dhdt_) < max_dhdt
-        return is_in_icesheet & is_above_mindist # & has_low_dhdt
+        return is_in_icesheet & is_above_mindist
     end
-    println("selecting flightline values...")
+    println("Selecting flightline values...")
     filter!([:x,:y] => choose_atm, df_atm)
     # already remove some outliers here, improves standardization
     atm_to_delete = findall(abs.(df_atm.dh) .> 5 .* mad(df_atm.dh))
@@ -142,45 +117,6 @@ function get_aerodem_df(h_aero, bin_field_1, bin_field_2, h_ref, x, y, idx_aero)
     return df_aero
 end
 
-""""
-    remove_small_bins!()
-Remove bins where number of samples is below a threshold.
-Input
-    - min_n_sample: number of samples that a bin is required to have
-"""
-function remove_small_bins!(A_binned::Vector; min_n_sample=80)  # 1D
-    i_rm  = findall(length.(A_binned[1]) .< min_n_sample)
-    for A in A_binned
-        deleteat!(A, i_rm)
-    end
-    @printf("Removed %d bins, %d bins left.\n", length(i_rm), length(A_binned[1]))
-    return
-end
-function remove_small_bins(bin_centers_1::Vector, bin_centers_2::Vector, A_binned::Matrix; min_n_sample=80) # 2D
-    while any(length.(A_binned) .< min_n_sample)
-        i_rm               = findall(length.(A_binned) .< min_n_sample)
-        ix_rm              = [first(i_rm[i].I) for i in eachindex(i_rm)]
-        iy_rm              = [last(i_rm[i].I) for i in eachindex(i_rm)]
-        x_maxcount, ix_max = findmax(countmap(ix_rm))
-        y_maxcount, iy_max = findmax(countmap(iy_rm))
-        if x_maxcount > y_maxcount || (x_maxcount == y_maxcount && size(A_binned,1)>size(A_binned,2))
-            idx_x = Vector(1:size(A_binned, 1))
-            deleteat!(idx_x, ix_max)
-            A_binned = A_binned[idx_x, :]
-            bin_centers_1 = bin_centers_1[idx_x]
-            @printf("Removed one row, %d rows left.\n", length(idx_x))
-        else
-            idx_y = Vector(1:size(A_binned, 2))
-            deleteat!(idx_y, iy_max)
-            A_binned = A_binned[:, idx_y]
-            bin_centers_2 = bin_centers_2[idx_y]
-            @printf("Removed one column, %d columns left.\n", length(idx_y))
-        end
-    end
-    @assert all(length.(A_binned) .>= min_n_sample)
-    return bin_centers_1, bin_centers_2, A_binned
-end
-
 function get_itp_interp(bin_centers_1, bin_centers_2, field)
     itp  = interpolate((bin_centers_1, bin_centers_2), field, Gridded(Linear()))
     itp  = extrapolate(itp, Interpolations.Flat())
@@ -194,6 +130,71 @@ function interp_nans!(bin_centers_1, field)
     out    = gtb |> InterpolateNaN(IDW())
     field .= reshape(out.Z, size(field))
     return
+end
+
+# copied and slightly edited from Geomorphometry.jl (https://github.com/Deltares/Geomorphometry.jl/blob/main/src/terrain.jl)
+# not importing that package to have control over dependencies
+const nbkernel = LocalFilters.Kernel{Int8,2}(reshape(1:9, 3, 3))
+@inline @inbounds function horn(v, a, b)
+    if b == 1
+        return (v[1], v[2] + a, v[3], v[4] + a, v[5])
+    elseif b == 2
+        return (v[1], v[2] + 2a, v[3], v[4], v[5])
+    elseif b == 3
+        return (v[1], v[2] + a, v[3] + a, v[4], v[5])
+    elseif b == 4
+        return (v[1], v[2], v[3], v[4] + 2a, v[5])
+    elseif b == 5
+        return v
+    elseif b == 6
+        return (v[1], v[2], v[3] + 2a, v[4], v[5])
+    elseif b == 7
+        return (v[1] + a, v[2], v[3], v[4] + a, v[5])
+    elseif b == 8
+        return (v[1] + 2a, v[2], v[3], v[4], v[5])
+    elseif b == 9
+        return (v[1] + a, v[2], v[3] + a, v[4], v[5])
+    end
+end
+"""
+    slope(dem::Matrix{<:Real}; cellsize=1.0, method=Horn())
+
+Slope is the rate of change between a cell and its neighbors as defined in Burrough, P. A., and McDonell, R. A., (1998, Principles of Geographical Information Systems).
+"""
+function slope(dem::AbstractMatrix{<:Real}; cellsize=1.0)
+    dst = copy(dem)
+    slope!(dst, dem, cellsize)
+end
+function slope!(dst, dem::AbstractMatrix{<:Real}, cellsize)  # hard-coded to Horn method
+    initial(A) = (zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), cellsize)
+    store!(d, i, v) = @inbounds d[i] = atand(
+        √(
+            ((v[1] - v[2]) / (8 * v[5]))^2 + ((v[3] - v[4]) / (8 * v[5]))^2
+        ))
+    return localfilter!(dst, dem, nbkernel, initial, horn, store!)
+end
+
+bin1_fct(x, grd) = slope(x, cellsize=grd)
+
+function get_stddization_fcts(dict_file)
+    dict = load(dict_file)
+    @unpack bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y = dict
+
+    itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
+    itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
+
+    function standardize(dh, bin_field_1::Vector, bin_field_2::Vector)
+        dh_detrend  = (dh .- itp_bias.(bin_field_1, bin_field_2)) ./  itp_var.(bin_field_1, bin_field_2)
+        dh_detrend .= (dh_detrend .- mean_y) ./ std_y
+        return dh_detrend
+    end
+    function destandardize(dh, bin_field_1::Vector, bin_field_2::Vector; add_mean=true)
+        dh_std      = dh .* std_y .* itp_var.(bin_field_1,bin_field_2)
+        if !add_mean return dh_std end
+        dh_mean     = itp_bias.(bin_field_1,bin_field_2) .+ itp_var.(bin_field_1,bin_field_2) .* mean_y
+        return dh_std + dh_mean
+    end
+    return (;standardize, destandardize)
 end
 
 function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_path)
@@ -236,7 +237,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_p
     return df, interp_data
 end
 
-function fit_variogram(x::AbstractVector{T}, y::AbstractVector{T}, input::AbstractVector{T}; nlags=90, maxlag=7e5, fig_path="", sample_frac=1) where T <: Real
+function emp_variogram(x::AbstractVector{T}, y::AbstractVector{T}, input::AbstractVector{T}; nlags=90, maxlag=7e5, fig_path="", sample_frac=1) where T <: Real
     println("Estimating variogram...")
     data = make_geotable(input, x, y)
     if sample_frac < 1
@@ -363,75 +364,19 @@ function fit_impl(
     γ, ϵ
 end
 
-function generate_random_fields(output_dir; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file, n_fields)
-    k_m = 100.0
-    nh  = 10000
-    lx = x[end] - x[1]
-    ly = y[end] - y[1]
-    nx, ny = length(x), length(y)
-    dest_files = Vector{String}(undef, n_fields)
-    for i in 1:n_fields
-        rftot = zeros(nx, ny)
-        for (sf, rn) in zip(std_devs, corr_ls)
-            cl = (rn, rn)
-            rf = generate_grf2D(lx, ly, sf, cl, k_m, nh, nx, ny, cov_typ="expon", do_reset=false, do_viz=false);
-            rftot .+= Array(rf)
+# define variogram function to fit
+function get_var(gamma; adjust_sill=true)
+    varg = fit_varg(MaternVariogram, gamma, maxnugget=0.005, nVmax=2)
+    vfct = typeof(varg) <: NestedVariogram ? typeof(varg.γs[1]).name.wrapper : typeof(varg).name.wrapper
+    if adjust_sill
+        if typeof(varg) <: NestedVariogram
+            sills = [γ.sill for γ in varg.γs]
+            varg = sum([vfct(γ.ball; sill=γ.sill / sum(sills) , nugget=γ.nugget) for γ in varg.γs])
+        else
+            varg = vfct(varg.ball; sill=1.0, nugget=varg.nugget)
         end
-        # multiply with nmad and sigmas to get back variability w.r.t. binning variables
-        rftot_destand = zeros(Float32, nx, ny)
-        rftot_destand[ir_random_field] = destand(rftot[ir_random_field], ir_random_field) ######### ToDo: second argument of destand is h_ref!!
-        # smooth over a 5x5 pixel window
-        rftot_smooth = mapwindow(median, rftot_destand, (5,5))
-        # add the random field to the reconstruction
-        rftot_smooth[ir_random_field]   .+= rec[ir_random_field]
-        rftot_smooth[rftot_smooth .<= 0] .= no_data_value
-        dest_files[i]  = joinpath(output_dir, "rec_rand_id_$(i).nc")
-        save_netcdf(dest_files[i], template_file, [rftot_smooth], ["surface"], Dict("surface" => Dict{String,Any}()))
     end
-    return dest_files
-end
-
-function SVD_random_fields(rec_file::String; nbins1::Int=10, nbins2::Int=30,  # amount of bins for 2D standardization
-                           n_fields::Int=10)                                  # number of simulations
-    # get filenames
-    bedmachine_original, bedm_file  = create_bedmachine_grid(grd)
-    aerodem_g150, obs_aero_file     = create_aerodem(grd, outline_shp_file, bedmachine_original, reference_file_g150)
-    mask_file                       = create_imbie_mask(;grd, outline_shp_file, sample_path=aerodem_g150)
-    dhdt_file, _                    = create_dhdt_grid(;grd, startyr=1994, endyr=2010)
-    obs_ATM_file                    = get_atm_file()
-
-    # prepare output directories
-    main_output_dir  = joinpath("output","SVD_RF")
-    fig_path         = joinpath(main_output_dir, "figures")
-    sims_path        = joinpath(main_output_dir, "simulations")
-    atm_dh_dest_file = joinpath(dirname(obs_ATM_file), "SVD_rec_minus_atm.csv")
-    mkpath(fig_path)
-    mkpath(sims_path)
-
-    # define variogram function for ParallelRandomFields
-    custom_var(params) =   x ->
-        params[1] .* (1 .-  exp.(-sqrt(2) * x./params[3])) .+
-        params[2] .* (1 .-  exp.(-sqrt(2) * x./params[4]))
-    param_cond(params) = all(params .> 0.0) # conditions on parameters
-    # initial guess for parameters
-    p0 = [0.5, 0.5, 1e4, 4e5]
-
-    # standardize and get variogram
-    _, varg, ff, _, destand, _, I_no_ocean, _ = stddize_and_variogram(rec_file, bedm_file, obs_aero_file, obs_ATM_file, mask_file;
-                                                                atm_dh_dest_file, fig_path, custom_var, param_cond, p0, nbins1, nbins2)
-    @printf("Sum of variances in variogram: %.2f \n", sum(ff.param[1:2]))
-    @printf("Correlation length scales: %d and %d \n", ff.param[3], ff.param[4])
-
-    # ParallelRandomFields
-    std_devs   = sqrt.(ff.param[1:2] ./ sum(ff.param[1:2]))
-    corr_ls    = ff.param[3:4]
-    obs        = ncread(obs_aero_file, "Band1")
-    rec        = ncread(rec_file,"surface")
-    x          = ncread(rec_file,"x")
-    y          = ncread(rec_file,"y")
-    ir_random_field = findall(vec(obs .> 0 .|| rec .> 0))
-    rf_files = generate_random_fields(sims_path; std_devs, corr_ls, x, y, destand, ir_random_field, rec, template_file=obs_aero_file, n_fields)
-    return rf_files
+    return varg
 end
 
 function uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
@@ -439,14 +384,10 @@ function uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
     bin_c_range = range(extrema(bin_centers)..., length(bin_centers)) # convert array to range
     itp = Interpolations.scale(itp, bin_c_range)
     itp = extrapolate(itp, Interpolations.Flat())
-    # itp  = linear_interpolation(bin_centers, std.(dh_binned), extrapolation_bc=Interpolations.Flat())
-    # sitp = extrapolate(itp, Interpolations.Flat())
-
     # save in matrix
     rec_errors          = zeros(size(dem_ref)) .+ no_data_value
     id_surf             = findall(nomissing(dem_ref .!= no_data_value, false) .|| .!ismissing.(dem_ref))
     rec_errors[id_surf] = itp.(dem_ref[id_surf])
-
     return itp, rec_errors
 end
 
@@ -475,16 +416,6 @@ function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, 
         y_pred = evaluate_fun(fs[1],fs[2])
         dif_blocks[j] = mean.(y_pred) .- geotable.Z[fs[2]]
 
-        # if j == 4
-        #     x_ = [first(stest.domain.geoms[i[1]].coords) for i in fs[1]]
-        #     y_ = [last(stest.domain.geoms[i[1]].coords)  for i in fs[1]]
-        #     Plots.scatter(x_, y_, markersize=2, markerstrokewidth=0, color="grey")
-        #     x_ = [first(stest.domain.geoms[i[1]].coords) for i in fs[2]]
-        #     y_ = [last(stest.domain.geoms[i[1]].coords)  for i in fs[2]]
-        #     Plots.scatter!(x_, y_, markersize=5, markerstrokewidth=0)
-        #     Plots.savefig("foldings.png")
-        #     break
-        # end
         if save_distances
             # save distance of each test point to closest training/data point
             ids_nn  = zeros(Int,length(stest))
@@ -511,117 +442,4 @@ function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, 
         rt = (rt..., vcat(xcoord_blocks...), vcat(ycoord_blocks...))
     end
     return rt
-end
-
-function generate_sequential_gaussian_sim(output_geometry, geotable_input, varg; n_fields, maxn)
-    method  = SEQMethod(maxneighbors=maxn)
-    process = GaussianProcess(varg)
-    tic   = Base.time()
-    sims    = rand(process, output_geometry, geotable_input, n_fields, method)
-    toc   = Base.time() - tic
-    @printf("SGS took %d minutes. \n", toc / 60)
-    return sims
-end
-
-function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, varg::Variogram; maxn::Int)
-    model  = Kriging(varg)
-    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn, prob=true)
-    return interp
-end
-
-function geostats_interpolation(target_grid,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
-                                outline_shp_file,
-                                csv_preprocessing, jld2_preprocessing;
-                                maxn::Int,                      # maximum neighbors for interpolation method
-                                method::Symbol=:kriging,        # either :kriging or :sgs
-                                n_fields::Int=10)               # number of simulations in case of method=:sgs
-
-    # define names of output directories
-    main_output_dir  = joinpath("output","geostats_interpolation")
-    fig_dir          = joinpath(main_output_dir, "figures/")
-    mkpath(fig_dir)
-
-    # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
-    df_all = CSV.read(csv_preprocessing, DataFrame)
-    dict   = load(jld2_preprocessing)
-    @unpack I_no_ocean, idx_aero, gamma, href_file, coreg_grid = dict
-    @unpack destandardize = get_stddization_fcts(jld2_preprocessing)
-    varg = get_var(gamma)
-
-    # get filenames at target_grid
-    bedmachine_original, _     = create_bedmachine_grid(target_grid)
-    _, ref_coreg_file_geoid, _ = create_grimpv2(target_grid, coreg_grid, bedmachine_original)
-    _, obs_aero_file           = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
-
-    # get filename at grid_out
-    # aerodem_g150, obs_aero_file_gr_out = create_aerodem(grid_out, outline_shp_file, bedmachine_original, reference_file_g150)
-
-    # derive indices for cells to interpolate
-    ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
-    x           = NCDataset(obs_aero_file)["x"][:]
-    y           = NCDataset(obs_aero_file)["y"][:]
-    grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[get_ix.(ir_sim, length(x))], y[get_iy.(ir_sim, length(x))])])
-    geotable    = make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
-
-    # prepare predicted field, fill with aerodem observations where available
-    h_aero               = NCDataset(obs_aero_file)["Band1"][:,:]
-    h_ref                = NCDataset(href_file)["surface"][:,:]
-    h_ref                = nomissing(h_ref, 0.0)
-    h_predict            = zeros(size(h_aero))
-    h_predict[idx_aero] .= h_aero[idx_aero]
-    std_predict          = zeros(size(h_aero))
-    bin_field_1          = bin1_fct(h_ref, target_grid)
-
-    if method == :sgs  # sequential gaussian simulations
-        output_path = joinpath(main_output_dir, "SEQ_simulations/")
-        mkpath(output_path)
-        println("Generating sequential gaussian simulations...")
-        sims = generate_sequential_gaussian_sim(grid_output, geotable, varg; n_fields, maxn)
-        dest_files = Vector{String}(undef, n_fields)
-        for (i,s) in enumerate(sims)
-            h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(s.Z, h_ref[ir_sim])
-            h_predict[h_predict .<= 0.] .= no_data_value
-            dest_files[i]  = joinpath(output_path, "rec_sgs_id_$(i).nc")
-            save_netcdf(dest_files[i], obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
-        end
-        return dest_files
-    elseif method == :kriging
-        output_path = joinpath(main_output_dir, "kriging/")
-        mkpath(output_path)
-        # do the kriging
-        println("Kriging...")
-        interp = do_kriging(grid_output, geotable, varg; maxn)
-        # 'fill' aerodem with de-standardized kriging output, save as netcdf
-        h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
-        h_predict[h_predict .<= 0.] .= no_data_value
-        # field of estimated errors
-        # std_predict[ir_sim]         .= destandardize(std.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim], add_mean=false)
-        # std_predict[h_predict .== no_data_value] .= no_data_value
-        # save as netcdf
-        dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
-        save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
-        # save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_predict], ["surface", "std_error"], Dict("surface" => Dict{String,Any}(), "std_error" => Dict{String,Any}()))
-
-        # gdalwarp to higher resolution
-        # dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")
-        # gdalwarp(dest_file_gr_kriging; grd=grid_out, srcnodata=string(no_data_value), dest=dest_file_gr_out)
-        # # replace aerodem values with the ones warped from higher resolution, save again as netcdf
-        # h_predict_gr_out             = ncread(dest_file_gr_out, "Band1")
-        # h_aero_gr_out                = ncread(obs_aero_file_gr_out, "Band1")
-        # ir_aero                      = findall(h_aero_gr_out .!= no_data_value)
-        # h_predict_gr_out[ir_aero]   .= h_aero_gr_out[ir_aero]
-        # save_netcdf(dest_file_gr_out, obs_aero_file_gr_out, [h_predict_gr_out], ["surface"], Dict("surface" => Dict{String,Any}()))
-
-        # save interp.Z directly
-        m_interp = zeros(size(h_predict))
-        m_interp[ir_sim]            .= mean.(interp.Z)
-        # df_aero = df_all[df_all.source .== :aerodem,:]   # also plot aerodem data that was used
-        # m_interp[df_aero.idx]       .= df_aero.dh_detrend
-        dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")
-        Plots.heatmap(m_interp, cmap=:bwr, clims=(-4,4))
-        Plots.savefig(joinpath(fig_dir,"interp_Z.png"))
-        m_interp[m_interp .== 0.0]  .= no_data_value
-        save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
-        return dest_file_gr_kriging
-    end
 end

@@ -137,11 +137,6 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir=""; inpu
         Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
         Plots.savefig(joinpath(fig_dir, "obs_all.png"))
     end
-
-    # remove temporary files
-    # rm(tempname_csv)
-    # rm(tempname_nc)
-
     return x_data, I_obs
 end
 
@@ -230,59 +225,4 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.png"))
 
     return filename, saved_file
-end
-
-function create_reconstructed_bedmachine(rec_file)
-    # load reconstruction and determine grid size
-    surfaceDEM = ncread(rec_file, "surface")
-    x          = ncread(rec_file, "x")
-    grd         = x[2] - x[1]
-
-    # load bedmachine
-    _, bedmachine_file = create_bedmachine_grid(grd)
-    bedDEM             = ncread(bedmachine_file, "bed")
-    bedm_mask          = ncread(bedmachine_file, "mask")
-    ice_mask           = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
-
-    # calculate floating mask
-    ρw            = 1030
-    ρi            = 917
-    Pw            = - ρw * bedDEM
-    Pi            = ρi * (surfaceDEM - bedDEM)
-    floating_mask = (Pw .> Pi) .&& (ice_mask)  # floating where water pressure > ice pressure at the bed
-
-    # calculate mask
-    new_mask = ones(eltype(bedm_mask), size(bedm_mask))
-    new_mask[bedm_mask .== 0] .= 0 # ocean
-    new_mask[ice_mask] .= 2
-    new_mask[floating_mask]   .= 3
-
-    # make sure DEM is zero everywhere on the ocean and equal to bed DEM on bedrock
-    surfaceDEM[new_mask .== 0] .= no_data_value
-    surfaceDEM[new_mask .== 1] .= bedDEM[new_mask .== 1]
-
-    # calculate ice thickness
-    h_ice = zeros(size(surfaceDEM)) .+ no_data_value
-    h_ice[ice_mask] .= surfaceDEM[ice_mask] - bedDEM[ice_mask]
-    h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
-
-    # save to netcdf file
-    dest        = "output/bedmachine1980_reconstructed_g$(Int(grd)).nc"
-    layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
-    layernames  = ["surface", "bed", "thickness", "mask"]
-    template    = NCDataset(bedmachine_file)
-    attributes  = get_attr(template, layernames)
-    # overwrite some attributes
-    sources_rec = Dict("surface"   => "svd reconstruction",
-                       "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
-                       "thickness" => "computed from surface and bed",
-                       "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
-                       )
-    for l in layernames
-        attributes[l]["source"] = sources_rec[l]
-    end
-    attributes["mask"]["long_name"] = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
-    save_netcdf(dest, bedmachine_file, layers, layernames, attributes)
-
-    return dest
 end

@@ -61,10 +61,10 @@ get_ix(i,nx) = i % nx == 0 ? nx : i % nx
 get_iy(i,nx) = cld(i,nx)
 get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 
-include("prepare_data.jl")
 include("gdal_helpers.jl")
-include("reconstruction_routines.jl")
 include("statistics_helpers.jl")
+include("kriging_interpolation.jl")
+include("SVD_reconstruction.jl")
 include("plotting_tools.jl")
 
 end # module svd_IceSheetDEM
