@@ -17,10 +17,10 @@ outline_shp_file    = parsed_args["shp_file"]
 template_file      = training_data_files[1]
 ## derive grid size in m from training data
 x = ncread(template_file, "x")
-const gr = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
+const grd = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
 
 # Pre-process and standardize data #
-csv_preprocessing, jld2_preprocessing, = prepare_obs(gr, outline_shp_file, nbins1=40, nbins2=50)
+csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file, nbins1=40, nbins2=50)
 
 
 # -------------------------- #
@@ -38,7 +38,7 @@ end
 r           = parsed_args["r"]
 do_figures  = parsed_args["do_figures"]
 use_arpack  = parsed_args["use_arpack"]
-rec_file, dict_file = SVD_reconstruction(λ, r, gr, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)
+rec_file, dict_file = SVD_reconstruction(λ, r, grd, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)
 
 # 3.) calculate the floating mask and create nc file according to the bedmachine template
 create_reconstructed_bedmachine(rec_file)  # ToDo --> after rf gneration??
@@ -52,7 +52,7 @@ create_reconstructed_bedmachine(rec_file)  # ToDo --> after rf gneration??
 # ------------------------------ #
 maxn = parsed_args["maxn"]
 
-grid_kriging = gr
+grid_kriging = grd
 tic = Base.time()
 interp_rec_file = geostats_interpolation(grid_kriging, outline_shp_file, csv_preprocessing, jld2_preprocessing; maxn)
 toc = Base.time() - tic

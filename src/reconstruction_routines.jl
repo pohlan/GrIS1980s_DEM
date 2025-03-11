@@ -100,19 +100,19 @@ function prepare_model(model_files, standardize, destandardize, bfields_file, h_
     return UΣ, data_binfield1, data_binfield2, data_ref, Σ, components_saved
 end
 
-function prepare_obs_SVD(gr, csv_dest, I_no_ocean, output_dir, fig_dir=""; input="dh_detrend")
+function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir=""; input="dh_detrend")
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
     # use gdalgrid to rasterize atm point data
     df_atm      = df_all[df_all.source .== "atm", ["x", "y", input]]
     rename!(df_atm, input => "dh")    # just because gdalgrid is hard-wired here to look for "dh" variable
-    tempname_csv = joinpath(output_dir, "$(input)_atm_temp_g$(gr).csv")
-    tempname_nc  = joinpath(output_dir, "$(input)_atm_temp_g$(gr).nc")
+    tempname_csv = joinpath(output_dir, "$(input)_atm_temp_g$(grd).csv")
+    tempname_nc  = joinpath(output_dir, "$(input)_atm_temp_g$(grd).nc")
 
     if !isfile(tempname_nc)
         CSV.write(tempname_csv, df_atm)
-        gdalgrid(tempname_csv; gr, dest=tempname_nc)
+        gdalgrid(tempname_csv; grd, dest=tempname_nc)
     end
     obs_atm = NCDataset(tempname_nc)["Band1"][:,:]
     idx_atm = findall(.!ismissing.(obs_atm))
@@ -133,7 +133,7 @@ function prepare_obs_SVD(gr, csv_dest, I_no_ocean, output_dir, fig_dir=""; input
     if !isempty(fig_dir)
         # save matrix of observations as nc and plot
         obs[obs .== 0] .= no_data_value
-        save_netcdf(joinpath(output_dir,"obs_all_gr$(gr)_$(input).nc"), tempname_nc, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
+        save_netcdf(joinpath(output_dir,"obs_all_gr$(grd)_$(input).nc"), tempname_nc, [obs], ["dh"], Dict("dh"=>Dict{String,Any}()))
         Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
         Plots.savefig(joinpath(fig_dir, "obs_all.png"))
     end
@@ -153,7 +153,7 @@ function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_dat
     return v_rec, x_rec
 end
 
-function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false, input="h")
+function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false, input="h")
     # define output paths
     main_output_dir = "output/SVD_reconstruction/"
     fig_dir = joinpath(main_output_dir, "figures")
@@ -166,10 +166,10 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     standardize, destandardize = get_stddization_fcts(jld2_preproc)
 
     h_ref        = NCDataset(href_file)["surface"][:,:]
-    # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(gr).nc")["Band1"][:,:], 1)
+    # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
     UΣ, data_binfield1, data_binfield2, data_ref, _, saved_file = prepare_model(model_files, standardize, destandardize, bfields_file, h_ref, I_no_ocean, r, main_output_dir; use_arpack, input) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs                          = prepare_obs_SVD(gr, csv_preproc, I_no_ocean, main_output_dir, fig_dir; input)
+    x_data, I_obs                          = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir, fig_dir; input)
     r                                      = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
@@ -214,7 +214,7 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
-    filename    = joinpath(main_output_dir,"rec_lambda_1e$logλ"*"_g$gr"*"_r$(r)_$(input).nc")
+    filename    = joinpath(main_output_dir,"rec_lambda_1e$logλ"*"_g$grd"*"_r$(r)_$(input).nc")
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "standard_name" => "surface_altitude",
                                                       "units" => "m")
@@ -225,9 +225,9 @@ function SVD_reconstruction(λ::Real, r::Int, gr::Int, model_files::Vector{Strin
     save_netcdf(filename, href_file, [dem_rec], ["surface"], attributes)
 
     # plot and save difference between reconstruction and observations
-    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
+    save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
     Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
-    Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$gr"*"_r$r.png"))
+    Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.png"))
 
     return filename, saved_file
 end
@@ -236,10 +236,10 @@ function create_reconstructed_bedmachine(rec_file)
     # load reconstruction and determine grid size
     surfaceDEM = ncread(rec_file, "surface")
     x          = ncread(rec_file, "x")
-    gr         = x[2] - x[1]
+    grd         = x[2] - x[1]
 
     # load bedmachine
-    _, bedmachine_file = create_bedmachine_grid(gr)
+    _, bedmachine_file = create_bedmachine_grid(grd)
     bedDEM             = ncread(bedmachine_file, "bed")
     bedm_mask          = ncread(bedmachine_file, "mask")
     ice_mask           = (surfaceDEM .!= no_data_value) .&& (surfaceDEM .> bedDEM)
@@ -267,7 +267,7 @@ function create_reconstructed_bedmachine(rec_file)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    dest        = "output/bedmachine1980_reconstructed_g$(Int(gr)).nc"
+    dest        = "output/bedmachine1980_reconstructed_g$(Int(grd)).nc"
     layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
     layernames  = ["surface", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)

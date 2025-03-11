@@ -3,9 +3,9 @@ using Test, LinearAlgebra, NetCDF, NCDatasets, CSV, DataFrames
 
 cd(@__DIR__)  # set working directory to where file is located
 
-const gr = 4000
+const grd = 4000
 
-test_svd_training_file      = "testdata/testtemplate_g$(gr).nc"
+test_svd_training_file      = "testdata/testtemplate_g$(grd).nc"
 outline_shp_file            = "testdata/testshape.shp"
 
 rm("data/", recursive=true, force=true)
@@ -16,16 +16,16 @@ rm("output/", recursive=true, force=true)
 ###################################################
 
 # bedmachine
-bedmachine_original, bedmachine_file_gr = svd_IceSheetDEM.create_bedmachine_grid(gr)
+bedmachine_original, bedmachine_file_gr = svd_IceSheetDEM.create_bedmachine_grid(grd)
 # GrIMP v2
 tiles = ["2_0", "2_1", "3_0", "3_1", "3_2", "4_1", "4_2", "5_2"]
-reference_file_g150, ref_file   = svd_IceSheetDEM.create_grimpv2(gr, bedmachine_original, kw=tiles)
+reference_file_g150, ref_file   = svd_IceSheetDEM.create_grimpv2(grd, bedmachine_original, kw=tiles)
 # aerodem
-aero_150_file, aero_gr_file = svd_IceSheetDEM.create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150, kw="1981")    # only download the DEMs from 1981 while testing to save some space
+aero_150_file, aero_gr_file = svd_IceSheetDEM.create_aerodem(grd, outline_shp_file, bedmachine_original, reference_file_g150, kw="1981")    # only download the DEMs from 1981 while testing to save some space
 # imbie mask
-outline_mask_file = svd_IceSheetDEM.create_outline_mask(gr, outline_shp_file, aero_150_file)
+outline_mask_file = svd_IceSheetDEM.create_outline_mask(grd, outline_shp_file, aero_150_file)
 # atm
-blockspacing=gr
+blockspacing=grd
 lines = ["93.06.23", "93.06.24", "93.07.01", "93.07.09"]
 atm_dh_file = svd_IceSheetDEM.get_atm_dh_file(ref_file, bedmachine_file_gr, blockspacing, kw=lines)
 
@@ -98,7 +98,7 @@ end
 
 # λ           = 1e5
 # r           = 10^3
-# rec_file    = SVD_reconstruction(λ, r, gr, imbie_mask_file, bedmachine_file_gr, [test_svd_training_file], aero_gr_file)
+# rec_file    = SVD_reconstruction(λ, r, grd, imbie_mask_file, bedmachine_file_gr, [test_svd_training_file], aero_gr_file)
 # rec_bm_file = create_reconstructed_bedmachine(rec_file, bedmachine_file_gr)
 
 # @testset "solve least square fit" begin

@@ -394,10 +394,10 @@ end
 function SVD_random_fields(rec_file::String; nbins1::Int=10, nbins2::Int=30,  # amount of bins for 2D standardization
                            n_fields::Int=10)                                  # number of simulations
     # get filenames
-    bedmachine_original, bedm_file  = create_bedmachine_grid(gr)
-    aerodem_g150, obs_aero_file     = create_aerodem(gr, outline_shp_file, bedmachine_original, reference_file_g150)
-    mask_file                       = create_imbie_mask(;gr, outline_shp_file, sample_path=aerodem_g150)
-    dhdt_file, _                    = create_dhdt_grid(;gr, startyr=1994, endyr=2010)
+    bedmachine_original, bedm_file  = create_bedmachine_grid(grd)
+    aerodem_g150, obs_aero_file     = create_aerodem(grd, outline_shp_file, bedmachine_original, reference_file_g150)
+    mask_file                       = create_imbie_mask(;grd, outline_shp_file, sample_path=aerodem_g150)
+    dhdt_file, _                    = create_dhdt_grid(;grd, startyr=1994, endyr=2010)
     obs_ATM_file                    = get_atm_file()
 
     # prepare output directories
@@ -604,7 +604,7 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
 
         # gdalwarp to higher resolution
         # dest_file_gr_out             = joinpath(output_path, "rec_kriging_g$(grid_out).nc")
-        # gdalwarp(dest_file_gr_kriging; gr=grid_out, srcnodata=string(no_data_value), dest=dest_file_gr_out)
+        # gdalwarp(dest_file_gr_kriging; grd=grid_out, srcnodata=string(no_data_value), dest=dest_file_gr_out)
         # # replace aerodem values with the ones warped from higher resolution, save again as netcdf
         # h_predict_gr_out             = ncread(dest_file_gr_out, "Band1")
         # h_aero_gr_out                = ncread(obs_aero_file_gr_out, "Band1")

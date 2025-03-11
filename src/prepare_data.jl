@@ -55,6 +55,48 @@ function get_var(gamma; adjust_sill=true)
     return varg
 end
 
+# copied and slightly edited from Geomorphometry.jl (https://github.com/Deltares/Geomorphometry.jl/blob/main/src/terrain.jl)
+# not importing that package to have control over dependencies
+const nbkernel = LocalFilters.Kernel{Int8,2}(reshape(1:9, 3, 3))
+@inline @inbounds function horn(v, a, b)
+    if b == 1
+        return (v[1], v[2] + a, v[3], v[4] + a, v[5])
+    elseif b == 2
+        return (v[1], v[2] + 2a, v[3], v[4], v[5])
+    elseif b == 3
+        return (v[1], v[2] + a, v[3] + a, v[4], v[5])
+    elseif b == 4
+        return (v[1], v[2], v[3], v[4] + 2a, v[5])
+    elseif b == 5
+        return v
+    elseif b == 6
+        return (v[1], v[2], v[3] + 2a, v[4], v[5])
+    elseif b == 7
+        return (v[1] + a, v[2], v[3], v[4] + a, v[5])
+    elseif b == 8
+        return (v[1] + 2a, v[2], v[3], v[4], v[5])
+    elseif b == 9
+        return (v[1] + a, v[2], v[3] + a, v[4], v[5])
+    end
+end
+"""
+    slope(dem::Matrix{<:Real}; cellsize=1.0, method=Horn())
+
+Slope is the rate of change between a cell and its neighbors as defined in Burrough, P. A., and McDonell, R. A., (1998, Principles of Geographical Information Systems).
+"""
+function slope(dem::AbstractMatrix{<:Real}; cellsize=1.0)
+    dst = copy(dem)
+    slope!(dst, dem, cellsize)
+end
+function slope!(dst, dem::AbstractMatrix{<:Real}, cellsize)  # hard-coded to Horn method
+    initial(A) = (zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), zero(eltype(A)), cellsize)
+    store!(d, i, v) = @inbounds d[i] = atand(
+        √(
+            ((v[1] - v[2]) / (8 * v[5]))^2 + ((v[3] - v[4]) / (8 * v[5]))^2
+        ))
+    return localfilter!(dst, dem, nbkernel, initial, horn, store!)
+end
+
 bin1_fct(x, grd) = slope(x, cellsize=grd)
 
 function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40, nbins2=50, coreg_grid=150)

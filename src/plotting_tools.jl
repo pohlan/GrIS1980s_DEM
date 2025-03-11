@@ -123,63 +123,6 @@ function get_flowline_coords(vx_file::String, vy_file::String, lstep::T, L::T, p
 end
 
 """
-    extract_profile_nearest_points(fname, xc, yc; band=1) -> (dist,vals)
-
-Find points on raster corresponding to flowline profile; no interpolation, just assigns values of nearest neighbor cells.
-### Inputs
-- `fname`   : filename of raster field that will be profiled
-- `xc`,`yc` : coordinates of the flowline profile
-- `band`    : band of the field in `fname`, usually 1 if there's only one band
-
-### Outputs
-- `dist`    : vector of distances along profile
-- `vals`    : field values corresponding to these points along the profile
-"""
-function extract_profile_nearest_points(fname, xc, yc; band=1)   # inspired by https://github.com/evetion/GeoArrays.jl/blob/master/src/geoutils.jl#L270
-    # read in target field as GeoArray
-    ga     = GeoArrays.read(fname, masked=false)
-
-    # for each point of flowline, find indices of closest raster cell
-    coor   = [GeoArrays.indices(ga, (xc[i],yc[i])).I for i in eachindex(xc)]
-    unique!(coor)
-
-    # loop through pairs of subsequent points along flowline
-    vals = Float32[]
-    dist   = Float32[]
-    dist_0 = 0
-    for (start_pt, end_pt) in zip(coor[1:end-1], coor[2:end])
-        i0, j0 = start_pt      # indices in x-direction of two subsequent raster cells along profile
-        i1, j1 = end_pt        # indices in y-direction ""
-        δx     = i1 - i0
-        δy     = j1 - j0
-        pos0   = GeoArrays.coords(ga, (i0, j0))
-        if abs(δx) >= abs(δy)
-            j = j0
-            xstep = δx > 0 ? 1 : -1
-            for (d, i) in enumerate(i0:xstep:i1)
-                idx = i, j+div((d - 1) * δy, abs(δx), RoundNearest), band
-                pos = GeoArrays.coords(ga, (idx[1:2]))
-                tot_dist = norm(pos .- pos0)+dist_0
-                push!(vals, ga[idx...])
-                push!(dist, tot_dist)
-            end
-        else
-            i = i0
-            ystep = δy > 0 ? 1 : -1
-            for (d, j) in enumerate(j0:ystep:j1)
-                idx = i+div((d - 1) * δx, abs(δy), RoundNearest), j, band
-                pos = GeoArrays.coords(ga, (idx[1:2]))
-                tot_dist = norm(pos .- pos0)+dist_0
-                push!(vals, ga[idx...])
-                push!(dist, tot_dist)
-            end
-        end
-        dist_0 = dist[end]
-    end
-    return dist, vals
-end
-
-"""
     interpolate_raster_to_profile(fname, xc, yc; band="Band1")
 
 Projects values of raster field onto coordinates of arbitrary profile; for interpolation see `interp_raster()`

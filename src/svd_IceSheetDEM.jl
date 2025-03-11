@@ -9,8 +9,8 @@ import GeoFormatTypes as GFT
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile, JLD2, UnPack
 using Downloads, Cascadia, Gumbo, HTTP, PythonCall
 using Printf, ProgressMeter
-using Statistics, GeoStats, StatsBase, Distributions, Interpolations, ImageFiltering, ParallelRandomFields.grf2D_CUDA
-using Arpack, LinearAlgebra, ImageMorphology, Geomorphometry, Optim
+using Statistics, GeoStats, StatsBase, Distributions, Interpolations, ImageFiltering, LocalFilters
+using Arpack, LinearAlgebra, ImageMorphology, Optim
 using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
