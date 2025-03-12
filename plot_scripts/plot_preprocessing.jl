@@ -1,17 +1,17 @@
 using Plots, StatsPlots, JLD2, CSV, DataFrames, Meshes, NCDatasets, svd_IceSheetDEM, LaTeXStrings, Distributions, ImageMorphology, UnPack, GeoStats
 
 # define output path
-fig_path = "output/data_preprocessing/figures/"
+fig_path = joinpath("output", "data_preprocessing", "figures")
 mkpath(fig_path)
 
 # load data
 target_grid = 600
-outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp"
+outline_shp_file = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated.shp")
 csv_preprocessing, jld2_preprocessing = prepare_obs(target_grid, outline_shp_file)
 df_all = CSV.read(csv_preprocessing, DataFrame)
 @unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean = load(jld2_preprocessing)
 
-mask_file = "data/gris-imbie-1980/outline_mask_g600.nc"
+mask_file = joinpath("data", "gris-imbie-1980", "outline_mask_g600.nc")
 
 h_ref = NCDataset(href_file)["surface"][:]
 x     = NCDataset(href_file)["x"][:]
@@ -23,7 +23,7 @@ outl  = nomissing(outl, 0.0)
 # Heatmaps of data #
 ####################
 
-outline_shp_crs = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"
+outline_shp_crs = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated_crs.shp")
 shp              = Shapefile.shapes(Shapefile.Table(outline_shp_crs))
 
 function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)

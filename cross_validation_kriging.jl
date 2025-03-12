@@ -26,7 +26,7 @@ csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
-@unpack I_no_ocean, idx_aero, gamma = dict
+@unpack I_no_ocean, idx_aero, gamma, href_file = dict
 @unpack destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
 # varg = svd_IceSheetDEM.custom_var(params)
 varg = svd_IceSheetDEM.get_var(gamma)
@@ -55,15 +55,15 @@ for (i,fs) in enumerate(flds)
 end
 idx = vcat(idxs...)
 
-logℓ      = round(log10(ℓ),digits=1)
-dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
-jldsave(dest; maxn, difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
+logℓ    = round(log10(ℓ),digits=1)
+dest    = get_cv_file_kriging(grd, logℓ, maxn)
+cv_dict = (; maxn, difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
+jldsave(dest; cv_dict...)
 
 ##############################################
 
 # plot map of difs
 p = Plots.scatter(xc,yc,marker_z=difs, cmap=:bwr, clims=(-4,4), markersize=0.7, markerstrokewidth=0, label="", aspect_ratio=1, size=(500,700))
-# p = Plots.plot()
 for (j,fs) in enumerate(flds)
     stest = view(domain(geotable), fs[2])
     ch    = GeoStats.convexhull(stest).rings[1].vertices.data
@@ -72,8 +72,15 @@ for (j,fs) in enumerate(flds)
     Plots.plot!(p, xx,yy, lw=1, color="black", label="")
 end
 Plots.plot(p, size=(500,700))
-Plots.savefig(joinpath(fig_dir, "map_validation_maxn$maxn.png"))
+Plots.savefig(joinpath(fig_dir, "map_validation_kriging_maxn$maxn.png"))
 
+# uncertainty estimation
+dem_ref                = NCDataset(href_file)["surface"][:,:]
+dif_destd              = destandardize(cv_dict.difs, cv_dict.binfield1, cv_dict.h_ref, add_mean=false)
+dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(cv_dict.h_ref, dif_destd, 14)
+sitp, std_uncertainty  = uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
+dest_file              = get_std_uncrt_file(cv_dict.method, grd)
+svd_IceSheetDEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
 
 #######################################################
 # Determine good maxns through morphological gradient #
@@ -113,13 +120,8 @@ for (im,maxn) in enumerate(maxns)
     grads[:,:,im] = grad[xsp, ysp]
     ∑grad[im] = sum(grad)
     wallt[im] = toc
-    p1 = Plots.heatmap(m_interp[xsp,ysp]',cmap=:bwr, clims=(-4,4), aspect_ratio=1)
-    p2 = Plots.heatmap(grad[xsp,ysp]', aspect_ratio=1)
-    Plots.plot(p1,p2)
-    Plots.savefig(joinpath(fig_dir, "kriging_maxn$(maxn)_g$(grd).png"))
     tt = round(toc ./ 60, digits=1)
-    sgrd = ∑grad[im]
-    print("Wall time: $tt minutes, "); println("sumgrad = $sgrd")
+    println("Wall time: $tt minutes")
 end
 dict_to_save = (; maxns, wallt, m_interps, grads)
-jldsave("output/validation/kriging_findmaxn.jld2"; dict_to_save...)
+jldsave(joinpath(main_output_dir, "kriging_findmaxn.jld2"); dict_to_save...)

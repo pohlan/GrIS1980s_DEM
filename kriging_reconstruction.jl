@@ -26,5 +26,5 @@ toc = Base.time() - tic
 dys  = round(toc ./ (3600*24), digits=1); println("Kriging took $dys days.")
 
 # calculate the floating mask and create nc file according to the bedmachine template
-dest        = "output/bedmachine1980_kriging_reconstruction_g$(Int(grd)).nc"
+dest        = joinpath("output", "reconstructions", "bedmachine1980_kriging_reconstruction_g$(Int(grd)).nc")
 create_reconstructed_bedmachine(rec_file, dest)

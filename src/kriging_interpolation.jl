@@ -1,7 +1,7 @@
 function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40, nbins2=50, coreg_grid=150)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
-    fig_path         = joinpath(main_output_dir, "figures/")
+    fig_path         = joinpath(main_output_dir, "figures")
     mkpath(fig_path)
 
     # check if files exist already
@@ -105,8 +105,8 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
                                 maxn::Int)                      # maximum neighbors for interpolation method
 
     # define names of output directories
-    main_output_dir  = joinpath("output","geostats_interpolation")
-    fig_dir          = joinpath(main_output_dir, "figures/")
+    main_output_dir  = joinpath("output","reconstructions")
+    fig_dir          = joinpath(main_output_dir, "figures")
     mkpath(fig_dir)
 
     # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
@@ -134,11 +134,8 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     h_ref                = nomissing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
-    std_predict          = zeros(size(h_aero))
     bin_field_1          = bin1_fct(h_ref, target_grid)
 
-    output_path = joinpath(main_output_dir, "kriging")
-    mkpath(output_path)
     # do the kriging
     println("Kriging...")
     interp = do_kriging(grid_output, geotable, varg; maxn)
@@ -146,14 +143,20 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
     h_predict[h_predict .<= 0.] .= no_data_value
     # save as netcdf
-    dest_file_gr_kriging         = joinpath(output_path, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
-    save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict], ["surface"], Dict("surface" => Dict{String,Any}()))
+    dest_file_gr_kriging         = joinpath(main_output_dir, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
+    std_uncertainty              = NCDataset(get_std_uncrt_file("kriging", grd))["std_uncertainty"][:,:]
+    attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
+                                                      "units" => "m"),
+                       "std_uncertainty" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
+                                                                 "units" => "m")
+                        )
+    save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_uncertainty], ["surface", "std_uncertainty"], attributes)
 
     # save interp.Z directly
     m_interp = zeros(size(h_predict))
     m_interp[ir_sim]            .= mean.(interp.Z)
     m_interp[m_interp .== 0.0]  .= no_data_value
-    dest_m_interp                = joinpath(output_path, "interpolated_dh_std_kriging.nc")
+    dest_m_interp                = joinpath(main_output_dir, "interpolated_dh_std_kriging.nc")
     save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
     return dest_file_gr_kriging
 end

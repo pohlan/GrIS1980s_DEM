@@ -1,8 +1,8 @@
 using svd_IceSheetDEM, NCDatasets, Plots, StatsBase, Glob, Shapefile, Dates, LaTeXStrings
 
-outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"
+outline_shp_file = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated_crs.shp")
 
-sim_folder = "data/rec_simulations/"
+sim_folder = joinpath("data", "rec_simulations")
 fs = glob(joinpath.(sim_folder, "*.nc"))
 grimp_f, svd_f, sgs_f = fs
 

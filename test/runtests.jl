@@ -5,11 +5,11 @@ cd(@__DIR__)  # set working directory to where file is located
 
 const grd = 4000
 
-test_svd_training_file      = "testdata/testtemplate_g$(grd).nc"
-outline_shp_file            = "testdata/testshape.shp"
+test_svd_training_file      = joinpath("testdata", "testtemplate_g$(grd).nc")
+outline_shp_file            = joinpath("testdata", "testshape.shp")
 
-rm("data/", recursive=true, force=true)
-rm("output/", recursive=true, force=true)
+rm("data", recursive=true, force=true)
+rm("output", recursive=true, force=true)
 
 ###################################################
 # testing the data downloading and pre-processing #

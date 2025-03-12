@@ -5,17 +5,16 @@ Plots.scalefontsizes()
 Plots.scalefontsizes(svd_IceSheetDEM.font_scaling)
 attr = (;margin=10Plots.mm, size=(svd_IceSheetDEM.wwidth,svd_IceSheetDEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
 
-output_dir = "output/validation/"
-fig_dir    = joinpath(output_dir, "figures/")
+fig_dir = joinpath("output", "main_figures")
 mkpath(fig_dir)
 
 grd = 600
 
-f_svd = glob("output/validation/cv_1e5.3_gr$(grd)_SVD_*nfiles70.jld2")
-f_krig = glob("output/validation/cv_1e5.3_gr$(grd)_kriging.jld2")
+f_svd = glob(joinpath("output", "validation", "cv_1e5.3_gr$(grd)_SVD_*nfiles70.jld2"))
+f_krig = glob(joinpath("output", "validation", "cv_1e5.3_gr$(grd)_kriging.jld2"))
 f_dict = vcat(f_svd, f_krig)
 
-outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp"
+outline_shp_file = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated.shp")
 csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file)
 @unpack standardize, destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
 @unpack href_file = load(jld2_preprocessing)
@@ -52,7 +51,7 @@ for f in f_dict
     end
 
     # calculate de-standardized difs
-    if method == "SVD_dh" || method =="SVD_h"
+    if method == "SVD"
         dif_destd = difs
     else
         @unpack binfield1 = load(f)
@@ -64,7 +63,7 @@ for f in f_dict
     # dif_dh = dh_obs - dh_rec
     #        = (h_ref-h_obs) - (h_ref-h_rec) = h_rec - h_obs
     #  --> so in that case ε = - dif_dh
-    if method == "SVD_dh" || method == "kriging"
+    if method == "kriging"
         dif_destd .= .- dif_destd
     end
 
@@ -91,15 +90,15 @@ for f in f_dict
     # hline!(p_median_all, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
     # plot!(p_std_all,    bin_centers, std.(dh_binned), label=method, ylabel=L"Std $\epsilon$ (m)"; color, xlabel, attr...)
 
-    if method == "kriging" || method == "SVD_h"
+    if method == "kriging" || method == "SVD"
         plot!(p_median_lin, bin_centers, mean.(dh_binned), label=split(method,"_")[1], ylabel=L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$", ls=:dot; color, xlabel, attr...)
         hline!(p_median_lin, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
         scatter!(p_std_lin,    bin_centers, std.(dh_binned), label=split(method,"_")[1]*" bins", ylabel=L"Error standard deviation $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
 
 
         sitp, rec_errors = svd_IceSheetDEM.uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
-        dest_file = joinpath(output_dir, "rec_error_$(method)_g$(grd).nc")
-        svd_IceSheetDEM.save_netcdf(dest_file, href_file, [rec_errors], ["std_error"], Dict("std_error" => Dict{String,Any}()))
+        # dest_file = joinpath(output_dir, "rec_error_$(method)_g$(grd).nc")
+        # svd_IceSheetDEM.save_netcdf(dest_file, href_file, [rec_errors], ["std_error"], Dict("std_error" => Dict{String,Any}()))
         x_plot = 0.0:(diff(bin_centers)[1]*0.1):3300
         plot!(p_std_lin, x_plot, sitp.(x_plot), z_order=1, label=split(method,"_")[1]*" B-spline fit"; color)
 
@@ -132,7 +131,7 @@ savefig(joinpath(fig_dir, "error_variogram.png"))
 
 # kriging only
 
-fs_kriging = glob("output/validation/cv_1e5.3_gr$(grd)_kriging_maxn*.jld2")
+fs_kriging = glob(joinpath("output", "validation", "cv_1e5.3_gr$(grd)_kriging_maxn*.jld2"))
 
 # sort files after maxn
 maxns = zeros(length(fs_kriging))
@@ -162,7 +161,7 @@ savefig(joinpath(fig_dir, "kriging_validation_maxn.png"))
 
 # for SVD only
 
-fs_SVD = glob("output/validation/cv_*gr$(grd)*SVD_h_nfiles70_morelambdas.jld2")
+fs_SVD = glob(joinpath("output", "validation", "cv_*gr$(grd)*SVD_h_nfiles70_morelambdas.jld2"))
 
 attr = (;size=(900,700), margin=15Plots.mm, markersize=6, lw=3.5, markerstrokewidth=0)
 

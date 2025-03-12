@@ -1,5 +1,10 @@
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 
+# file names
+get_std_uncrt_file(method, grd)      = joinpath("output", "validation", "std_error_$(method)_g$(grd).nc")
+get_cv_file_SVD(grd, logℓ, nfiles)   = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
+get_cv_file_kriging(grd, logℓ, maxn) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
+
 """
 Defines the domain containing the Greenland ice sheet that all grids are projected on, including the projection
 """
@@ -116,11 +121,15 @@ function get_attr(ds::NCDataset, layernames::Vector{String})
     # create dictionary of attributes
     attributes = Dict{String, Dict{String, Any}}()
     for l in layernames
-        var_attr = NCDatasets.OrderedDict()
-        for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue is prescribed, not necessarily the same as in template
-            push!(var_attr, att => ds[l].attrib[att])
+        if !haskey(ds, l)
+            push!(attributes, l => Dict{String, Any}())
+        else
+            var_attr = NCDatasets.OrderedDict()
+            for att in filter(x -> !in(x, ["_FillValue"]), keys(ds[l].attrib))  # fillvalue is prescribed, not necessarily the same as in template
+                push!(var_attr, att => ds[l].attrib[att])
+            end
+            push!(attributes, l => var_attr)
         end
-        push!(attributes, l => var_attr)
     end
     return attributes
 end
@@ -174,7 +183,7 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
 end
 
 function create_bedmachine_grid(grd)
-    bedmachine_path = "data/bedmachine/"
+    bedmachine_path = joinpath("data", "bedmachine")
     dest_file = joinpath(bedmachine_path, "bedmachine_g$(grd).nc")
     bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
     # if file exists already, do nothing
@@ -494,9 +503,10 @@ end
 
 function create_reconstructed_bedmachine(rec_file, dest)
     # load reconstruction and determine grid size
-    surfaceDEM = ncread(rec_file, "surface")
-    x          = ncread(rec_file, "x")
-    grd         = x[2] - x[1]
+    surfaceDEM      = ncread(rec_file, "surface")
+    std_uncertainty = ncread(rec_file, "std_uncertainty")
+    x               = ncread(rec_file, "x")
+    grd             = x[2] - x[1]
 
     # load bedmachine
     _, bedmachine_file = create_bedmachine_grid(grd)
@@ -527,8 +537,8 @@ function create_reconstructed_bedmachine(rec_file, dest)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
-    layernames  = ["surface", "bed", "thickness", "mask"]
+    layers      = [surfaceDEM, std_uncertainty, bedDEM, h_ice, new_mask]
+    layernames  = ["surface", "std_uncertainty", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)
     attributes  = get_attr(template, layernames)
     # overwrite some attributes
@@ -541,6 +551,8 @@ function create_reconstructed_bedmachine(rec_file, dest)
         attributes[l]["source"] = sources_rec[l]
     end
     attributes["mask"]["long_name"] = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
+    attributes["std_uncertainty"] = Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
+                                                         "units" => "m")
     save_netcdf(dest, bedmachine_file, layers, layernames, attributes)
 
     return dest

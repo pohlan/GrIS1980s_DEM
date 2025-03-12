@@ -74,7 +74,7 @@ function prepare_model(model_files, I_no_ocean, r, dest_file=""; use_arpack=fals
     return UΣ, Σ
 end
 
-function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir="")
+function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir)
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
@@ -104,13 +104,9 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir, fig_dir="")
     I_obs      = findall(obs[I_no_ocean] .!= 0.0)
     x_data     = obs[I_no_ocean[I_obs]]
 
-    if !isempty(fig_dir)
-        # save matrix of observations as nc and plot
-        obs[obs .== 0] .= no_data_value
-        save_netcdf(joinpath(output_dir,"obs_all_gr$(grd).nc"), tempname_nc, [obs], ["h"], Dict("h"=>Dict{String,Any}()))
-        Plots.heatmap(obs', clims=(-3,3), cmap=:bwr)
-        Plots.savefig(joinpath(fig_dir, "obs_SVD_all.png"))
-    end
+    # save matrix of observations as netcdf
+    obs[obs .== 0] .= no_data_value
+    save_netcdf(joinpath(output_dir,"obs_all_gr$(grd).nc"), tempname_nc, [obs], ["h"], Dict("h"=>Dict{String,Any}()))
     return x_data, I_obs
 end
 
@@ -124,10 +120,8 @@ end
 
 function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{String}, csv_preproc, jld2_preproc; use_arpack=false)
     # define output paths
-    main_output_dir = "output/SVD_reconstruction/"
-    fig_dir = joinpath(main_output_dir, "figures")
+    main_output_dir = joinpath("output","reconstructions")
     mkpath(main_output_dir)
-    mkpath(fig_dir)
 
     # get I_no_ocean and (de-)standardization functions
     dict = load(jld2_preproc)
@@ -138,7 +132,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
 
     saved_file    = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
     UΣ, _         = prepare_model(model_files, I_no_ocean, r, saved_file; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir, fig_dir)
+    x_data, I_obs = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir)
     r             = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
@@ -163,25 +157,21 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     dem_rec[dem_rec .<= 0] .= no_data_value
 
     # estimated error from cross-validation
-    # std_error =     # read in std_error field saved in plot_validation_results
+    std_uncertainty = NCDataset(get_std_uncrt_file("SVD", grd))["std_uncertainty"][:,:]
 
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
     filename    = joinpath(main_output_dir,"rec_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
-                                                      "standard_name" => "surface_altitude",
-                                                      "units" => "m")
-                    #    "std_error" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
-                    #                                    "units" => "m")
+                                                      "units" => "m"),
+                       "std_uncertainty" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
+                                                                 "units" => "m")
                         )
-    # save_netcdf(filename, href_file, [dem_rec, std_error], ["surface", "std_error"], attributes)
-    save_netcdf(filename, href_file, [dem_rec], ["surface"], attributes)
+    save_netcdf(filename, href_file, [dem_rec, std_uncertainty], ["surface", "std_uncertainty"], attributes)
 
-    # plot and save difference between reconstruction and observations
+    # save difference between reconstruction and observations
     save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))
-    Plots.heatmap(reshape(dif,nx,ny)', cmap=:bwr, clims=(-200,200), cbar_title="[m]", title="reconstructed - observations", size=(700,900))
-    Plots.savefig(joinpath(fig_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.png"))
 
     return filename, saved_file
 end

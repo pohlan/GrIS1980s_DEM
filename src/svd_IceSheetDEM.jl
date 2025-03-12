@@ -15,8 +15,9 @@ using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
 export parse_commandline, get_ix, get_iy
-export SVD_reconstruction, create_reconstructed_bedmachine, prepare_obs
-export SVD_random_fields, geostats_interpolation
+export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging
+export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs
+export SVD_reconstruction, geostats_interpolation
 
 const no_data_value = -9999.0
 const F = Float32              # Julia default is Float64 but that kills the process for the full training data set if r is too large

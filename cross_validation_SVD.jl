@@ -4,8 +4,6 @@ import Plots
 # set target directories
 main_output_dir = joinpath("output","validation")
 mkpath(main_output_dir)
-fig_dir = joinpath(main_output_dir, "figures/")
-mkpath(fig_dir)
 
 # for running the script interactively
 # ARGS = [
@@ -28,7 +26,7 @@ csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
-@unpack I_no_ocean, idx_aero = dict
+@unpack I_no_ocean, idx_aero, href_file = dict
 
 # load datasets, take full SVD (to be truncated with different rs later) for different numbers of training data files
 # This step saves the output to files and is skipped if the files exist already; delete files to force
@@ -53,7 +51,7 @@ function do_validation_and_save(f)
     UΣ = U*diagm(Σ)
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir, fig_dir)
+    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir)
 
     # create geotable (for GeoStats)
     x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
@@ -94,10 +92,18 @@ function do_validation_and_save(f)
     # save
     to_save = (; dict, grd, λs, rs, m_difs, xc=m_xc[1], yc=m_yc[1], idx=I_no_ocean[I_obs[idx]], nfiles, method="SVD")
     logℓ = round(log(10,ℓ),digits=1)
-    dest = joinpath(main_output_dir,"cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
+    dest = get_cv_file_SVD(grd, logℓ, nfiles)
     jldsave(dest; to_save...)
 end
 
 for f in fnames_modes
     do_validation_and_save(f)
 end
+
+# uncertainty estimation
+cv_dict                = load(get_cv_file_SVD(grd, logℓ, maximum(n_training_files)))
+dem_ref                = NCDataset(href_file)["surface"][:,:]
+dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(dem_ref[cv_dict.idx], cv_dict.m_difs, 14)
+sitp, std_uncertainty  = uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
+dest_file              = get_std_uncrt_file(cv_dict.method, grd)
+svd_IceSheetDEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
