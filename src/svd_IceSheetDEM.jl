@@ -37,7 +37,6 @@ function parse_commandline(args)
             help     = "model-generated realizations of ice sheet elevation as netcdf files, e.g. train_folder/usurf*.nc"
             nargs    = '*'
             arg_type = String
-            required = true
         "--shp_file"
             help     = "shape file outlining the ice sheet"
             arg_type = String
@@ -52,7 +51,7 @@ function parse_commandline(args)
             default  = 1500
         "--grid_size"
             help     = "cell size of grid, same in x and y direction; not needed for svd reconstruction where training_data is provided"
-            arg_type = Float64
+            arg_type = Int
             default  = 600.0
     end
     return parse_args(args,s)

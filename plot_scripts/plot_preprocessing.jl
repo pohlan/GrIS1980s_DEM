@@ -1,66 +1,10 @@
-using Plots, StatsPlots, JLD2, CSV, DataFrames, Meshes, NCDatasets, svd_IceSheetDEM, LaTeXStrings, Distributions, ImageMorphology, UnPack, GeoStats
+# define output path for other figures not in paper
+fig_dir_others = joinpath("output", "data_preprocessing", "figures")
+mkpath(fig_dir_others)
 
-# define output path
-fig_path = joinpath("output", "data_preprocessing", "figures")
-mkpath(fig_path)
-
-# load data
-target_grid = 600
-outline_shp_file = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated.shp")
-csv_preprocessing, jld2_preprocessing = prepare_obs(target_grid, outline_shp_file)
-df_all = CSV.read(csv_preprocessing, DataFrame)
-@unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean = load(jld2_preprocessing)
-
-mask_file = joinpath("data", "gris-imbie-1980", "outline_mask_g600.nc")
-
-h_ref = NCDataset(href_file)["surface"][:]
-x     = NCDataset(href_file)["x"][:]
-y     = NCDataset(href_file)["y"][:]
-outl  = NCDataset(mask_file)["Band1"][:]
-outl  = nomissing(outl, 0.0)
-
-####################
-# Heatmaps of data #
-####################
-
-outline_shp_crs = joinpath("data", "gris-imbie-1980", "gris-outline-imbie-1980_updated_crs.shp")
-shp              = Shapefile.shapes(Shapefile.Table(outline_shp_crs))
-
-function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
-    # plotting parameters
-    Plots.scalefontsizes()
-    Plots.scalefontsizes(6.5)
-    wsize          = (5000,6000)
-    xlabel         = "Easting (m)"
-    ylabel         = "Northing (m)"
-    colorbar_title = "(m)"
-    cmap           = :RdBu
-
-    id_df_aero = findall(df_all.source .== :aerodem .|| df_all.source .== "aerodem")
-    m_plot = zeros(dims)
-    m_plot[df_all.idx[id_df_aero]] .= df_all[!,sm][id_df_aero]
-    i_nans = m_plot .== 0
-    i_nans[I_no_ocean] .= false
-    m_plot[i_nans] .= NaN
-    # Plots.heatmap(mg', cmap=:Blacks)
-    heatmap(x, y, m_plot'; cmap) #, aspect_ratio=1, xlims=(-7e5,8e5); clims)
-    id_df_atm = findall(df_all.source .== :atm .|| df_all.source .== "atm")
-    scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=6.0, markerstrokewidth=0, aspect_ratio=1, xlims=(-7e5,8e5), ylims=(-3.32e6, -0.78e6), grid=false, bottommargin=0Plots.cm, rightmargin=8Plots.cm, leftmargin=10Plots.cm; wsize, xlabel, ylabel, colorbar_title, title, clims, cmap)
-    plot!(shp, fill=nothing, lw=1)
-    savefig(fname)
-    return
-end
-
-# plot before standardizing
-heatmap_from_df(df_all, :dh, x, y, size(h_ref), joinpath(fig_path,"data_non-standardized.png"), clims=(-20,20), title=L"Non-standardized observations $\Delta h")
-
-# plot after standardizing
-heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_path,"data_standardized.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")
-
-
-####################
-# Standardization  #
-####################
+##############################
+# Standardization, Figure 1  #
+##############################
 
 # plotting parameters
 Plots.scalefontsizes()
@@ -72,18 +16,18 @@ wwidth    = 1000
 
 # std
 Plots.heatmap(bin_centers_1, bin_centers_2, nmads', cmap=:batlow)
-Plots.savefig(joinpath(fig_path, "nmads_2Dbinning.png"))
+Plots.savefig(joinpath(fig_dir_others, "nmads_2Dbinning.png"))
 
 # bias
 Plots.heatmap(bin_centers_1, bin_centers_2, meds')
-Plots.savefig(joinpath(fig_path, "medians_2Dbinning.png"))
+Plots.savefig(joinpath(fig_dir_others, "medians_2Dbinning.png"))
 
 # qqplot
 Plots.plot(
     StatsPlots.qqplot(StatsPlots.Normal(), df_all.dh_detrend, title="standardized with binning", ylims=(-8,8)),
-    StatsPlots.qqplot(StatsPlots.Normal(), (df_all.dh .- mean(df_all.dh))./std(df_all.dh), title="standardized without binning", ylims=(-8,8))
+    StatsPlots.qqplot(StatsPlots.Normal(), (df_all.dh .- mean(df_all.dh))./std(df_all.dh), title="standardized without binning", ylims=(-8,8)), size=(1200,700)
     )
-Plots.savefig(joinpath(fig_path,"qqplot.png"))
+Plots.savefig(joinpath(fig_dir_others,"qqplot.png"))
 
 # interpolations
 x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
@@ -107,5 +51,42 @@ p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical v
 plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing)
 annotate!(p_varg, (xlims(p_varg)[1], ylims(p_varg)[2]*1.05, text(L"\textbf{d}", :left, 27)))  #  "Times Bold", "Helvetica Bold"
 
+# FIGURE 1
 p_all = plot(p_std, p_bias, p_hist, p_varg, wsize=(2500, 1200), left_margin=30Plots.mm)
-Plots.savefig(joinpath(fig_path, "preprocessing_plot_all.png"))
+Plots.savefig(joinpath(fig_dir_main, "Figure1.png"))
+
+
+##############################
+# Heatmaps of data, Figure 2 #
+##############################
+
+function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
+    # plotting parameters
+    Plots.scalefontsizes()
+    Plots.scalefontsizes(6.5)
+    wsize          = (5000,6000)
+    xlabel         = "Easting (m)"
+    ylabel         = "Northing (m)"
+    colorbar_title = "(m)"
+    cmap           = :RdBu
+    # plot raster with aerodem data
+    id_df_aero = findall(df_all.source .== :aerodem .|| df_all.source .== "aerodem")
+    m_plot = zeros(dims)
+    m_plot[df_all.idx[id_df_aero]] .= df_all[!,sm][id_df_aero]
+    i_nans = m_plot .== 0
+    i_nans[I_no_ocean] .= false
+    m_plot[i_nans] .= NaN
+    heatmap(x, y, m_plot'; cmap) #, aspect_ratio=1, xlims=(-7e5,8e5); clims)
+    # scatter atm point data
+    id_df_atm = findall(df_all.source .== :atm .|| df_all.source .== "atm")
+    scatter!(df_all.x[id_df_atm], df_all.y[id_df_atm], marker_z=df_all[!,sm][id_df_atm], label="", markersize=6.0, markerstrokewidth=0, aspect_ratio=1, xlims=(-7e5,8e5), ylims=(-3.32e6, -0.78e6), grid=false, bottommargin=0Plots.cm, rightmargin=8Plots.cm, leftmargin=10Plots.cm; wsize, xlabel, ylabel, colorbar_title, title, clims, cmap)
+    plot!(shp, fill=nothing, lw=1)
+    savefig(fname)
+    return
+end
+
+# plot before standardizing
+heatmap_from_df(df_all, :dh, x, y, size(h_ref), joinpath(fig_dir_others,"data_non-standardized.png"), clims=(-20,20), title=L"Non-standardized observations $\Delta h$")
+
+# plot after standardizing (FIGURE 2)
+heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref), joinpath(fig_dir_main,"Figure2.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")

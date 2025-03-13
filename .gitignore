@@ -4,6 +4,7 @@
 *.tif
 *.jpg
 *.png
+*.nc
 data/
 output/
 

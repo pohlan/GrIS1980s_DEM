@@ -21,7 +21,7 @@ x = NCDataset(template_file)["x"][:]
 y = NCDataset(template_file)["y"][:]
 const grd = Int(x[2] - x[1])
 
-csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file; blockspacing=grd/3, nbins1=7, nbins2=12)
+csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file)
 
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)

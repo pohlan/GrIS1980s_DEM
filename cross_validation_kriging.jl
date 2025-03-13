@@ -46,6 +46,7 @@ function evaluate_fun(i_train,i_test)
     interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
     return interp.Z
 end
+println("Kriging cross-validation...")
 difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
 
 # get indices
@@ -108,6 +109,7 @@ maxns = [10, 100, 1500, 3000]
 wallt = zeros(length(maxns))
 m_interps = zeros(length(xsp), length(ysp), length(maxns))
 grads     = zeros(length(xsp), length(ysp), length(maxns))
+println("Looping through maxns...")
 for (im,maxn) in enumerate(maxns)
     println("maxn = $maxn")
     tic = Base.time()

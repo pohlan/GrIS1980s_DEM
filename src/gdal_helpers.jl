@@ -315,7 +315,7 @@ function get_table_from_html(input::AbstractString)
     return tables
 end
 
-function create_aerodem(grd_target, grd_coreg, outline_shp_file, bedmachine_original, ref_coreg_file_geoid; kw="")
+function create_aerodem(grd_target, grd_coreg=150, outline_shp_file="", bedmachine_original="", ref_coreg_file_geoid=""; kw="")
     aerodem_path              = joinpath("data","aerodem")
     get_aero_file(grd_target) = joinpath(aerodem_path, "aerodem_rm-filtered_geoid-corr_g$(Int(grd_target)).nc")
     # get_rm_file(grd_target)   = aerodem_path * "rm_g$(grd_target).nc"
