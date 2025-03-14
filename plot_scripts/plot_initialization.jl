@@ -35,7 +35,7 @@ for (i,flux) in enumerate([flux_div_svd, flux_div_sgs])
     # plot at first time step
     p = heatmap(x[ix], y[iy], flux[ix,iy,1]'; title=title1, ylabel="Northing (m)", xlabel="Easting (m)", attr...)
     svd_IceSheetDEM.panel_annotate!(p, letter1)
-    plot!(p, shp, xlims=extrema(x[ix]), ylims=extrema(y[iy]), fill=nothing, lw=0.5)
+    plot!(p, outl, xlims=extrema(x[ix]), ylims=extrema(y[iy]), fill=nothing, lw=0.5)
     method = i == 1 ? "SVD method" : "Kriging"
     annotate!(xlims(p)[1] - 3.5e5, mean(ylims(p)), text(method, "Computer Modern", 23, :left))
     if i == 1
@@ -44,7 +44,7 @@ for (i,flux) in enumerate([flux_div_svd, flux_div_sgs])
     push!(ps,p)
     # plot later time step
     p = heatmap(x[ix], y[iy], flux[ix,iy,50]'; title=title2, xlabel="Easting (m)", bottom_margin=20Plots.mm, attr...)
-    plot!(p, shp, xlims=extrema(x[ix]), ylims=extrema(y[iy]), fill=nothing, lw=0.5)
+    plot!(p, outl, xlims=extrema(x[ix]), ylims=extrema(y[iy]), fill=nothing, lw=0.5)
     if i == 1
         p = plot(p, xtickfontsize=1, xtickfontcolor=:white, xguidefontcolor=:white, bottom_margin=-5Plots.mm)
     end
@@ -56,7 +56,7 @@ end
 rectangle(w, h, x, y) = Shape(x .+ [0,w,w,0], y .+ [0,0,h,h])
 ins = bbox(0.65,0.3,0.23,0.42, :left)
 plot!(ps[2], inset=ins, subplot=2, aspect_ratio=1)
-plot!(ps[2][2], shp, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false))
+plot!(ps[2][2], outl, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false))
 plot!(ps[2][2], rectangle(x[ix[end]]-x[ix[1]],y[iy[end]]-y[iy[1]],x[ix[1]],y[iy[1]]), fillalpha=0, linewidth=2, linecolor=:darkred, label="")
 # plot all panels
 p_panels = plot(ps..., layout=(2,2), size=(1800,1000), margin=5Plots.mm)

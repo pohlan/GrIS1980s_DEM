@@ -111,7 +111,7 @@ for m in axes(m_interps, 3)
     if m !== 1
         pi = plot(pi, ytickfontsize=1, ytickfontcolor=:white)
     end
-    plot!(shp, xlims=extrema(x[xsp]), ylims=extrema(y[ysp]), fill=nothing, lw=0.5)
+    plot!(outl, xlims=extrema(x[xsp]), ylims=extrema(y[ysp]), fill=nothing, lw=0.5)
     push!(ps, pi)
 end
 p_panels = plot(ps..., size=(3000, 500), layout=(1,4), leftmargin=10Plots.mm, rightmargin=10Plots.mm, topmargin=-10Plots.mm, bottommargin=-10Plots.mm)

@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates
+using svd_IceSheetDEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames, GeoFormatTypes
 using Plots, StatsPlots, LaTeXStrings, GeoStats, Shapefile, StatsBase, Meshes, Distributions
 
 # set target directories for paper figures
@@ -7,9 +7,11 @@ mkpath(fig_dir_main)
 
 # for running the script interactively
 # ARGS = [
+#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
 #         "--grid_size", "600.0"]
 
 parsed_args         = parse_commandline(ARGS)
+outline_shp_file    = parsed_args["shp_file"]
 grd                 = parsed_args["grid_size"]
 
 # load data
@@ -22,8 +24,12 @@ h_ref = NCDataset(href_file)["surface"][:]
 x     = NCDataset(href_file)["x"][:]
 y     = NCDataset(href_file)["y"][:]
 
-outline_shp_file = "data/gris-imbie-1980/gris-outline-imbie-1980_updated_crs.shp"  ### TODO !!
-shp              = Shapefile.shapes(Shapefile.Table(outline_shp_file))
+# to plot outline, polygon needs to be reprojected
+shp             = Shapefile.shapes(Shapefile.Table(outline_shp_file))
+coords_inverted = [(pt.y, pt.x) for pt in shp[1].points]   # reproject of GeoDataFrames expects the coordinates in reverse order
+df_inverted     = DataFrame(geometry=AG.createpolygon(coords_inverted))
+reproject!(df_inverted, EPSG(4326), EPSG(3413))
+outl            = df_inverted.geometry
 
 include("plot_preprocessing.jl")
 include("plot_eigenmodes.jl")
