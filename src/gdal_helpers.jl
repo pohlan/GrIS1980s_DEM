@@ -4,6 +4,9 @@ archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 get_std_uncrt_file(method, grd)      = joinpath("output", "validation", "std_error_$(method)_g$(grd).nc")
 get_cv_file_SVD(grd, logℓ, nfiles)   = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
 get_cv_file_kriging(grd, logℓ, maxn) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
+kriging_findmaxn_file()              = joinpath("output", "validation", "kriging_findmaxn.jld2")
+get_rec_file_SVD(logλ, r, grd)       = joinpath("output", "reconstructions", "rec_SVD_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
+get_rec_file_kriging(grd, maxn)      = joinpath("output", "reconstructions", "rec_kriging_g$(grd)_maxn$(maxn).nc")
 
 """
 Defines the domain containing the Greenland ice sheet that all grids are projected on, including the projection
@@ -499,6 +502,22 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
     rm(dh_interpolated_file)
 
     return atm_dh_dest_file
+end
+
+function download_velocity()
+    vel_dir = joinpath("data", "velocity/")
+    mkpath(vel_dir)
+    # download
+    vx_file_tif = joinpath(vel_dir, "ITS_LIVE_vx_120m.tif")
+    vy_file_tif = joinpath(vel_dir, "ITS_LIVE_vx_120m.tif")
+    Downloads.download("https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vx.tif", vx_file_tif)
+    Downloads.download("https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vy.tif", vy_file_tif)
+    # convert to netcdf, easier to read and deal with
+    vx_file_nc = splitext(vx_file_tif)[1]*".nc"
+    vy_file_nc = splitext(vy_file_tif)[1]*".nc"
+    AG.unsafe_gdaltranslate(AG.read(vx_file_tif); dest = vx_file_nc)
+    AG.unsafe_gdaltranslate(AG.read(vy_file_tif); dest = vy_file_nc)
+    return vx_file_nc, vy_file_nc
 end
 
 function create_reconstructed_bedmachine(rec_file, dest)

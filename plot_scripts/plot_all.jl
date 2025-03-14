@@ -31,6 +31,12 @@ df_inverted     = DataFrame(geometry=AG.createpolygon(coords_inverted))
 reproject!(df_inverted, EPSG(4326), EPSG(3413))
 outl            = df_inverted.geometry
 
+# chosen parameters for kriging and SVD
+const maxn0 = 1500
+const r0    = 500
+const λ0    = 1e7
+const logλ = Int(round(log(10, λ0)))
+
 include("plot_preprocessing.jl")
 include("plot_eigenmodes.jl")
 include("plot_validation_results.jl")

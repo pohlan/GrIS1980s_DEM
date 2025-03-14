@@ -126,4 +126,4 @@ for (im,maxn) in enumerate(maxns)
     println("Wall time: $tt minutes")
 end
 dict_to_save = (; maxns, wallt, m_interps, grads)
-jldsave(joinpath(main_output_dir, "kriging_findmaxn.jld2"); dict_to_save...)
+jldsave(kriging_findmaxn_file(); dict_to_save...)

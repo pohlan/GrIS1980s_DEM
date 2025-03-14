@@ -1,10 +1,7 @@
+# download ITS_LIVE velocity
+vx_file, vy_file = download_velocity()
 
 # Calculate flowlines from velocity
-
-# TODO !!! Downloading routine for velocity files
-
-vx_file = "data/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vx.nc"
-vy_file = "data/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vy.nc"
 lstep   = 600.0  # (m), step between two points in flowline
 maxdist = 1.2e5  # (m), maximum length of flowline
 starting_points = Dict("79N"                     => ( 488378., -1020715.),  # starting coordinates at terminus, determined manually
@@ -30,8 +27,8 @@ end
 # files and labels/attributes to zip-loop through
 files        = [create_aerodem(grd)[2],
                 create_bedmachine_grid(target_grid)[2],
-                "output/SVD_reconstruction/rec_lambda_1e7_g600_r500_h.nc",                        # TODO !!
-                "output/geostats_interpolation/kriging/rec_kriging_g600_maxn1600.nc"
+                get_rec_file_SVD(logλ, r, grd),
+                get_rec_file_kriging(grd, maxn)
                 ]
 labels       = ["Korsgaard et al., 2016", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
 name_for_col = ["aerodem", "GrIMP", "SVD_h", "kriging"]
@@ -106,7 +103,6 @@ svd_IceSheetDEM.panel_annotate!(p2, "a")
 ############################################
 
 # load data
-logλ = Int(round(log(10, λ)))
 f    = "output/reconstructions/dif_lambda_$(logλ)_g$(grd)_r$(r0).nc"
 dif = NCDataset(f)["dif"][:,:]
 dif[dif .== 0] .= NaN

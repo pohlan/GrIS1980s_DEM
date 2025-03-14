@@ -143,7 +143,7 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
     h_predict[h_predict .<= 0.] .= no_data_value
     # save as netcdf
-    dest_file_gr_kriging         = joinpath(main_output_dir, "rec_kriging_g$(target_grid)_maxn$(maxn).nc")
+    dest_file_gr_kriging         = get_rec_file_kriging(grd, maxn)
     std_uncertainty              = NCDataset(get_std_uncrt_file("kriging", grd))["std_uncertainty"][:,:]
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "units" => "m"),

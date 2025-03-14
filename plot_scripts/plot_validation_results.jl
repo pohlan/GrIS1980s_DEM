@@ -17,10 +17,7 @@ cols   = palette(:batlow10)[1:2:end]
 
 # get files
 logℓ   = round(log10(2e5),digits=1)
-f_dict = [get_cv_file_SVD(grd, logℓ, 70), get_cv_file_kriging(grd, logℓ, 1500)]
-# choose SVD parameterization (λ and r)
-λ0 = 1e7
-r0 = 500
+f_dict = [get_cv_file_SVD(grd, logℓ, 70), get_cv_file_kriging(grd, logℓ, maxn0)]
 # plot
 p_mean   = plot()
 p_std    = plot()
@@ -100,7 +97,7 @@ savefig(joinpath(fig_dir_main, "FigureS1.png"))
 
 Plots.scalefontsizes()
 Plots.scalefontsizes(1.6)
-@unpack maxns, m_interps = load("output/validation/kriging_findmaxn.jld2")   # TODO !!
+@unpack maxns, m_interps = load(kriging_findmaxn_file())
 ps = Plots.Plot{Plots.GRBackend}[]
 clims=(-4,4)
 cmap = :RdBu

@@ -15,8 +15,8 @@ using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
 export parse_commandline, get_ix, get_iy
-export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging
-export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs
+export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging, get_rec_file_SVD, get_rec_file_kriging, kriging_findmaxn_file
+export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs, download_velocity
 export SVD_reconstruction, geostats_interpolation
 
 const no_data_value = -9999.0

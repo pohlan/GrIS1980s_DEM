@@ -162,7 +162,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
-    filename    = joinpath(main_output_dir,"rec_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
+    filename    = get_rec_file_SVD(logλ, r, grd)
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "units" => "m"),
                        "std_uncertainty" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
