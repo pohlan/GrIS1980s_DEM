@@ -28,8 +28,8 @@ ticktxt = ["negative", "0", "positive"]
 [annotate!(1.5, yi, text(ti, 20, "Computer Modern", :left)) for (yi,ti) in zip(yticks,ticktxt)]
 # plot everything together
 layout = @layout [a{0.9w,1.0h} b{0.7h}]
-plot(p_panels, p_c; layout, bottom_margin=-40Plots.mm, size=(2100,600), top_margin=10Plots.mm)
-savefig(joinpath(fig_dir_main, "Figure3.png"))
+plot(p_panels, p_c; layout, bottom_margin=-40Plots.mm, size=(2100,600), top_margin=10Plots.mm, dpi=300)
+savefig(joinpath(fig_dir_main, "f03.png"))
 
 
 ########################
@@ -40,5 +40,5 @@ fig_dir_others = joinpath("output", "reconstructions", "figures")
 mkpath(fig_dir_others)
 
 v_rec = d["v_rec"]
-bar(d["v_rec"][1:100], label="", linecolor=:cornflowerblue, color=:cornflowerblue, size=attr.size, margin=attr.margin, xlabel=L"Mode index $i$", ylabel=L"$\mathbf{v}_\mathrm{rec,\,i}$", grid=false)
+bar(d["v_rec"][1:100], label="", linecolor=:cornflowerblue, color=:cornflowerblue, size=(900,900), margin=12Plots.mm, xlabel=L"Mode index $i$", ylabel=L"$\mathbf{v}_\mathrm{rec,\,i}$", grid=false)
 savefig(joinpath(fig_dir_others, "v_rec.png"))

@@ -99,7 +99,7 @@ function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, v
     return interp
 end
 
-function geostats_interpolation(target_grid,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
+function geostats_interpolation(grd,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
                                 outline_shp_file,
                                 csv_preprocessing, jld2_preprocessing;
                                 maxn::Int)                      # maximum neighbors for interpolation method
@@ -116,10 +116,10 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     @unpack destandardize = get_stddization_fcts(jld2_preprocessing)
     varg = get_var(gamma)
 
-    # get filenames at target_grid
-    bedmachine_original, _     = create_bedmachine_grid(target_grid)
-    _, ref_coreg_file_geoid, _ = create_grimpv2(target_grid, coreg_grid, bedmachine_original)
-    _, obs_aero_file           = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
+    # get filenames at grd
+    bedmachine_original, _     = create_bedmachine_grid(grd)
+    _, ref_coreg_file_geoid, _ = create_grimpv2(grd, coreg_grid, bedmachine_original)
+    _, obs_aero_file           = create_aerodem(grd, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
 
     # derive indices for cells to interpolate
     ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
@@ -134,7 +134,7 @@ function geostats_interpolation(target_grid,         # make kriging a bit faster
     h_ref                = nomissing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
-    bin_field_1          = bin1_fct(h_ref, target_grid)
+    bin_field_1          = bin1_fct(h_ref, grd)
 
     # do the kriging
     println("Kriging...")

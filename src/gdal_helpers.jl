@@ -1,12 +1,12 @@
 archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 
 # file names
-get_std_uncrt_file(method, grd)      = joinpath("output", "validation", "std_error_$(method)_g$(grd).nc")
-get_cv_file_SVD(grd, logℓ, nfiles)   = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
-get_cv_file_kriging(grd, logℓ, maxn) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
-kriging_findmaxn_file()              = joinpath("output", "validation", "kriging_findmaxn.jld2")
-get_rec_file_SVD(logλ, r, grd)       = joinpath("output", "reconstructions", "rec_SVD_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
-get_rec_file_kriging(grd, maxn)      = joinpath("output", "reconstructions", "rec_kriging_g$(grd)_maxn$(maxn).nc")
+get_std_uncrt_file(method, grd)          = joinpath("output", "validation", "std_error_$(method)_g$(grd).nc")
+get_cv_file_SVD(grd, nfiles, logℓ=5.3)   = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles).jld2")
+get_cv_file_kriging(grd, maxn, logℓ=5.3) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
+kriging_findmaxn_file()                  = joinpath("output", "validation", "kriging_findmaxn.jld2")
+get_rec_file_SVD(logλ, r, grd)           = joinpath("output", "reconstructions", "rec_SVD_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
+get_rec_file_kriging(grd, maxn)          = joinpath("output", "reconstructions", "rec_kriging_g$(grd)_maxn$(maxn).nc")
 
 """
 Defines the domain containing the Greenland ice sheet that all grids are projected on, including the projection
@@ -188,7 +188,7 @@ end
 function create_bedmachine_grid(grd)
     bedmachine_path = joinpath("data", "bedmachine")
     dest_file = joinpath(bedmachine_path, "bedmachine_g$(grd).nc")
-    bedmachine_original = bedmachine_path*"BedMachineGreenland-v5.nc"
+    bedmachine_original = joinpath(bedmachine_path, "BedMachineGreenland-v5.nc")
     # if file exists already, do nothing
     if isfile(dest_file)
         return bedmachine_original, dest_file
@@ -415,6 +415,9 @@ function create_outline_mask(grd, outline_shp_file, sample_file)
     fname_ones = "temp1.nc"
     layername   = "mask"
     attributes = Dict(layername => Dict{String, Any}())
+    if startswith(sample_file, "NETCDF")
+        sample_file = String(split(sample_file, ":")[2])
+    end
     save_netcdf(fname_ones, sample_file, [ones_m], [layername], attributes)
     gdalwarp(fname_ones; grd, cut_shp=outline_shp_file, dest=outline_mask_file)
     rm(fname_ones, force=true)
@@ -509,12 +512,15 @@ function download_velocity()
     mkpath(vel_dir)
     # download
     vx_file_tif = joinpath(vel_dir, "ITS_LIVE_vx_120m.tif")
-    vy_file_tif = joinpath(vel_dir, "ITS_LIVE_vx_120m.tif")
+    vy_file_tif = joinpath(vel_dir, "ITS_LIVE_vy_120m.tif")
+    vx_file_nc = splitext(vx_file_tif)[1]*".nc"
+    vy_file_nc = splitext(vy_file_tif)[1]*".nc"
+    if isfile(vx_file_nc) && isfile(vy_file_nc)
+        return vx_file_nc, vy_file_nc
+    end
     Downloads.download("https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vx.tif", vx_file_tif)
     Downloads.download("https://its-live-data.s3.amazonaws.com/velocity_mosaic/v2/static/cog/ITS_LIVE_velocity_120m_RGI05A_0000_v02_vy.tif", vy_file_tif)
     # convert to netcdf, easier to read and deal with
-    vx_file_nc = splitext(vx_file_tif)[1]*".nc"
-    vy_file_nc = splitext(vy_file_tif)[1]*".nc"
     AG.unsafe_gdaltranslate(AG.read(vx_file_tif); dest = vx_file_nc)
     AG.unsafe_gdaltranslate(AG.read(vy_file_tif); dest = vy_file_nc)
     return vx_file_nc, vy_file_nc
@@ -561,10 +567,11 @@ function create_reconstructed_bedmachine(rec_file, dest)
     template    = NCDataset(bedmachine_file)
     attributes  = get_attr(template, layernames)
     # overwrite some attributes
-    sources_rec = Dict("surface"   => "svd reconstruction",
-                       "bed"       => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
-                       "thickness" => "computed from surface and bed",
-                       "mask"      => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation"
+    sources_rec = Dict("surface"         => "svd reconstruction",
+                       "bed"             => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
+                       "thickness"       => "computed from surface and bed",
+                       "mask"            => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation",
+                       "std_uncertainty" => "cross-validation error"
                        )
     for l in layernames
         attributes[l]["source"] = sources_rec[l]

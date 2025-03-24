@@ -37,10 +37,15 @@ function parse_commandline(args)
             help     = "model-generated realizations of ice sheet elevation as netcdf files, e.g. train_folder/usurf*.nc"
             nargs    = '*'
             arg_type = String
+        "--initialization_run_kriging"
+            help     = "simulation initialized with kriging DEM"
+            arg_type = String
+        "--initialization_run_SVD"
+            help     = "simulation initialized with SVD DEM"
+            arg_type = String
         "--shp_file"
             help     = "shape file outlining the ice sheet"
             arg_type = String
-            required = true
         "--use_arpack"
             help     = "if set to true, the Arpack svd is used instead of the standard LinearAlgebra algorithm; Arpack is iterative and matrix free and thus useful when memory becomes limiting, but it can be slower"
             arg_type = Bool

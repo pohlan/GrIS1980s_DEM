@@ -15,7 +15,6 @@ mkpath(fig_dir)
 parsed_args         = parse_commandline(ARGS)
 outline_shp_file    = parsed_args["shp_file"]
 grd                 = parsed_args["grid_size"]
-maxn                = parsed_args["maxn"]
 
 ################################################
 # Preprocessing, standardization and variogram #
@@ -28,7 +27,6 @@ df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
 @unpack I_no_ocean, idx_aero, gamma, href_file = dict
 @unpack destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
-# varg = svd_IceSheetDEM.custom_var(params)
 varg = svd_IceSheetDEM.get_var(gamma)
 
 # make geotable
@@ -42,50 +40,45 @@ geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
 ℓ    = 2e5
 flds = folds(geotable, BlockFolding(ℓ))
 
-function evaluate_fun(i_train,i_test)
-    interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
-    return interp.Z
-end
+maxns = [10, 100, 500, 1500, 3000]
 println("Kriging cross-validation...")
-difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
+for maxn in maxns
+    println("maxn = $(maxn)...")
+    function evaluate_fun(i_train,i_test)
+        interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
+        return interp.Z
+    end
+    difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
 
-# get indices
-idxs = [Int[] for i in flds]
-for (i,fs) in enumerate(flds)
-    idxs[i] = fs[2]
+    # get indices
+    idxs = [Int[] for i in flds]
+    for (i,fs) in enumerate(flds)
+        idxs[i] = fs[2]
+    end
+    idx = vcat(idxs...)
+
+    logℓ    = round(log10(ℓ),digits=1)
+    dest    = get_cv_file_kriging(grd, maxn, logℓ)
+    cv_dict = (; maxn, difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
+    jldsave(dest; cv_dict...)
+
+    # plot map of difs and blocks
+    p = Plots.scatter(xc,yc,marker_z=difs, cmap=:bwr, clims=(-4,4), markersize=0.7, markerstrokewidth=0, label="", aspect_ratio=1, size=(500,700))
+    for (j,fs) in enumerate(flds)
+        stest = view(domain(geotable), fs[2])
+        ch    = GeoStats.convexhull(stest).rings[1].vertices.data
+        xx    = [ustrip.(a.coords.x) for a in ch]
+        yy    = [ustrip.(a.coords.y) for a in ch]
+        Plots.plot!(p, xx,yy, lw=1, color="black", label="")
+    end
+    Plots.plot(p, size=(500,700))
+    Plots.savefig(joinpath(fig_dir, "map_validation_kriging_maxn$maxn.png"))
 end
-idx = vcat(idxs...)
 
-logℓ    = round(log10(ℓ),digits=1)
-dest    = get_cv_file_kriging(grd, logℓ, maxn)
-cv_dict = (; maxn, difs, xc, yc, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="kriging")
-jldsave(dest; cv_dict...)
 
-##############################################
-
-# plot map of difs
-p = Plots.scatter(xc,yc,marker_z=difs, cmap=:bwr, clims=(-4,4), markersize=0.7, markerstrokewidth=0, label="", aspect_ratio=1, size=(500,700))
-for (j,fs) in enumerate(flds)
-    stest = view(domain(geotable), fs[2])
-    ch    = GeoStats.convexhull(stest).rings[1].vertices.data
-    xx    = [ustrip.(a.coords.x) for a in ch]
-    yy    = [ustrip.(a.coords.y) for a in ch]
-    Plots.plot!(p, xx,yy, lw=1, color="black", label="")
-end
-Plots.plot(p, size=(500,700))
-Plots.savefig(joinpath(fig_dir, "map_validation_kriging_maxn$maxn.png"))
-
-# uncertainty estimation
-dem_ref                = NCDataset(href_file)["surface"][:,:]
-dif_destd              = destandardize(cv_dict.difs, cv_dict.binfield1, cv_dict.h_ref, add_mean=false)
-dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(cv_dict.h_ref, dif_destd, 14)
-sitp, std_uncertainty  = uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
-dest_file              = get_std_uncrt_file(cv_dict.method, grd)
-svd_IceSheetDEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
-
-#######################################################
-# Determine good maxns through morphological gradient #
-#######################################################
+###############################################
+# Interpolate a subregion for different maxns #
+###############################################
 bedmachine_original, bedm_file    = svd_IceSheetDEM.create_bedmachine_grid(grd)
 reference_file_g150, _, ref_file  = svd_IceSheetDEM.create_grimpv2(grd, dict["coreg_grid"], bedmachine_original)
 
@@ -125,5 +118,5 @@ for (im,maxn) in enumerate(maxns)
     tt = round(toc ./ 60, digits=1)
     println("Wall time: $tt minutes")
 end
-dict_to_save = (; maxns, wallt, m_interps, grads)
+dict_to_save = (; xsp, ysp, maxns, wallt, m_interps, grads)
 jldsave(kriging_findmaxn_file(); dict_to_save...)

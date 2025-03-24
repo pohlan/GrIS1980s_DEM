@@ -50,7 +50,7 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     return Data
 end
 
-function prepare_model(model_files, I_no_ocean, r, dest_file=""; use_arpack=false)
+function prepare_model(model_files::Vector{String}, I_no_ocean::Vector{Int}, dest_file::String="", r::Int=1000; use_arpack=false)
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
 
@@ -112,7 +112,9 @@ end
 
 function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_data) where T <: Real
     @views A      = UΣ[I_obs,1:r]
-    v_rec         = (transpose(A)*A + λ*I)^(-1) * transpose(A) * x_data
+    U_A, Σ_A, V_A = svd(A)
+    D             = transpose(diagm(Σ_A))*diagm(Σ_A) + λ*I
+    v_rec         = V_A * D^(-1) * transpose(diagm(Σ_A)) * transpose(U_A) * x_data
     # v_rec         = (transpose(A)*W*A + λ*I)^(-1) * transpose(A)*W*x_data
     x_rec         = UΣ[:,1:r]*v_rec
     return v_rec, x_rec
@@ -131,7 +133,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
     saved_file    = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
-    UΣ, _         = prepare_model(model_files, I_no_ocean, r, saved_file; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    UΣ, _         = prepare_model(model_files, I_no_ocean, saved_file, r; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir)
     r             = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])

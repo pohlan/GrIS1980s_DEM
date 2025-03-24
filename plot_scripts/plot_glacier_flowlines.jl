@@ -1,3 +1,7 @@
+# define output path for other figures not in paper
+fig_dir_others = joinpath("output", "reconstructions", "figures")
+mkpath(fig_dir_others)
+
 # download ITS_LIVE velocity
 vx_file, vy_file = download_velocity()
 
@@ -25,13 +29,13 @@ end
 ########################################################
 
 # files and labels/attributes to zip-loop through
-files        = [create_aerodem(grd)[2],
-                create_bedmachine_grid(target_grid)[2],
-                get_rec_file_SVD(logλ, r, grd),
-                get_rec_file_kriging(grd, maxn)
+files        = [svd_IceSheetDEM.create_aerodem(grd)[2],
+                svd_IceSheetDEM.create_bedmachine_grid(grd)[2],
+                get_rec_file_SVD(logλ, r0, grd),
+                get_rec_file_kriging(grd, maxn0)
                 ]
 labels       = ["Korsgaard et al., 2016", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
-name_for_col = ["aerodem", "GrIMP", "SVD_h", "kriging"]
+name_for_col = ["aerodem", "GrIMP", "SVD", "kriging"]
 bandnm       = ["Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]
 lstls        = [:solid, :solid, :dot, :dot]
@@ -67,7 +71,6 @@ for (ip, pf) in enumerate(prof_files)
             i_max   = findmax(vals[i_nonan])[2]
             xmax    = max(min(dist[i_nonan[i_max]]* 1.8, maximum(dist)), 60e3)
             ixmaxs[glacier_name] = findlast(dist .<= xmax)
-            i20[glacier_name] = findlast(dist .<= 15e3)
             xlims=(0, xmax/1e3)
             Plots.plot!(dist./1e3, vals; label, color, ls, lw, z_order, xlims)
         else
@@ -77,19 +80,19 @@ for (ip, pf) in enumerate(prof_files)
             ylims=(-1.0, maximum(vals[i_nonan][1:im])+100)
             Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
             if label == "Kriging" || label == "SVD method"
-                f_error = "output/validation/rec_error_$(col_nm)_g600.nc"
-                dist, vals_std = svd_IceSheetDEM.interpolate_raster_to_profile(f_error, xc, yc; band = "std_error")
+                # uncertainty
+                dist, vals_std = svd_IceSheetDEM.interpolate_raster_to_profile(f, xc, yc; band = "std_uncertainty")
                 vals_std[isnan.(vals_std)] .= 0
                 plot!(dist./1e3, vals .- vals_std, fillrange = vals .+ vals_std, label="", fillcolor=color, fillalpha=0.5, lw=0; z_order) #; label, color, ls, lw, ylims, z_order, alpha=0.7)
             end
         end
     end
     push!(ps, p_i)
-    Plots.savefig(p_i, joinpath(fig_dir, glacier_name*"_h.png"))
+    Plots.savefig(p_i, joinpath(fig_dir_others, glacier_name*".png"))
 end
 # plot all glaciers, Figure S5
-Plots.plot(ps..., size=(2300,2000), left_margin = 12Plots.mm, bottom_margin = 12Plots.mm, topmargin = 12Plots.mm)
-Plots.savefig(joinpath(fig_dir_main, "FigureS5.png"))
+Plots.plot(ps..., size=(2300,2000), left_margin = 12Plots.mm, bottom_margin = 12Plots.mm, topmargin = 12Plots.mm, dpi=300)
+Plots.savefig(joinpath(fig_dir_main, "fS05.png"))
 # plot two selected glaciers only
 i_glaciers = findall(glacier_titles .== "Helheim" .|| glacier_titles .== "Sermeq Kujalleq")
 p1_nolegend = plot(ps[i_glaciers[1]], legend=false)
@@ -103,10 +106,8 @@ svd_IceSheetDEM.panel_annotate!(p2, "a")
 ############################################
 
 # load data
-f    = "output/reconstructions/dif_lambda_$(logλ)_g$(grd)_r$(r0).nc"
-dif = NCDataset(f)["dif"][:,:]
+dif = nomissing(NCDataset(files[1])[bandnm[1]][:,:] .- NCDataset(files[3])[bandnm[3]][:,:], 0.0)
 dif[dif .== 0] .= NaN
-dif[.!isnan.(dif)] .=  (-1) * dif[.!isnan.(dif)]  # so that it's h_obs - h_SVD
 # coordinates of glacier catchments
 function crds_tup(;yb, xl, δx=80000, δy=68000)
     return (;yb,xl,δx,δy)
@@ -133,14 +134,14 @@ function plot_dif(glacier_name, panel_letter, flowline_panel, ins_crds::Tuple, a
     xtick1 = xv[findfirst(xv .% xtick_interval .== 0)]
     p_dif = heatmap(x[ix], y[iy], dif[ix,iy]', cmap=:RdBu, clims=(-200,200), aspect_ratio=1, size=(1000,900), margin=10Plots.mm, xlabel="Easting (m)", ylabel="Northing (m)", title=" \n \n"*L"$h_\mathrm{obs}- h_\mathrm{SVD}$", colorbar_title="", grid=false)
     annotate!((xl + 1.25δx, yb + 0.5δy, text("(m)", 18)))
-    plot!(p_dif, shp, fill=nothing, xlims=extrema(x[ix]), ylims=extrema(y[iy]), xticks  = xtick1:xtick_interval:x[ix[end]], xtick_direction=:out, lw=0.5)
-    plot!(p_dif, df.X[iplot], df.Y[iplot], label="Flowline in $(flowline_panel))", aspect_ratio=1, lw=3, color=:slategray, legend_foreground_color=nothing, legend_background_color=:transparent) #, ls=:dash)
+    plot!(p_dif, outl, fill=nothing, xlims=extrema(x[ix]), ylims=extrema(y[iy]), xticks  = xtick1:xtick_interval:x[ix[end]], xtick_direction=:out, lw=0.5)
+    plot!(p_dif, df.X[iplot], df.Y[iplot], label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:slategray, legend_foreground_color=nothing, legend_background_color=:transparent)
     svd_IceSheetDEM.panel_annotate!(p_dif, panel_letter)
     # insert for Greenland outline
     rectangle(w, h, x, y) = Shape(x .+ [0,w,w,0], y .+ [0,0,h,h])
     ins = bbox(ins_crds[1], ins_crds[2], 0.2, 0.18, :left)
     plot!(p_dif, inset=ins, subplot=2, aspect_ratio=1)
-    plot!(p_dif[2], shp, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false), aspect_ratio=1, lw=0.3)
+    plot!(p_dif[2], outl, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false), aspect_ratio=1, lw=0.3)
     plot!(p_dif[2], rectangle(x[ix[end]]-x[ix[1]],y[iy[end]]-y[iy[1]],x[ix[1]],y[iy[1]]), fillalpha=0, linewidth=2, linecolor=:red3, label="")
     # draw arrow manually (didn't manage to adjust arrowhead size with arrow=(..))
     x1, xend = x[ix[1]]+arrow_crds[1], x[ix[1]]+arrow_crds[2]
@@ -152,15 +153,15 @@ function plot_dif(glacier_name, panel_letter, flowline_panel, ins_crds::Tuple, a
 end
 p_dif1 = plot_dif("Sermeq-Kujalleq", "c", "a", (0.6,0.6), (5e5, 1.5e5, +6e5, +1.5e5))
 p_dif2 = plot_dif("Helheim", "d", "b", (0.14,0.6), (-3.5e5, -6e4, +5e5, +1.2e5))
-plot(p2, p1_nolegend, p_dif1, p_dif2, wsize=(2500, 1800), left_margin=12Plots.mm)
-savefig(joinpath(fig_dir_main, "Figure5.png"))
+plot(p2, p1_nolegend, p_dif1, p_dif2, wsize=(2500, 1800), left_margin=12Plots.mm, dpi=300)
+savefig(joinpath(fig_dir_main, "f05.png"))
 
 
 ######################################
 # Plot map with flowlines, Figure S6 #
 ######################################
 
-p = plot(shp, fillalpha=0, aspect_ratio=1, axis=([],false), wsize = (900, 1400), lw=1)
+p = plot(outl, fillalpha=0, aspect_ratio=1, axis=([],false), wsize = (900, 1400), lw=1)
 for fname in prof_files
     df            = CSV.read(fname, DataFrame)
     glacier_name  = splitext(basename(fname))[1]
@@ -176,5 +177,5 @@ for fname in prof_files
     end
     Plots.annotate!(df.X[iplot[end]]+dif_x, df.Y[iplot[end]]+dif_y, text(glacier_title, ann_pos, 16, "Computer Modern"))
 end
-Plots.plot(p)
-Plots.savefig(joinpath(fig_dir_main, "FigureS6.png"))
+Plots.plot(p, dpi=300)
+Plots.savefig(joinpath(fig_dir_main, "fS06.png"))
