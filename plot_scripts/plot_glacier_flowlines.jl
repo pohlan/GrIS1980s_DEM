@@ -34,7 +34,7 @@ files        = [svd_IceSheetDEM.create_aerodem(grd)[2],
                 get_rec_file_SVD(logλ, r0, grd),
                 get_rec_file_kriging(grd, maxn0)
                 ]
-labels       = ["Korsgaard et al., 2016", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
+labels       = ["AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
 name_for_col = ["aerodem", "GrIMP", "SVD", "kriging"]
 bandnm       = ["Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]

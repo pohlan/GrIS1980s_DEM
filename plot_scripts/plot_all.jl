@@ -15,8 +15,6 @@ mkpath(fig_dir_main)
 parsed_args         = parse_commandline(ARGS)
 outline_shp_file    = parsed_args["shp_file"]
 grd                 = parsed_args["grid_size"]
-init_run_krig       = parsed_args["initialization_run_kriging"]
-init_run_SVD        = parsed_args["initialization_run_SVD"]
 
 # load data
 csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, "")
@@ -42,7 +40,6 @@ const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))
 
 include("plot_preprocessing.jl")
-include("plot_eigenmodes.jl")
+# include("plot_eigenmodes.jl")
 include("plot_validation_results.jl")
 include("plot_glacier_flowlines.jl")
-include("plot_initialization.jl")
