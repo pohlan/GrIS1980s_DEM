@@ -66,7 +66,7 @@ for (ip, pf) in enumerate(prof_files)
     for (i,(f, label, col_nm, ls, z_order, band)) in enumerate(zip(files, labels, name_for_col, lstls, z_orders, bandnm))
         dist, vals   = svd_IceSheetDEM.interpolate_raster_to_profile(f, xc, yc; band)
         color = svd_IceSheetDEM.palette_dict[col_nm]
-        if label == "Korsgaard et al., 2016"
+        if label == "AeroDEM (Korsgaard et al., 2016)"
             i_nonan = findall(.!isnan.(vals))
             i_max   = findmax(vals[i_nonan])[2]
             xmax    = max(min(dist[i_nonan[i_max]]* 1.8, maximum(dist)), 60e3)
