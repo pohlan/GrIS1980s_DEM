@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NCDatasets, UnPack, JLD2
+using GrIS1980s_DEM, NCDatasets, UnPack, JLD2
 
 # set target directories
 main_output_dir = joinpath("output","validation")
@@ -19,16 +19,16 @@ maxn                = parsed_args["maxn"]
 # Pre-process and standardize data #
 csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file, nbins1=40, nbins2=50)
 @unpack href_file = load(jld2_preprocessing)
-@unpack standardize, destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
+@unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
 
 # uncertainty estimation from cross-validation
 cv_dict                    = load(get_cv_file_kriging(grd, maxn))
 dem_ref                    = NCDataset(href_file)["surface"][:,:]
 dif_destd                  = destandardize(cv_dict["difs"], cv_dict["binfield1"], cv_dict["h_ref"], add_mean=false)
-dh_binned, bin_centers     = svd_IceSheetDEM.bin_equal_bin_size(cv_dict["h_ref"], dif_destd, 14)
+dh_binned, bin_centers     = GrIS1980s_DEM.bin_equal_bin_size(cv_dict["h_ref"], dif_destd, 14)
 sitp, std_uncertainty      = uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
 dest_file                  = get_std_uncrt_file(cv_dict["method"], grd)
-svd_IceSheetDEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
+GrIS1980s_DEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
 
 # reconstruction
 tic = Base.time()

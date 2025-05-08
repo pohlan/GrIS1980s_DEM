@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, Glob, NCDatasets, JLD2, GeoStats, Statistics, StatsBase, StatsPlots, LaTeXStrings, CSV, DataFrames, UnPack, LinearAlgebra
+using GrIS1980s_DEM, Glob, NCDatasets, JLD2, GeoStats, Statistics, StatsBase, StatsPlots, LaTeXStrings, CSV, DataFrames, UnPack, LinearAlgebra
 import Plots
 
 # set target directories
@@ -21,7 +21,7 @@ x = NCDataset(template_file)["x"][:]
 y = NCDataset(template_file)["y"][:]
 const grd = Int(x[2] - x[1])
 
-csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file)
+csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, outline_shp_file)
 
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
@@ -38,7 +38,7 @@ for (i,nfils) in enumerate(n_training_files)
     if isfile(fname)
         continue
     end
-	svd_IceSheetDEM.prepare_model(model_files[1:nfils], I_no_ocean, fname) # read in model data and take svd to derive "eigen ice sheets
+	GrIS1980s_DEM.prepare_model(model_files[1:nfils], I_no_ocean, fname) # read in model data and take svd to derive "eigen ice sheets
 end
 
 # give λ and r values to loop through
@@ -54,18 +54,18 @@ function do_validation_and_save(f)
     UΣ = U*diagm(Σ)
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, I_obs                 = svd_IceSheetDEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir)
+    x_data, I_obs                 = GrIS1980s_DEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir)
 
     # create geotable (for GeoStats)
     x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
     y_Iobs   = y[get_iy.(I_no_ocean[I_obs],length(x))]
-    geotable = svd_IceSheetDEM.make_geotable(x_data, x_Iobs, y_Iobs)
+    geotable = GrIS1980s_DEM.make_geotable(x_data, x_Iobs, y_Iobs)
 
     # create sets of training and test data
     flds = folds(geotable, BlockFolding(ℓ))
 
     function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
-        _, x_rec = svd_IceSheetDEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
+        _, x_rec = GrIS1980s_DEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
         return x_rec[I_obs[i_test]]
     end
 
@@ -79,7 +79,7 @@ function do_validation_and_save(f)
             logλ = round(log(10, λ),digits=1)
             println("r = $r, logλ = $logλ")
             evaluate_fun(i_train,i_test) = predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
-            difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
+            difs, xc, yc = GrIS1980s_DEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
             m_difs[iλ,ir] = difs
             m_xc[iλ,ir] = xc
             m_yc[iλ,ir] = yc

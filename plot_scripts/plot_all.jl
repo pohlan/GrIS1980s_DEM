@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames
+using GrIS1980s_DEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames
 using Plots, StatsPlots, LaTeXStrings, GeoStats, Shapefile, StatsBase, Statistics, Meshes, Distributions
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
@@ -17,8 +17,8 @@ outline_shp_file    = parsed_args["shp_file"]
 grd                 = parsed_args["grid_size"]
 
 # load data
-csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, "")
-@unpack standardize, destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
+csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, "")
+@unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
 @unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean = load(jld2_preprocessing)
 df_all = CSV.read(csv_preprocessing, DataFrame)
 

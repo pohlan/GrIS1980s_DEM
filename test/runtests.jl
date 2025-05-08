@@ -1,4 +1,4 @@
-using svd_IceSheetDEM
+using GrIS1980s_DEM
 using Test, LinearAlgebra, NetCDF, NCDatasets, CSV, DataFrames
 
 cd(@__DIR__)  # set working directory to where file is located
@@ -16,18 +16,18 @@ rm("output", recursive=true, force=true)
 ###################################################
 
 # bedmachine
-bedmachine_original, bedmachine_file_gr = svd_IceSheetDEM.create_bedmachine_grid(grd)
+bedmachine_original, bedmachine_file_gr = GrIS1980s_DEM.create_bedmachine_grid(grd)
 # GrIMP v2
 tiles = ["2_0", "2_1", "3_0", "3_1", "3_2", "4_1", "4_2", "5_2"]
-reference_file_g150, ref_file   = svd_IceSheetDEM.create_grimpv2(grd, bedmachine_original, kw=tiles)
+reference_file_g150, ref_file   = GrIS1980s_DEM.create_grimpv2(grd, bedmachine_original, kw=tiles)
 # aerodem
-aero_150_file, aero_gr_file = svd_IceSheetDEM.create_aerodem(grd, outline_shp_file, bedmachine_original, reference_file_g150, kw="1981")    # only download the DEMs from 1981 while testing to save some space
+aero_150_file, aero_gr_file = GrIS1980s_DEM.create_aerodem(grd, outline_shp_file, bedmachine_original, reference_file_g150, kw="1981")    # only download the DEMs from 1981 while testing to save some space
 # imbie mask
-outline_mask_file = svd_IceSheetDEM.create_outline_mask(grd, outline_shp_file, aero_150_file)
+outline_mask_file = GrIS1980s_DEM.create_outline_mask(grd, outline_shp_file, aero_150_file)
 # atm
 blockspacing=grd
 lines = ["93.06.23", "93.06.24", "93.07.01", "93.07.09"]
-atm_dh_file = svd_IceSheetDEM.get_atm_dh_file(ref_file, bedmachine_file_gr, blockspacing, kw=lines)
+atm_dh_file = GrIS1980s_DEM.get_atm_dh_file(ref_file, bedmachine_file_gr, blockspacing, kw=lines)
 
 missmax(x) = maximum(x[.!ismissing.(x)])
 missmin(x) = minimum(x[.!ismissing.(x)])

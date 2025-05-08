@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NCDatasets, UnPack, JLD2
+using GrIS1980s_DEM, NCDatasets, UnPack, JLD2
 
 # for running the script interactively
 # ARGS = [
@@ -36,10 +36,10 @@ csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file, nbin
 cv_dict                = load(get_cv_file_SVD(grd, length(training_data_files)))
 ir, iλ                 = findfirst(cv_dict["rs"].==r), findfirst(cv_dict["λs"].==λ)
 dem_ref                = NCDataset(href_file)["surface"][:,:]
-dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(dem_ref[cv_dict["idx"]], cv_dict["m_difs"][iλ,ir], 14)
+dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(dem_ref[cv_dict["idx"]], cv_dict["m_difs"][iλ,ir], 14)
 sitp, std_uncertainty  = uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
 dest_file              = get_std_uncrt_file(cv_dict["method"], grd)
-svd_IceSheetDEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
+GrIS1980s_DEM.save_netcdf(dest_file, href_file, [std_uncertainty], ["std_uncertainty"], Dict("std_uncertainty" => Dict{String,Any}()))
 
 # reconstruction
 rec_file, dict_file = SVD_reconstruction(λ, r, grd, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)

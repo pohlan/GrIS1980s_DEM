@@ -1,5 +1,5 @@
 __precompile__(false)
-module svd_IceSheetDEM
+module GrIS1980s_DEM
 
 using ArgParse
 
@@ -72,4 +72,4 @@ include("kriging_interpolation.jl")
 include("SVD_reconstruction.jl")
 include("plotting_tools.jl")
 
-end # module svd_IceSheetDEM
+end # module GrIS1980s_DEM

@@ -20,7 +20,7 @@ starting_points = Dict("79N"                     => ( 488378., -1020715.),  # st
 )
 prof_files = String[]
 for (output_name, (px0, py0)) in starting_points
-    fname = svd_IceSheetDEM.get_flowline_coords(vx_file, vy_file, lstep, maxdist, px0, py0, output_name)
+    fname = GrIS1980s_DEM.get_flowline_coords(vx_file, vy_file, lstep, maxdist, px0, py0, output_name)
     push!(prof_files, fname)
 end
 
@@ -29,8 +29,8 @@ end
 ########################################################
 
 # files and labels/attributes to zip-loop through
-files        = [svd_IceSheetDEM.create_aerodem(grd)[2],
-                svd_IceSheetDEM.create_bedmachine_grid(grd)[2],
+files        = [GrIS1980s_DEM.create_aerodem(grd)[2],
+                GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
                 get_rec_file_SVD(logλ, r0, grd),
                 get_rec_file_kriging(grd, maxn0)
                 ]
@@ -43,7 +43,7 @@ lw           = 4
 z_orders     = [1,1,1,1]
 # plotting attributes
 Plots.scalefontsizes()
-Plots.scalefontsizes(svd_IceSheetDEM.font_scaling)
+Plots.scalefontsizes(GrIS1980s_DEM.font_scaling)
 ps = Plots.Plot{Plots.GRBackend}[]
 xlabel = "Distance along profile (km)"
 ylabel = "Surface elevation (m)"
@@ -60,12 +60,12 @@ for (ip, pf) in enumerate(prof_files)
     xc = prof.X
     yc = prof.Y
     # initialize figure
-    p_i = Plots.plot(title="\n"*glacier_title, size=(svd_IceSheetDEM.wwidth,svd_IceSheetDEM.wheight); xlabel, ylabel, margin = 10Plots.mm,
+    p_i = Plots.plot(title="\n"*glacier_title, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight); xlabel, ylabel, margin = 10Plots.mm,
               fg_legend=:transparent, bg_legend=:transparent, legend)
     # plot the projected elevations of the different DEMs
     for (i,(f, label, col_nm, ls, z_order, band)) in enumerate(zip(files, labels, name_for_col, lstls, z_orders, bandnm))
-        dist, vals   = svd_IceSheetDEM.interpolate_raster_to_profile(f, xc, yc; band)
-        color = svd_IceSheetDEM.palette_dict[col_nm]
+        dist, vals   = GrIS1980s_DEM.interpolate_raster_to_profile(f, xc, yc; band)
+        color = GrIS1980s_DEM.palette_dict[col_nm]
         if label == "AeroDEM (Korsgaard et al., 2016)"
             i_nonan = findall(.!isnan.(vals))
             i_max   = findmax(vals[i_nonan])[2]
@@ -81,7 +81,7 @@ for (ip, pf) in enumerate(prof_files)
             Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
             if label == "Kriging" || label == "SVD method"
                 # uncertainty
-                dist, vals_std = svd_IceSheetDEM.interpolate_raster_to_profile(f, xc, yc; band = "std_uncertainty")
+                dist, vals_std = GrIS1980s_DEM.interpolate_raster_to_profile(f, xc, yc; band = "std_uncertainty")
                 vals_std[isnan.(vals_std)] .= 0
                 plot!(dist./1e3, vals .- vals_std, fillrange = vals .+ vals_std, label="", fillcolor=color, fillalpha=0.5, lw=0; z_order) #; label, color, ls, lw, ylims, z_order, alpha=0.7)
             end
@@ -96,9 +96,9 @@ Plots.savefig(joinpath(fig_dir_main, "fS05.png"))
 # plot two selected glaciers only
 i_glaciers = findall(glacier_titles .== "Helheim" .|| glacier_titles .== "Sermeq Kujalleq")
 p1_nolegend = plot(ps[i_glaciers[1]], legend=false)
-svd_IceSheetDEM.panel_annotate!(p1_nolegend, "b")
+GrIS1980s_DEM.panel_annotate!(p1_nolegend, "b")
 p2          = plot(ps[i_glaciers[2]])
-svd_IceSheetDEM.panel_annotate!(p2, "a")
+GrIS1980s_DEM.panel_annotate!(p2, "a")
 
 
 ############################################
@@ -136,7 +136,7 @@ function plot_dif(glacier_name, panel_letter, flowline_panel, ins_crds::Tuple, a
     annotate!((xl + 1.25δx, yb + 0.5δy, text("(m)", 18)))
     plot!(p_dif, outl, fill=nothing, xlims=extrema(x[ix]), ylims=extrema(y[iy]), xticks  = xtick1:xtick_interval:x[ix[end]], xtick_direction=:out, lw=0.5)
     plot!(p_dif, df.X[iplot], df.Y[iplot], label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:slategray, legend_foreground_color=nothing, legend_background_color=:transparent)
-    svd_IceSheetDEM.panel_annotate!(p_dif, panel_letter)
+    GrIS1980s_DEM.panel_annotate!(p_dif, panel_letter)
     # insert for Greenland outline
     rectangle(w, h, x, y) = Shape(x .+ [0,w,w,0], y .+ [0,0,h,h])
     ins = bbox(ins_crds[1], ins_crds[2], 0.2, 0.18, :left)

@@ -4,8 +4,8 @@ mkpath(fig_dir_others)
 
 # plotting attributes
 Plots.scalefontsizes()
-Plots.scalefontsizes(svd_IceSheetDEM.font_scaling)
-attr = (;margin=10Plots.mm, size=(svd_IceSheetDEM.wwidth,svd_IceSheetDEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
+Plots.scalefontsizes(GrIS1980s_DEM.font_scaling)
+attr = (;margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
 xlabel = "Elevation of reference DEM (m)"
 cols   = palette(:batlow10)[1:2:end]
 
@@ -37,9 +37,9 @@ for f in f_dict
         dif_destd = m_difs[iλ, ir]
     end
     # bin error vs elevation
-    dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(h_ref, dif_destd, 14)
+    dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref, dif_destd, 14)
     # color
-    color = svd_IceSheetDEM.palette_dict[method]
+    color = GrIS1980s_DEM.palette_dict[method]
     # plot mean and std errors
     plot!(p_mean, bin_centers, mean.(dh_binned), label=split(method,"_")[1], ylabel=L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$", ls=:dot; color, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
@@ -50,9 +50,9 @@ for f in f_dict
     plot!(p_std, x_plot, sitp.(x_plot), z_order=1, label=split(method,"_")[1]*" B-spline fit"; color)
 end
 p_mean = plot(p_mean, legend_foreground_color=nothing)
-svd_IceSheetDEM.panel_annotate!(p_mean, "a")
+GrIS1980s_DEM.panel_annotate!(p_mean, "a")
 p_std = plot(p_std, legend=:bottomleft, legend_foreground_color=nothing)
-svd_IceSheetDEM.panel_annotate!(p_std, "b")
+GrIS1980s_DEM.panel_annotate!(p_std, "b")
 p_both_lin = plot(p_mean, p_std, size=(2000,700), margin=15Plots.mm, dpi=300)
 savefig(joinpath(fig_dir_main, "f04.png"))
 
@@ -77,15 +77,15 @@ for (f, color) in zip(fs_kriging[ps], cols)
     @unpack idx, h_ref, difs, maxn, binfield1 = load(f)
     dif_destd = destandardize(difs, binfield1, h_ref, add_mean=false)
     dif_destd .= .- dif_destd
-    dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(h_ref, dif_destd, 14)
+    dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref, dif_destd, 14)
     plot!(p_mean, bin_centers, mean.(dh_binned), label=""; color, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
     plot!(p_std,    bin_centers, std.(dh_binned), label="$(maxn)", legend_title=L"\mathrm{n_{obs}}"; color, attr...)
 end
 p_mean = plot(p_mean, legend=false)
-svd_IceSheetDEM.panel_annotate!(p_mean, "a")
+GrIS1980s_DEM.panel_annotate!(p_mean, "a")
 p_std = plot(p_std, legend=:topright, legend_foreground_color=nothing)
-svd_IceSheetDEM.panel_annotate!(p_std, "b")
+GrIS1980s_DEM.panel_annotate!(p_std, "b")
 p_both = plot(p_mean, p_std, size=(2000,700), margin=15Plots.mm, dpi=300)
 savefig(joinpath(fig_dir_main, "fS01.png"))
 
@@ -141,10 +141,10 @@ for i in eachindex(rs)
     md_abs = [abs.(md) for md in m_difs[:,i] ]
     plot!(p, λs[1:end-1], mean.(md_abs)[1:end-1], label="r="*string(rs[i]), marker=:circle; attr...)
 end
-svd_IceSheetDEM.panel_annotate_xlog!(p, "a")
+GrIS1980s_DEM.panel_annotate_xlog!(p, "a")
 # plot singular values
 p_sigm = plot(Σ.^2, yscale=:log10, yticks=[1e5, 1e7, 1e9, 1e11, 1e13, 1e15, 1e17], color=:black, ylabel=L"$\sigma_i^2$", xlabel=L"Mode index $i$", title="\n Singular values", label=""; attr...)
-svd_IceSheetDEM.panel_annotate_ylog!(p_sigm, "b")
+GrIS1980s_DEM.panel_annotate_ylog!(p_sigm, "b")
 # save both in one figure
 plot(p, p_sigm, size=(1800,600), dpi=300)
 savefig(joinpath(fig_dir_main,"fS03.png"))
@@ -157,9 +157,9 @@ savefig(joinpath(fig_dir_main,"fS03.png"))
 # get file
 fs_SVD = glob(get_cv_file_SVD(grd, "*"))
 # plot
-attr = (;margin=10Plots.mm, size=(svd_IceSheetDEM.wwidth,svd_IceSheetDEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
-p_mean = plot(wsize=(svd_IceSheetDEM.wwidth, svd_IceSheetDEM.wheight))
-p_std  = plot(wsize=(svd_IceSheetDEM.wwidth, svd_IceSheetDEM.wheight))
+attr = (;margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
+p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
+p_std  = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 for (f_SVD, color) in zip(fs_SVD, cols)
     @unpack idx, m_difs, λs, rs, nfiles = load(f_SVD)
     if nfiles == 10   # doesn't have 500 modes
@@ -170,14 +170,14 @@ for (f_SVD, color) in zip(fs_SVD, cols)
         ir = findfirst(rs .== r0)
     end
     difs = m_difs[iλ, ir]
-    dh_binned, bin_centers = svd_IceSheetDEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
+    dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
     plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", label=" $(nfiles*40)", ylabel=L"Mean $\epsilon$ (m)"; color, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
     plot!(p_std,    bin_centers, std.(dh_binned), legend_title=L"$m$", label=" $(nfiles*40)", ylabel=L"Error standard deviation $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
 end
 p_mean = plot(p_mean, legend_foreground_color=nothing)
-svd_IceSheetDEM.panel_annotate!(p, "a")
+GrIS1980s_DEM.panel_annotate!(p, "a")
 p_std = plot(p_std, legend=false)
-svd_IceSheetDEM.panel_annotate!(p_std, "b")
+GrIS1980s_DEM.panel_annotate!(p_std, "b")
 plot(p_mean, p_std,size=(2000,700), margin=15Plots.mm, dpi=300)
 savefig(joinpath(fig_dir_main, "fS04.png"))

@@ -32,24 +32,24 @@ savefig(joinpath(fig_dir_others,"qqplot.png"))
 # interpolations
 x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
 x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
-itp_var = svd_IceSheetDEM.get_itp_interp(bin_centers_1, bin_centers_2, nmads)
+itp_var = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, nmads)
 p_std  = heatmap(x1, x2, itp_var.(x1, x2')',  xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_title=L"$\sigma_{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), margin=12Plots.mm, cmap=cmap_else)
-svd_IceSheetDEM.panel_annotate!(p_std, "a")
-itp_bias = svd_IceSheetDEM.get_itp_interp(bin_centers_1, bin_centers_2, meds)
+GrIS1980s_DEM.panel_annotate!(p_std, "a")
+itp_bias = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, meds)
 p_bias = heatmap(x1, x2, itp_bias.(x1, x2')', xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_title=L"$\overline{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), margin=12Plots.mm, cmap=cmap_div, clims=(-40,40))
-svd_IceSheetDEM.panel_annotate!(p_bias, "b")
+GrIS1980s_DEM.panel_annotate!(p_bias, "b")
 
 # histogram
 p_hist = histogram(df_all.dh_detrend, label="Standardized \nobservations", xlims=(-7,7), yticks=false, xlabel="Elevation difference (m)", ylabel="Frequency", normalize=:pdf, nbins=800, color=:cornflowerblue, wsize=(wwidth, wheight), linecolor=:cornflowerblue, margin=12Plots.mm)
 plot!(p_hist, Normal(), lw=2.5, label="Normal distribution", color="black", foreground_color_legend = nothing)
-svd_IceSheetDEM.panel_annotate!(p_hist, "c")
+GrIS1980s_DEM.panel_annotate!(p_hist, "c")
 
 # variogram
 xvals, yvals = values(gamma)
-varg = svd_IceSheetDEM.get_var(gamma; adjust_sill=false)
+varg = GrIS1980s_DEM.get_var(gamma; adjust_sill=false)
 p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:cornflowerblue, markerstrokewidth=0, wsize=(wwidth,wheight), xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", margin=12Plots.mm)
 plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing)
-svd_IceSheetDEM.panel_annotate!(p_varg, "d")
+GrIS1980s_DEM.panel_annotate!(p_varg, "d")
 
 # FIGURE 1
 p_all = plot(p_std, p_bias, p_hist, p_varg, wsize=(2500, 1200), left_margin=30Plots.mm, dpi=300)

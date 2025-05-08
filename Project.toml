@@ -1,4 +1,4 @@
-name = "svd_IceSheetDEM"
+name = "GrIS1980s_DEM"
 uuid = "33c15a80-d7e1-495f-a237-10f5cbc5c5cf"
 authors = ["annegret <annegret.pohle@outlook.com>"]
 version = "0.1.0"

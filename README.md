@@ -1,6 +1,6 @@
-# svd_IceSheetDEM
+# GrIS1980s_DEM
 
-[![CI](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml/badge.svg)](https://github.com/pohlan/svd_IceSheetDEM/actions/workflows/CI.yml)
+[![CI](https://github.com/pohlan/GrIS1980s_DEM/actions/workflows/CI.yml/badge.svg)](https://github.com/pohlan/GrIS1980s_DEM/actions/workflows/CI.yml)
 
 ## Installation / setup
 
@@ -9,8 +9,8 @@ This code is mostly written in Julia but relies on a few python packages which a
 ### 1) Julia
 Clone the repo:
 ```
-$ git clone git@github.com:pohlan/svd_IceSheetDEM.git
-$ cd svd_IceSheetDEM
+$ git clone git@github.com:pohlan/GrIS1980s_DEM.git
+$ cd GrIS1980s_DEM
 ```
 Next, download all the required packages either directly in the shell over
 ```
@@ -20,7 +20,7 @@ or in the Julia command line
 ```
 $ julia --project      # --project directly activates the environment
 julia> ]               # takes you to the command line of the package manager
-(svd_IceSheetDEM) pkg> instantiate
+(GrIS1980s_DEM) pkg> instantiate
 ```
 ### 2) Python
 Python is called using the PythonCall package. Unfortunately, the more seemless CondaPkg setup does not work here due to some gdal incompabilities between Julia and Python packages.
@@ -42,7 +42,7 @@ export JULIA_CONDAPKG_BACKEND="Null"
 export JULIA_PYTHONCALL_EXE="/home/.../python"
 ```
 This works best when running the julia files from the shell directly.
-When running the scripts interactively in a text editor, it may be necessary to instead add the following lines within the Julia script **before** loading the package with `using svd_IceSheetDEM`:
+When running the scripts interactively in a text editor, it may be necessary to instead add the following lines within the Julia script **before** loading the package with `using GrIS1980s_DEM`:
 ```
 ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
 ENV["JULIA_PYTHONCALL_EXE"] = "/home/.../python"

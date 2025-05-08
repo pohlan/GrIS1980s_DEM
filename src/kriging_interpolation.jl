@@ -37,17 +37,17 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40,
 
     # calculate bin_field on h_ref
     m_href        = nomissing(h_ref, NaN)    # bin1_fct doesn't accept type missing
-    bin_field_1   = svd_IceSheetDEM.bin1_fct(m_href, target_grid)
+    bin_field_1   = GrIS1980s_DEM.bin1_fct(m_href, target_grid)
     # calculate bin_field on h_aero to fill gaps at the terminus where h_ref is NaN (because glaciers have retreated)
     m_haero       = nomissing(h_aero, NaN)   # bin1_fct doesn't accept type missing
-    b1_haero      = svd_IceSheetDEM.bin1_fct(m_haero, target_grid)
+    b1_haero      = GrIS1980s_DEM.bin1_fct(m_haero, target_grid)
     # fill those gaps with b1_haero
     idx_aero_b1   = findall(vec(m_href .== 0.0 .&& .!isnan.(b1_haero)))
     bin_field_1[idx_aero_b1] .= b1_haero[idx_aero_b1]
     # there are still some NaN values at the edges where grimpv2 is also NaN, but h_aero has a value -> interpolate
-    x_int  = x[svd_IceSheetDEM.get_ix.(I_no_ocean, length(x))]
-    y_int  = y[svd_IceSheetDEM.get_iy.(I_no_ocean, length(x))]
-    gtb    = svd_IceSheetDEM.make_geotable(bin_field_1[I_no_ocean], x_int, y_int)
+    x_int  = x[GrIS1980s_DEM.get_ix.(I_no_ocean, length(x))]
+    y_int  = y[GrIS1980s_DEM.get_iy.(I_no_ocean, length(x))]
+    gtb    = GrIS1980s_DEM.make_geotable(bin_field_1[I_no_ocean], x_int, y_int)
     out    = gtb |> InterpolateNaN(IDW())
     i_nans = findall(isnan.(bin_field_1[I_no_ocean]))
     bin_field_1[I_no_ocean[i_nans]] .= out.Z[i_nans]

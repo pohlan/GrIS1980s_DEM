@@ -1,4 +1,4 @@
-using svd_IceSheetDEM, NetCDF, NCDatasets, Meshes, Statistics, StatsBase, GeoStats, CSV, DataFrames, Printf, JLD2, Distributions, ImageMorphology, StatsPlots, LaTeXStrings, Interpolations, UnPack
+using GrIS1980s_DEM, NetCDF, NCDatasets, Meshes, Statistics, StatsBase, GeoStats, CSV, DataFrames, Printf, JLD2, Distributions, ImageMorphology, StatsPlots, LaTeXStrings, Interpolations, UnPack
 import Plots
 
 # set target directories
@@ -20,17 +20,17 @@ grd                 = parsed_args["grid_size"]
 # Preprocessing, standardization and variogram #
 ################################################
 
-csv_preprocessing, jld2_preprocessing = svd_IceSheetDEM.prepare_obs(grd, outline_shp_file)
+csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, outline_shp_file)
 
 # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
 df_all = CSV.read(csv_preprocessing, DataFrame)
 dict   = load(jld2_preprocessing)
 @unpack I_no_ocean, idx_aero, gamma, href_file = dict
-@unpack destandardize = svd_IceSheetDEM.get_stddization_fcts(jld2_preprocessing)
-varg = svd_IceSheetDEM.get_var(gamma)
+@unpack destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
+varg = GrIS1980s_DEM.get_var(gamma)
 
 # make geotable
-geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
+geotable = GrIS1980s_DEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
 
 ##############################################
 # Standard cross-validation, leave block out #
@@ -45,10 +45,10 @@ println("Kriging cross-validation...")
 for maxn in maxns
     println("maxn = $(maxn)...")
     function evaluate_fun(i_train,i_test)
-        interp = svd_IceSheetDEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
+        interp = GrIS1980s_DEM.do_kriging(view(domain(geotable),i_test), view(geotable,i_train), varg; maxn)
         return interp.Z
     end
-    difs, xc, yc = svd_IceSheetDEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
+    difs, xc, yc = GrIS1980s_DEM.step_through_folds(flds, evaluate_fun, geotable, save_coords=true, save_distances=false)
 
     # get indices
     idxs = [Int[] for i in flds]
@@ -79,8 +79,8 @@ end
 ###############################################
 # Interpolate a subregion for different maxns #
 ###############################################
-bedmachine_original, bedm_file    = svd_IceSheetDEM.create_bedmachine_grid(grd)
-reference_file_g150, _, ref_file  = svd_IceSheetDEM.create_grimpv2(grd, dict["coreg_grid"], bedmachine_original)
+bedmachine_original, bedm_file    = GrIS1980s_DEM.create_bedmachine_grid(grd)
+reference_file_g150, _, ref_file  = GrIS1980s_DEM.create_grimpv2(grd, dict["coreg_grid"], bedmachine_original)
 
 # derive indices for cells to interpolate, this time interpolate the points we don't know, technically no validation!
 ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
@@ -94,7 +94,7 @@ ir_keep = findall(xsp[1].<ix.<xsp[end] .&& ysp[1].<iy.<ysp[end])
 grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[ix[ir_keep]], y[iy[ir_keep]])])
 
 ir_keep_df = findall(x[xsp[1]].<df_all.x.<x[xsp[end]] .&& y[ysp[1]].<df_all.y.<y[ysp[end]])
-geotable = svd_IceSheetDEM.make_geotable(df_all.dh_detrend[ir_keep_df], df_all.x[ir_keep_df], df_all.y[ir_keep_df])
+geotable = GrIS1980s_DEM.make_geotable(df_all.dh_detrend[ir_keep_df], df_all.x[ir_keep_df], df_all.y[ir_keep_df])
 
 # loop through maxns and calculate the morphological gradient each time
 maxns = [10, 100, 1500, 3000]
@@ -106,7 +106,7 @@ println("Looping through maxns...")
 for (im,maxn) in enumerate(maxns)
     println("maxn = $maxn")
     tic = Base.time()
-    interp = svd_IceSheetDEM.do_kriging(grid_output, geotable, varg; maxn)
+    interp = GrIS1980s_DEM.do_kriging(grid_output, geotable, varg; maxn)
     toc = Base.time() - tic
     m_interp = zeros(length(x),length(y))
     m_interp[ir_sim[ir_keep]] .= mean.(interp.Z)
