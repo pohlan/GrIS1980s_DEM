@@ -4,8 +4,10 @@
 
 ## Installation / setup
 
+This code is mostly written in Julia but relies on a few python packages which are called from within Julia. This leads to a slightly more complex setup. The following should work at least on Ubuntu (provided Julia and Python are installed):
+
 ### 1) Julia
-In the shell:
+Clone the repo:
 ```
 $ git clone git@github.com:pohlan/svd_IceSheetDEM.git
 $ cd svd_IceSheetDEM
@@ -21,7 +23,7 @@ julia> ]               # takes you to the command line of the package manager
 (svd_IceSheetDEM) pkg> instantiate
 ```
 ### 2) Python
-This code relies on a few python packages which are called from Julia using the PythonCall package. Unfortunately, the more seemless CondaPkg setup does not work here due to some gdal incompabilities between Julia and Python packages.
+Python is called using the PythonCall package. Unfortunately, the more seemless CondaPkg setup does not work here due to some gdal incompabilities between Julia and Python packages.
 So instead one has to manually set up a conda environment for the python libraries and link those to PythonCall.
 
 First, create a conda enviroment using the environment.yml file
@@ -50,9 +52,13 @@ ENV["JULIA_PYTHONCALL_EXE"] = "/home/.../python"
 ## Additional requirements
 
 ### 1) Local files
-All training data and a shape file outlining the ice must be available locally.
+Two things must be available locally:
+
+- a shape file outlining the ice
+- the 'training data' (PISM generated realizations of surface elevation in the study)
+
 ### 2) Earthdata login
-Downloading the data requires earthdata credentials. To provide this information, one can create a file called .netcr in the home folder containing the following:
+Downloading the data requires earthdata credentials. To provide this information, one can create a file called `.netcr` in the home folder containing the following:
 ```
 machine urs.earthdata.nasa.gov
 login myusername
@@ -63,13 +69,13 @@ replacing `myusername` with the actual username and `abcd123` with the password.
 
 ## Running the scripts
 
-### Order in which to run from scratch (probably don't want to run everything in one go)
-The first script that is run will download all the data and do the pre-processing.
+### Scripts to run full analysis from scratch (probably don't want to run everything in one go)
+The first script that is run will download all the data and do the pre-processing. Scripts can be run independently except `plot_all.jl` obviously as it relies on the output.
 1) `cross_validation_kriging.jl`: the 'shortest' but may still take several hours / a full day
-2) `cross_validation_SVD.jl`: high memory requirement (>64GB RAM)
-3) `kriging_reconstruction.jl`: may take several days
-4) `SVD_reconstruction.jl`: high memory requirement (>64GB RAM)
-4) `plot...`: Produce figures for the study, all from saved outputs.
+2) `cross_validation_SVD.jl`: high memory requirement (>64GB RAM) depending on the amount of 'training data'
+3) `kriging_reconstruction.jl`: may take several days but cheap in RAM
+4) `SVD_reconstruction.jl`: high memory requirement (>64GB RAM) depending on the amount of 'training data'
+4) `plot_scripts/plot_all.jl`: Produce figures for the study, all from saved outputs
 
 ### Run a script from the shell
 The scripts above can be run directly from the shell with the following command line arguments:
@@ -132,3 +138,4 @@ Then run
 $ julia --project
 julia> include("cross_validation_kriging.jl")
 ```
+Although, it should be noted that interactive mode is only useful for development as the performance may be reduced.
