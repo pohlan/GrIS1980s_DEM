@@ -5,6 +5,8 @@
 *.jpg
 *.png
 *.nc
+*.xml
+*.vrt
 data/
 output/
 
@@ -15,6 +17,9 @@ output/
 *.log
 *.pdf
 *.synctex.gz
+
+# other
+*.json
 
 # Julia
 Manifest.toml
