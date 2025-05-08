@@ -1,6 +1,5 @@
 # GrIS1980s_DEM
 
-[![CI](https://github.com/pohlan/GrIS1980s_DEM/actions/workflows/CI.yml/badge.svg)](https://github.com/pohlan/GrIS1980s_DEM/actions/workflows/CI.yml)
 
 ## Installation / setup
 
@@ -41,7 +40,9 @@ then link this environment to PythonCall by running the following in the shell /
 export JULIA_CONDAPKG_BACKEND="Null"
 export JULIA_PYTHONCALL_EXE="/home/.../python"
 ```
-This works best when running the julia files from the shell directly.
+Note: If CondaPkg is starting to set up its own environment (creating a .CondaPkg directory) then the above didn't work, and the compiling of GrIS1980s_DEM will likely fail.
+
+The above works best when running the Julia files from the shell directly.
 When running the scripts interactively in a text editor, it may be necessary to instead add the following lines within the Julia script **before** loading the package with `using GrIS1980s_DEM`:
 ```
 ENV["JULIA_CONDAPKG_BACKEND"] = "Null"
@@ -75,7 +76,7 @@ The first script that is run will download all the data and do the pre-processin
 2) `cross_validation_SVD.jl`: high memory requirement (>64GB RAM) depending on the amount of 'training data'
 3) `kriging_reconstruction.jl`: may take several days but cheap in RAM
 4) `SVD_reconstruction.jl`: high memory requirement (>64GB RAM) depending on the amount of 'training data'
-4) `plot_scripts/plot_all.jl`: Produce figures for the study, all from saved outputs
+4) `plot_scripts/plot_all.jl`: produce figures for the study, all from saved outputs
 
 ### Run a script from the shell
 The scripts above can be run directly from the shell with the following command line arguments:
