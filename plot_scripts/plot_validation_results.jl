@@ -176,7 +176,7 @@ for (f_SVD, color) in zip(fs_SVD, cols)
     plot!(p_std,    bin_centers, std.(dh_binned), legend_title=L"$m$", label=" $(nfiles*40)", ylabel=L"Error standard deviation $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
 end
 p_mean = plot(p_mean, legend_foreground_color=nothing)
-GrIS1980s_DEM.panel_annotate!(p, "a")
+GrIS1980s_DEM.panel_annotate!(p_mean, "a")
 p_std = plot(p_std, legend=false)
 GrIS1980s_DEM.panel_annotate!(p_std, "b")
 plot(p_mean, p_std,size=(2000,700), margin=15Plots.mm, dpi=300)
