@@ -29,21 +29,22 @@ end
 ########################################################
 
 # files and labels/attributes to zip-loop through
-files        = [GrIS1980s_DEM.create_aerodem(grd)[2],
+files        = [get_rec_file_SVD_combined(logλ, r0, grd),
+                GrIS1980s_DEM.create_aerodem(grd)[2],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
                 get_rec_file_SVD(logλ, r0, grd),
                 get_rec_file_kriging(grd, maxn0)
                 ]
-labels       = ["AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
-name_for_col = ["aerodem", "GrIMP", "SVD", "kriging"]
-bandnm       = ["Band1", "surface", "surface", "surface"]
+labels       = ["Combined SVD/AeroDEM reconstruction", "AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
+name_for_col = ["combined", "aerodem", "GrIMP", "SVD", "kriging"]
+bandnm       = ["surface", "Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]
-lstls        = [:solid, :solid, :dot, :dot]
-lw           = 4
-z_orders     = [1,1,1,1]
+lstls        = [:dashdotdot, :solid, :solid, :dot, :dot]
+lws          = [3,4,4,4,4]
+z_orders     = [1,1,1,1,1]
 # plotting attributes
 Plots.scalefontsizes()
-Plots.scalefontsizes(GrIS1980s_DEM.font_scaling)
+Plots.scalefontsizes(1.9)
 ps = Plots.Plot{Plots.GRBackend}[]
 xlabel = "Distance along profile (km)"
 ylabel = "Surface elevation (m)"
@@ -63,7 +64,7 @@ for (ip, pf) in enumerate(prof_files)
     p_i = Plots.plot(title="\n"*glacier_title, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight); xlabel, ylabel, margin = 10Plots.mm,
               fg_legend=:transparent, bg_legend=:transparent, legend)
     # plot the projected elevations of the different DEMs
-    for (i,(f, label, col_nm, ls, z_order, band)) in enumerate(zip(files, labels, name_for_col, lstls, z_orders, bandnm))
+    for (i,(f, label, col_nm, ls, z_order, band, lw)) in enumerate(zip(files, labels, name_for_col, lstls, z_orders, bandnm, lws))
         dist, vals   = GrIS1980s_DEM.interpolate_raster_to_profile(f, xc, yc; band)
         color = GrIS1980s_DEM.palette_dict[col_nm]
         if label == "AeroDEM (Korsgaard et al., 2016)"
@@ -78,7 +79,12 @@ for (ip, pf) in enumerate(prof_files)
             i_nonan = findall(.!isnan.(vals))
             im   = findmin(abs.(xmax .- dist[i_nonan]./1e3))[2]
             ylims=(-1.0, maximum(vals[i_nonan][1:im])+100)
-            Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
+            if label == "Combined SVD/AeroDEM reconstruction"
+                dmark = glacier_title == "Helheim" || glacier_title == "Sermeq Kujalleq" ? 3 : 5
+                Plots.scatter!(dist[2:dmark:end]./1e3, vals[2:dmark:end]; label, color, ylims, z_order, marker=:diamond, markersize=6.5, markerstrokewidth=0.4, markerstrokecolor="Black", fillalpha=0)
+            else
+                Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
+            end
             if label == "Kriging" || label == "SVD method"
                 # uncertainty
                 dist, vals_std = GrIS1980s_DEM.interpolate_raster_to_profile(f, xc, yc; band = "std_uncertainty")
@@ -91,7 +97,11 @@ for (ip, pf) in enumerate(prof_files)
     Plots.savefig(p_i, joinpath(fig_dir_others, glacier_name*".png"))
 end
 # plot all glaciers, Figure S5
-Plots.plot(ps..., size=(2300,2000), left_margin = 12Plots.mm, bottom_margin = 12Plots.mm, topmargin = 12Plots.mm, dpi=300)
+for (i,pp) in enumerate(ps)
+    legend = i == 6 || i == 3
+    ps[i] = plot(pp; legend, markersize=0.3)
+end
+Plots.plot(ps[[2,4,5,6,7,8]]..., size=(2300,2000), left_margin = 12Plots.mm, bottom_margin = 12Plots.mm, topmargin = 12Plots.mm, dpi=300, layout=(3,2))
 Plots.savefig(joinpath(fig_dir_main, "fS05.png"))
 # plot two selected glaciers only
 i_glaciers = findall(glacier_titles .== "Helheim" .|| glacier_titles .== "Sermeq Kujalleq")
@@ -106,7 +116,7 @@ GrIS1980s_DEM.panel_annotate!(p2, "a")
 ############################################
 
 # load data
-dif = nomissing(NCDataset(files[1])[bandnm[1]][:,:] .- NCDataset(files[3])[bandnm[3]][:,:], 0.0)
+dif = nomissing(NCDataset(files[2])[bandnm[2]][:,:] .- NCDataset(files[4])[bandnm[4]][:,:], 0.0)
 dif[dif .== 0] .= NaN
 # coordinates of glacier catchments
 function crds_tup(;yb, xl, δx=80000, δy=68000)

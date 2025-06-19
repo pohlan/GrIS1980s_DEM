@@ -177,3 +177,57 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
 
     return filename, saved_file
 end
+
+function combined_SVD_AeroDEM(λ::Real, r::Int, grd::Int, f_svd_mask)
+    logλ      = Int(round(log(10, λ)))
+    f_svd     = get_rec_file_SVD(logλ, r, grd)
+    f_krig    = get_rec_file_kriging(grd, 1500)
+    _, f_aero = create_aerodem(600)
+
+    h_svd    = NCDataset(f_svd)["surface"][:,:]
+    h_aero   = NCDataset(f_aero)["Band1"][:,:]
+    h_krig   = NCDataset(f_krig)["surface"][:,:]
+    std_svd  = NCDataset(f_svd)["std_uncertainty"][:,:]
+    std_krig = NCDataset(f_krig)["std_uncertainty"][:,:]
+
+    # svd mask: inside, take svd value; outside, take aerodem or kriging
+    f_svd_mask_nc = joinpath("data","gris-imbie-1980","svd_mask.nc")
+    if !isfile(f_svd_mask_nc)
+        sample = GrIS1980s_DEM.archgdal_read(f_aero)
+        ones_m = ones(size(sample))
+        fname_ones = "temp1.nc"
+        layername   = "mask"
+        attributes = Dict(layername => Dict{String, Any}())
+        GrIS1980s_DEM.save_netcdf(fname_ones, f_aero, [ones_m], [layername], attributes)
+        GrIS1980s_DEM.gdalwarp(fname_ones; grd=600, cut_shp=f_svd_mask, dest=f_svd_mask_nc)
+        rm(fname_ones, force=true)
+    end
+    bool_svd_mask = NCDataset(f_svd_mask_nc)["Band1"][:,:]
+
+    # initialize
+    h_merged = zeros(size(h_svd))
+    std_merged = zeros(size(h_svd))
+    mask_id  = zeros(Int8, size(h_svd))
+
+    # kriging and AeroDEM
+    id_krig = findall(.!ismissing.(h_krig))
+    id_aero = findall(.!ismissing.(h_aero))
+    h_merged[id_krig] .= h_krig[id_krig]
+    mask_id[id_krig]  .= 3
+    h_merged[id_aero] .= h_aero[id_aero]
+    mask_id[id_aero]  .= 2
+    std_merged[id_krig] .= std_krig[id_krig]
+
+    # svd reconstruction
+    id_svd = findall(.!ismissing.(h_svd) .&& .!ismissing.(bool_svd_mask))
+    h_merged[id_svd] .= h_svd[id_svd]
+    h_merged[h_merged .== 0] .= GrIS1980s_DEM.no_data_value
+    mask_id[id_svd]  .= 1
+    std_merged[id_svd] .= std_svd[id_svd]
+
+    # save as netcdf
+    f_save = get_rec_file_SVD_combined(logλ, r, grd)
+    GrIS1980s_DEM.save_netcdf(f_save, f_aero, [h_merged, std_merged, mask_id], ["surface", "std_uncertainty", "source mask"], Dict("surface" => Dict{String, Any}(), "std_uncertainty"=>  Dict{String, Any}(), "source mask" => Dict{String, Any}("long_name"=>"1: SVD reconstruction, 2: AeroDEM, 3: kriging")))
+
+    return f_save
+end

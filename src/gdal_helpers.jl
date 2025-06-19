@@ -6,6 +6,7 @@ get_cv_file_SVD(grd, nfiles, logℓ=5.3)   = joinpath("output", "validation", "c
 get_cv_file_kriging(grd, maxn, logℓ=5.3) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_kriging_maxn$(maxn).jld2")
 kriging_findmaxn_file()                  = joinpath("output", "validation", "kriging_findmaxn.jld2")
 get_rec_file_SVD(logλ, r, grd)           = joinpath("output", "reconstructions", "rec_SVD_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
+get_rec_file_SVD_combined(logλ, r, grd)  = joinpath("output", "reconstructions", "rec_combined_SVD-AeroDEM_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
 get_rec_file_kriging(grd, maxn)          = joinpath("output", "reconstructions", "rec_kriging_g$(grd)_maxn$(maxn).nc")
 
 """

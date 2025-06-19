@@ -15,9 +15,9 @@ using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
 export parse_commandline, get_ix, get_iy
-export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging, get_rec_file_SVD, get_rec_file_kriging, kriging_findmaxn_file
+export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging, get_rec_file_SVD, get_rec_file_kriging, get_rec_file_SVD_combined, kriging_findmaxn_file
 export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs, download_velocity
-export SVD_reconstruction, geostats_interpolation
+export SVD_reconstruction, geostats_interpolation, combined_SVD_AeroDEM
 
 const no_data_value = -9999.0
 const F = Float32              # Julia default is Float64 but that kills the process for the full training data set if r is too large
@@ -58,6 +58,9 @@ function parse_commandline(args)
             help     = "cell size of grid, same in x and y direction; not needed for svd reconstruction where training_data is provided"
             arg_type = Int
             default  = 600.0
+        "--svd_mask"
+            help     = "for combined SVD/AeroDEM: shape file specifying where SVD rec. should be used"
+            arg_type = String
     end
     return parse_args(args,s)
 end

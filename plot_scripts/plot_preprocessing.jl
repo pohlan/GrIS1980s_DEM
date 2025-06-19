@@ -8,7 +8,7 @@ mkpath(fig_dir_others)
 
 # plotting parameters
 Plots.scalefontsizes()
-Plots.scalefontsizes(1.7)
+Plots.scalefontsizes(1.9)
 cmap_div  = :RdBu
 cmap_else = :batlow
 wheight   = 700
@@ -33,10 +33,10 @@ savefig(joinpath(fig_dir_others,"qqplot.png"))
 x1 = range(bin_centers_1[1], bin_centers_1[end], length=10000)
 x2 = range(bin_centers_2[1], bin_centers_2[end], length=1000)
 itp_var = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, nmads)
-p_std  = heatmap(x1, x2, itp_var.(x1, x2')',  xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_title=L"$\sigma_{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), margin=12Plots.mm, cmap=cmap_else)
+p_std  = heatmap(x1, x2, itp_var.(x1, x2')',  xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_titlefontsize=25, colorbar_title=L"$\sigma_{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), bottom_margin=20Plots.mm, left_margin=12Plots.mm, top_margin=20Plots.mm, cmap=cmap_else)
 GrIS1980s_DEM.panel_annotate!(p_std, "a")
 itp_bias = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, meds)
-p_bias = heatmap(x1, x2, itp_bias.(x1, x2')', xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_title=L"$\overline{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), margin=12Plots.mm, cmap=cmap_div, clims=(-40,40))
+p_bias = heatmap(x1, x2, itp_bias.(x1, x2')', xlabel="Slope (°)", ylabel="Elevation (m)", colorbar_titlefontsize=25, colorbar_title=L"$\overline{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), bottom_margin=20Plots.mm, left_margin=12Plots.mm, top_margin=12Plots.mm, cmap=cmap_div, clims=(-40,40))
 GrIS1980s_DEM.panel_annotate!(p_bias, "b")
 
 # histogram
@@ -68,13 +68,13 @@ function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4
     xlabel         = "Easting (m)"
     ylabel         = "Northing (m)"
     colorbar_title = "(m)"
-    cmap           = :RdBu
+    cmap           = cgrad(:vik, rev=true)
     # plot raster with aerodem data
     id_df_aero = findall(df_all.source .== :aerodem .|| df_all.source .== "aerodem")
     m_plot = zeros(dims)
     m_plot[df_all.idx[id_df_aero]] .= df_all[!,sm][id_df_aero]
     i_nans = m_plot .== 0
-    i_nans[I_no_ocean] .= false
+    # i_nans[I_no_ocean] .= false
     m_plot[i_nans] .= NaN
     heatmap(x, y, m_plot'; cmap, dpi=300)
     # scatter atm point data
