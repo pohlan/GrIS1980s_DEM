@@ -17,7 +17,7 @@ grd                 = parsed_args["grid_size"]
 maxn                = parsed_args["maxn"]
 
 # Pre-process and standardize data #
-csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file, nbins1=40, nbins2=50)
+csv_preprocessing, jld2_preprocessing = prepare_obs(grd, outline_shp_file, r_aero_varg=0.2, nbins1=5, nbins2=18)
 @unpack href_file = load(jld2_preprocessing)
 @unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
 

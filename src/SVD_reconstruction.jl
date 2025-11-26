@@ -54,6 +54,10 @@ function prepare_model(model_files::Vector{String}, I_no_ocean::Vector{Int}, des
     # load model data and calculate difference to reference DEM
     Data_ice  = read_model_data(;model_files,I_no_ocean)
 
+    # subtract mean
+    data_mean = mean(Data_ice, dims=2)
+    Data_ice .= Data_ice .- data_mean
+
     # compute SVD
     if use_arpack
         nsv = min(r, size(Data_ice, 2)-1) # actual truncation is later, but takes too long if r is unnecessarily high here
@@ -66,15 +70,15 @@ function prepare_model(model_files::Vector{String}, I_no_ocean::Vector{Int}, des
     # save in dictionary for later
     if !isempty(dest_file)
         nfiles = length(model_files)
-        jldsave(dest_file; U, Σ, V, nfiles)
+        jldsave(dest_file; U, Σ, V, data_mean, nfiles)
     end
 
     # prepare least square fit problem
     UΣ            = U*diagm(Σ)
-    return UΣ, Σ
+    return UΣ, data_mean, Σ
 end
 
-function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir)
+function prepare_obs_SVD(grd, csv_dest, I_no_ocean, data_mean, output_dir)
     # retrieve standardized observations
     df_all = CSV.read(csv_dest, DataFrame)
 
@@ -102,7 +106,7 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, output_dir)
 
     # obtain I_obs and x_data vector
     I_obs      = findall(obs[I_no_ocean] .!= 0.0)
-    x_data     = obs[I_no_ocean[I_obs]]
+    x_data     = obs[I_no_ocean[I_obs]] .- data_mean[I_obs]
 
     # save matrix of observations as netcdf
     obs[obs .== 0] .= no_data_value
@@ -132,10 +136,10 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     h_ref        = NCDataset(href_file)["surface"]
     # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
-    saved_file    = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
-    UΣ, _         = prepare_model(model_files, I_no_ocean, saved_file, r; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
-    x_data, I_obs = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, main_output_dir)
-    r             = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
+    saved_file       = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
+    UΣ, data_mean, _ = prepare_model(model_files, I_no_ocean, saved_file, r; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
+    x_data, I_obs    = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, data_mean, main_output_dir)
+    r                = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
     # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
@@ -155,7 +159,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
 
     # retrieve matrix of reconstructed DEM
     dem_rec                 = zeros(F, nx,ny)
-    dem_rec[I_no_ocean]    .= x_rec
+    dem_rec[I_no_ocean]    .= x_rec .+ data_mean
     dem_rec[dem_rec .<= 0] .= no_data_value
 
     # estimated error from cross-validation

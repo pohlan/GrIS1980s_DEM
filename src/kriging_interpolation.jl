@@ -1,4 +1,4 @@
-function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40, nbins2=50, coreg_grid=150)
+function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, nbins2=18, coreg_grid=150, r_aero_varg=0.2)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
     fig_path         = joinpath(main_output_dir, "figures")
@@ -77,8 +77,12 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=40,
     # standardization
     df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
 
-    # variogram
-    gamma = emp_variogram(df_all.x, df_all.y, df_all.dh_detrend; maxlag=5e5, nlags=500, fig_path)
+    # variogram (use only a ratio --r_aero_varg-- of the aerodme data) otherwise variogram is dominated by aerodem
+    i_aero = findall(df_all.source .== :aerodem)
+    i_atm  = findall(df_all.source .== :atm)
+    n_aero = round(Int, r_aero_varg * length(i_aero))
+    i_sampl = [rand(1:length(i_aero), n_aero); i_atm]
+    gamma = emp_variogram(df_all.x[i_sampl], df_all.y[i_sampl], df_all.dh_detrend[i_sampl]; maxlag=2e5, nlags=200, fig_path)
 
     # save
     CSV.write(csv_dest, df_all)

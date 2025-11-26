@@ -45,7 +45,7 @@ function bin_equal_sample_size(x, y, n_samples)   # 1D
     end
     return out, bin_centers
 end
-function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2) # 2D
+function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2, maxdiff_1, maxdiff_2) # 2D
     @assert length(x1) == length(x2) == length(y)
     nx = length(x1)
     nsampl1 = ceil(Int, nx / n_bins_1)
@@ -59,7 +59,17 @@ function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2) # 2D
     p1 = sortperm(x1)
     p2 = sortperm(x2)
     bin_edges_1 = x1[p1[[1:nsampl1:(n_bins_1-1)*nsampl1+1;nx]]]
+    while any(diff(bin_edges_1) .> maxdiff_1)
+        i = findfirst(diff(bin_edges_1) .> maxdiff_1)
+        insert!(bin_edges_1, i+1, mean(bin_edges_1[i:i+1]))
+    end
     bin_edges_2 = x2[p2[[1:nsampl2:(n_bins_2-1)*nsampl2+1;nx]]]
+    while any(diff(bin_edges_2) .> maxdiff_2)
+        i = findfirst(diff(bin_edges_2) .> maxdiff_2)
+        insert!(bin_edges_2, i+1, mean(bin_edges_2[i:i+1]))
+    end
+    n_bins_1 = length(bin_edges_1)-1
+    n_bins_2 = length(bin_edges_2)-1
     out = Array{Vector{eltype(y)}}(undef,n_bins_1,n_bins_2)
     for b1 in 1:n_bins_1
         for b2 in 1:n_bins_2
@@ -197,15 +207,15 @@ function get_stddization_fcts(dict_file)
     return (;standardize, destandardize)
 end
 
-function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_path)
+function standardizing_2D(df::DataFrame; nbins1, nbins2, maxdiff1=7, maxdiff2=200, min_n_sample=500, fig_path)
     bin_field_1 = df[!,:bfield_1]
     bin_field_2 = df[!,:bfield_2]
-    y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2)
+    y_binned, bin_centers_1, bin_centers_2 = bin_equal_sample_size(bin_field_1, bin_field_2, Float64.(df.dh), nbins1, nbins2, maxdiff1, maxdiff2)
     for yb in y_binned[length.(y_binned) .< min_n_sample]
         deleteat!(yb, 1:length(yb))
         push!(yb, NaN)
     end
-
+    nsamples_bins = length.(y_binned)
     # variance
     nmads       = std.(y_binned)
     Plots.heatmap(bin_centers_1, bin_centers_2, nmads')
@@ -232,7 +242,7 @@ function standardizing_2D(df::DataFrame; nbins1, nbins2, min_n_sample=100, fig_p
     @printf("Kurtosis after standardization: %1.2f\n", kurtosis(df.dh_detrend))
 
     # return all relevant parameters so standardization function can be retrieved later
-    interp_data = (;bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y)
+    interp_data = (;bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y, nsamples_bins)
 
     return df, interp_data
 end

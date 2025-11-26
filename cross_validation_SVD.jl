@@ -50,11 +50,11 @@ logℓ = round(log(10,ℓ),digits=1)
 
 function do_validation_and_save(f)
     # load data
-    @unpack U, Σ, nfiles = load(f)
+    @unpack U, Σ, data_mean, nfiles = load(f)
     UΣ = U*diagm(Σ)
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, I_obs                 = GrIS1980s_DEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, main_output_dir)
+    x_data, I_obs                 = GrIS1980s_DEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir)
 
     # create geotable (for GeoStats)
     x_Iobs   = x[get_ix.(I_no_ocean[I_obs],length(x))]
