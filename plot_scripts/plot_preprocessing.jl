@@ -242,7 +242,7 @@ function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4
     i_nans = m_plot .== 0
     # i_nans[I_no_ocean] .= false
     m_plot[i_nans] .= NaN
-    heatmap(x, y, m_plot'; cmap, dpi=300)
+    heatmap(x.*1e-3, y.*1e-3, m_plot'; cmap, dpi=300)
     # scatter atm point data
     id_df_atm = findall(df_all.source .== :atm .|| df_all.source .== "atm")
     scatter!(df_all.x[id_df_atm].*1e-3, df_all.y[id_df_atm].*1e-3, marker_z=df_all[!,sm][id_df_atm], label="", markersize=1.2, markerstrokewidth=0, aspect_ratio=1, xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, grid=false, bottommargin=0Plots.cm, rightmargin=(8/5)Plots.cm, leftmargin=(10/5)Plots.cm; wsize, xlabel, ylabel, colorbar_title, title, clims, cmap)

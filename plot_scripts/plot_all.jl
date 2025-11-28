@@ -1,4 +1,4 @@
-using GrIS1980s_DEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames
+using GrIS1980s_DEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames, GeometryOps
 using Plots, StatsPlots, LaTeXStrings, GeoStats, Shapefile, StatsBase, Statistics, Meshes, Distributions
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
@@ -33,6 +33,8 @@ coords = [(pt.x, pt.y) for pt in shp[1].points]
 df     = DataFrame(geometry=AG.createpolygon(coords))
 reproject!(df, GFT.EPSG(4326), GFT.EPSG(3413), always_xy=true)
 outl   = df.geometry
+# scale coords of outl to km
+outl = GeometryOps.transform(p -> p .*1e-3, outl)
 
 # chosen parameters for kriging and SVD
 const maxn0 = 1500
