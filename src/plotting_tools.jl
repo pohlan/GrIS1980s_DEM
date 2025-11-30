@@ -4,7 +4,7 @@ pt2 = Plots.palette(:bamO25)
 # pt2 = Plots.palette(:bamO25)
 pt3 = Plots.palette(:berlin10)
 palette_dict = Dict("combined"       => pt2[6],
-                    "kriging"        => pt3[2],
+                    "GP"             => pt3[2],
                     "SVD_dh_detrend" => pt2[2],
                     "SVD_dh"         => pt2[4],
                     "SVD"            => pt2[6],

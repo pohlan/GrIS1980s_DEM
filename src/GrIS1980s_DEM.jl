@@ -7,15 +7,15 @@ import ArchGDAL as AG
 import GeoFormatTypes as GFT
 
 using DelimitedFiles, NCDatasets, NetCDF, Glob, DataFrames, CSV, Dates, GeoFormatTypes, ZipFile, JLD2, UnPack
-using Downloads, Cascadia, Gumbo, HTTP, PythonCall
+using Downloads, Cascadia, Gumbo, HTTP
 using Printf, ProgressMeter
-using Statistics, GeoStats, StatsBase, Distributions, Interpolations, ImageFiltering, LocalFilters
+using Statistics, GeoStats, AbstractGPs, StatsBase, Distributions, Interpolations, ImageFiltering, LocalFilters
 using Arpack, LinearAlgebra, ImageMorphology, Optim
 using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
-export parse_commandline, get_ix, get_iy
-export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_kriging, get_rec_file_SVD, get_rec_file_kriging, get_rec_file_SVD_combined, kriging_findmaxn_file
+export parse_commandline, get_ix, get_iy, varg_to_kernel
+export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_GP, get_rec_file_SVD, get_rec_file_GP, get_rec_file_SVD_combined
 export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs, download_velocity
 export SVD_reconstruction, geostats_interpolation, combined_SVD_AeroDEM
 

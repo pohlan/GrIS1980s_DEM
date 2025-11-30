@@ -97,16 +97,52 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, 
     return csv_dest, dict_dest
 end
 
-function do_kriging(output_geometry::Domain, geotable_input::AbstractGeoTable, varg::Variogram; maxn::Int)
-    model  = Kriging(varg)
-    interp = geotable_input |> InterpolateNeighbors(output_geometry, model, maxneighbors=maxn, prob=true)
-    return interp
+struct CustomKernel <: AbstractGPs.Kernel
+    kernel::AbstractGPs.Kernel
+    r::Real
+end
+function (k::CustomKernel)(x, y)
+    val = k.kernel(x/k.r, y/k.r)  # divide by range before applying kernel
+    return val
+end
+function varg_to_kernel(varg::NestedVariogram)
+    γ1, γ2 = varg.γs
+    base_kernel = ExponentialKernel()
+    kernel = F(sill(γ1)) * CustomKernel(base_kernel, range(γ1).val/3) +
+             F(sill(γ2)) * CustomKernel(base_kernel, range(γ2).val/3)
+    return kernel
+end
+function varg_to_kernel(varg::ExponentialVariogram)
+    base_kernel = ExponentialKernel()
+    kernel = F(sill(varg)) * CustomKernel(base_kernel, range(varg).val/3)
+    return kernel
+end
+function do_GP(coords_input, Z_input, coords_output, kernel_signal, kernel_error, σ_obs; var=true)
+    # set kernel
+    f_GP = GP(ZeroMean{F}(), kernel_signal)
+    # do GP
+    Σ_obs        = kernelmatrix(kernel_error, coords_input) .* (σ_obs * σ_obs')
+    f_GP_input   = f_GP(coords_input, Σ_obs)
+    posterior_gp = posterior(f_GP_input, F.(Z_input))
+    pred_fct     = var ? mean_and_var : mean
+    out          = pred_fct(posterior_gp(coords_output))
+    return out
 end
 
-function geostats_interpolation(grd,         # make kriging a bit faster by doing it at lower resolution, then upsample back to target resolution
+function add_sigma_obs!(df_all, standardize)
+    σ_aero, σ_atm = 10.0, 0.5
+    σ_obs = zeros(F, length(df_all.x))
+    σ_obs .= σ_atm; σ_obs[df_all.source .== "aerodem"] .= σ_aero
+    df_all.sigma_obs = σ_obs
+    df_all.sigma_obs_detrend = standardize(σ_obs, df_all.bfield_1, df_all.bfield_2)
+    return
+end
+
+function geostats_interpolation(grd,
                                 outline_shp_file,
                                 csv_preprocessing, jld2_preprocessing;
-                                maxn::Int)                      # maximum neighbors for interpolation method
+                                ℓ_block::Real=1.5e5,  # size of block to be interpolated at once
+                                δl=1.5e5)             # how much data is used outside of block (width of stripe on each side)
 
     # define names of output directories
     main_output_dir  = joinpath("output","reconstructions")
@@ -114,23 +150,36 @@ function geostats_interpolation(grd,         # make kriging a bit faster by doin
     mkpath(fig_dir)
 
     # get I_no_ocean, (de-)standardization functions and variogram from pre-processing
-    df_all = CSV.read(csv_preprocessing, DataFrame)
-    dict   = load(jld2_preprocessing)
-    @unpack I_no_ocean, idx_aero, gamma, href_file, coreg_grid = dict
-    @unpack destandardize = get_stddization_fcts(jld2_preprocessing)
+    df_all     = CSV.read(csv_preprocessing, DataFrame)
+    coords_obs = [F.([x,y]) for (x,y) in zip(df_all.x, df_all.y)]
+    dict       = load(jld2_preprocessing)
+    @unpack I_no_ocean, idx_aero, gamma, gamma_error, href_file, coreg_grid = dict
+    @unpack standardize, destandardize = get_stddization_fcts(jld2_preprocessing)
     varg = get_var(gamma)
+    varg_error = get_var(gamma_error, nVmax=1)
+    kernel_signal = varg_to_kernel(varg)
+    kernel_error  = varg_to_kernel(varg_error)
 
     # get filenames at grd
     bedmachine_original, _     = create_bedmachine_grid(grd)
     _, ref_coreg_file_geoid, _ = create_grimpv2(grd, coreg_grid, bedmachine_original)
     _, obs_aero_file           = create_aerodem(grd, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
 
-    # derive indices for cells to interpolate
+    # derive indices and coordinates of cells to interpolate
     ir_sim      = setdiff(I_no_ocean, idx_aero)  # indices that are in I_no_ocean but not in idx_aero
-    x           = NCDataset(obs_aero_file)["x"][:]
+    x           = NCDataset(obs_aero_file)["x"][:]; nx = length(x)
     y           = NCDataset(obs_aero_file)["y"][:]
-    grid_output = PointSet([Point(xi,yi) for (xi,yi) in zip(x[get_ix.(ir_sim, length(x))], y[get_iy.(ir_sim, length(x))])])
-    geotable    = make_geotable(df_all.dh_detrend, df_all.x, df_all.y)
+    x_sim       = x[get_ix.(ir_sim, nx)]
+    y_sim       = y[get_iy.(ir_sim, nx)]
+    coords_sim  = [F.([x,y]) for (x,y) in zip(x_sim, y_sim)]
+
+    # divide into blocks (too much memory to do all at once)
+    geotable    = georef(nothing, coords_sim)
+    blocks      = partition(geotable, BlockPartition(ℓ_block))
+    idcs        = indices(blocks)
+
+    # add measurement uncertainty for AeroDEM / ATM
+    add_sigma_obs!(df_all, standardize)
 
     # prepare predicted field, fill with aerodem observations where available
     h_aero               = NCDataset(obs_aero_file)["Band1"][:,:]
@@ -138,29 +187,51 @@ function geostats_interpolation(grd,         # make kriging a bit faster by doin
     h_ref                = nomissing(h_ref, 0.0)
     h_predict            = zeros(size(h_aero))
     h_predict[idx_aero] .= h_aero[idx_aero]
+    σ_predict            = zeros(size(h_aero))
+    σ_predict[idx_aero] .= 10.0
     bin_field_1          = bin1_fct(h_ref, grd)
+    dh_predict           = zeros(size(h_aero))
+    std_predict          = zeros(size(h_aero))
 
-    # do the kriging
-    println("Kriging...")
-    interp = do_kriging(grid_output, geotable, varg; maxn)
+    # loop through blocks to do GP
+    println("Gaussian Process interpolation...")
+    @showprogress for i_block in idcs
+        # subset of coordinates to interpolate in this block
+        coords_output = coords_sim[i_block]
+
+        # find bounding values for x and y
+        x_min, x_max = extrema(first.(coords_output))
+        y_min, y_max = extrema(last.(coords_output))
+
+        # indices in terms of df_all, input data (add stripe of width δl around interpolation domain)
+        i_dat = findall(x_min-δl .<= df_all.x .<= x_max+δl .&& y_min-δl .<= df_all.y .<= y_max+δl)
+
+        # do GP and save output
+        m_pred, std_pred = do_GP(coords_obs[i_dat], F.(df_all.dh_detrend[i_dat]), coords_output, kernel_signal, kernel_error, df_all.sigma_obs_detrend[i_dat])
+        dh_predict[ir_sim[i_block]]  .= m_pred
+        std_predict[ir_sim[i_block]] .= sqrt.(std_pred) # get std from variance
+    end
+
     # 'fill' aerodem with de-standardized kriging output, save as netcdf
-    h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(mean.(interp.Z), bin_field_1[ir_sim], h_ref[ir_sim])
+    h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(dh_predict[ir_sim], bin_field_1[ir_sim], h_ref[ir_sim])
     h_predict[h_predict .<= 0.] .= no_data_value
-    # save as netcdf
-    dest_file_gr_kriging         = get_rec_file_kriging(grd, maxn)
-    std_uncertainty              = NCDataset(get_std_uncrt_file("kriging", grd))["std_uncertainty"][:,:]
-    attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
-                                                      "units" => "m"),
-                       "std_uncertainty" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
-                                                                 "units" => "m")
-                        )
-    save_netcdf(dest_file_gr_kriging, obs_aero_file, [h_predict, std_uncertainty], ["surface", "std_uncertainty"], attributes)
+    σ_predict[ir_sim]           .= destandardize(std_predict[ir_sim], bin_field_1[ir_sim], h_ref[ir_sim])
+    σ_predict[σ_predict .<= 0.] .= no_data_value
 
-    # save interp.Z directly
-    m_interp = zeros(size(h_predict))
-    m_interp[ir_sim]            .= mean.(interp.Z)
-    m_interp[m_interp .== 0.0]  .= no_data_value
-    dest_m_interp                = joinpath(main_output_dir, "interpolated_dh_std_kriging.nc")
-    save_netcdf(dest_m_interp, obs_aero_file, [m_interp], ["surface"], Dict("surface" => Dict{String,Any}()))
-    return dest_file_gr_kriging
+    # save as netcdf
+    dest_file_GP = get_rec_file_GP(grd)
+    attributes   = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
+                                                       "units" => "m"),
+                        "std_uncertainty" => Dict{String,Any}("long_name" => "uncertainty estimation ...", # TODO
+                                                                  "units" => "m")
+                        )
+    save_netcdf(dest_file_GP, obs_aero_file, [h_predict, σ_predict], ["surface", "std_uncertainty"], attributes)
+
+    # save interpolated non-standardized fields directly
+    dh_predict[dh_predict .== 0.0]  .= no_data_value
+    std_predict[std_predict .== 0.] .= no_data_value
+    dest_dh_predict = joinpath(main_output_dir, "interpolated_dh_std_GP.nc")
+    save_netcdf(dest_dh_predict, obs_aero_file, [dh_predict, std_predict], ["dh_std", "sigma_std"], Dict("dh_std" => Dict{String,Any}(),"sigma_std" => Dict{String,Any}()))
+
+    return dest_file_GP
 end

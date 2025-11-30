@@ -347,7 +347,7 @@ function fit_impl(
     # initial guess
     rₒ = isnothing(range′) ? rmax / 3 : range′
     sₒ = isnothing(sill′) ? 0.95 * smax : sill′
-    nₒ = isnothing(nugget′) ? 0.01 * smax : nugget′
+    nₒ = isnothing(nugget′) ? 1e-10 * smax : nugget′
     # θₒ = repeat([rₒ, sₒ, nₒ], nVs)
     θₒ = vcat([i*[rₒ, sₒ, nₒ] for i in 0.3.*(1:nVs)]...)
 
@@ -375,8 +375,8 @@ function fit_impl(
 end
 
 # define variogram function to fit
-function get_var(gamma; adjust_sill=true)
-    varg = fit_varg(ExponentialVariogram, gamma, maxnugget=0.005, nVmax=2)
+function get_var(gamma; adjust_sill=true, nVmax=2)
+    varg = fit_varg(ExponentialVariogram, gamma, maxnugget=0.005; nVmax)
     vfct = typeof(varg) <: NestedVariogram ? typeof(varg.γs[1]).name.wrapper : typeof(varg).name.wrapper
     if adjust_sill
         if typeof(varg) <: NestedVariogram
@@ -389,67 +389,65 @@ function get_var(gamma; adjust_sill=true)
     return varg
 end
 
-function uncertainty_from_cv(dh_binned, bin_centers, dem_ref)
-    itp         = interpolate(std.(dh_binned), BSpline(Quadratic(Interpolations.Flat(OnCell()))))
+function uncertainty_from_cv(dh_binned, bin_centers, parameter_field)
+    itp         = interpolate(std.(dh_binned), BSpline(Quadratic(Interpolations.Flat(OnCell()))), 0.1, 2)
     bin_c_range = range(extrema(bin_centers)..., length(bin_centers)) # convert array to range
     itp = Interpolations.scale(itp, bin_c_range)
     itp = extrapolate(itp, Interpolations.Flat())
     # save in matrix
-    rec_errors          = zeros(size(dem_ref)) .+ no_data_value
-    id_surf             = findall(nomissing(dem_ref .!= no_data_value, false) .|| .!ismissing.(dem_ref))
-    rec_errors[id_surf] = itp.(dem_ref[id_surf])
+    rec_errors          = zeros(size(parameter_field)) .+ no_data_value
+    id_surf             = findall(nomissing(parameter_field .!= no_data_value, false) .|| .!ismissing.(parameter_field))
+    rec_errors[id_surf] = itp.(parameter_field[id_surf])
     return itp, rec_errors
 end
 
 # for validation
-function step_through_folds(flds, evaluate_fun, geotable; save_distances=false, save_coords=false)
-    dif_blocks     = [Float64[] for i in flds]
-    if save_distances
-        NNdist_blocks  = [Float64[] for i in flds]
+function step_through_folds(ids_train, ids_test, evaluate_fun, Z_true)
+    dif_blocks     = [Float64[] for i in ids_test]
+    @showprogress for (j,(i_dat, i_test)) in enumerate(zip(ids_train, ids_test))
+        y_pred = evaluate_fun(i_dat, i_test)
+        dif_blocks[j] = y_pred .- Z_true[i_test]
     end
-    if save_coords
-        xcoord_blocks  = [Float64[] for i in flds]
-        ycoord_blocks  = [Float64[] for i in flds]
-    end
-    @showprogress for (j,fs) in enumerate(flds)
-        # find the neighbors that the folds routine (https://github.com/JuliaEarth/GeoStatsBase.jl/blob/master/src/folding/block.jl) leaves out
-        # there might be a mistake in the partitioning routine in Meshes.jl, the neighbors don't make sense (also not tested well)
-        neighbors = Vector(1:length(geotable.geometry))
-        deleteat!(neighbors, unique(sort([fs[1];fs[2]])))
-        append!(fs[1],neighbors)      # add the removed neighbors back to training data (for Blockfolding)
-        # append!(fs[2],neighbors)     # add the removed neighbors back to test data (for Ballfolding)
+    return vcat(dif_blocks...)
+end
 
-        sdat  = view(geotable, fs[1])
-        stest = view(domain(geotable), fs[2])
-        @assert length(sdat.Z) > length(stest)
-
-        y_pred = evaluate_fun(fs[1],fs[2])
-        dif_blocks[j] = mean.(y_pred) .- geotable.Z[fs[2]]
-
-        if save_distances
-            # save distance of each test point to closest training/data point
-            ids_nn  = zeros(Int,length(stest))
-            dist_nn = zeros(length(stest))
-            for (i,st) in enumerate(stest)
-                id_st, dist = searchdists(st, KNearestSearch(domain(sdat),1))
-                ids_nn[i]  = id_st[1]
-                dist_nn[i] = dist[1]
-            end
-            NNdist_blocks[j] = dist_nn
+function nearest_neighb_distance_from_cv(ids_train, ids_test, x_coords, y_coords; dL=1e5)
+    dists  = [Float64[] for i in ids_test]
+    @showprogress for (j,(i_dat, i_test)) in enumerate(zip(ids_train, ids_test))
+        # geotable_train = view(geotable_all, i_dat)
+        x_test, y_test = x_coords[i_test], y_coords[i_test]
+        # search only in a certain subdomain since searchdist is expensive
+        x_min, x_max = extrema(x_test)
+        y_min, y_max = extrema(y_test)
+        i_close = findall(x_min-dL .< x_coords[i_dat] .< x_max+dL .&&
+                          y_min-dL .< y_coords[i_dat] .< y_max+dL)
+        coords_close = [(xi, yi) for (xi,yi) in zip(x_coords[i_dat[i_close]],y_coords[i_dat[i_close]])]
+        obs_close = domain(georef(nothing, coords_close))
+        if isempty(i_close) error("No observation found.") end
+        # searchdist
+        dist_nn   = zeros(length(i_test))
+        for (i,(x_i,y_i)) in enumerate(zip(x_test,y_test))
+            _, dist = searchdists(Point(x_i,y_i), KNearestSearch(obs_close,1))
+            dist_nn[i] = ustrip(dist[1])
         end
-        if save_coords
-            # save coordinates of the test points
-            crds = GeoStats.coords.(stest)
-            xcoord_blocks[j] = [ustrip(c.x) for c in crds]
-            ycoord_blocks[j] = [ustrip(c.y) for c in crds]
-        end
+        dists[j] = dist_nn
     end
-    rt = (vcat(dif_blocks...),)
-    if save_distances
-        rt = (rt..., vcat(NNdist_blocks...))
+    return dists
+end
+
+function nearest_neighb_distance_raster(ir_sim, coords_sim, geotable_all; dL=1e5)
+    min_dists = zeros(length(ir_sim))
+    @showprogress for id in eachindex(ir_sim)
+        x_i, y_i = coords_sim[id]
+        # search only in a certain subdomain since searchdist is expensive
+        i_close = findall((x_i-dL)*Unitful.m .< [i.coords.x for i in geotable_all.geometry] .< (x_i+dL)*Unitful.m .&&
+                          (y_i-dL)*Unitful.m .< [i.coords.y for i in geotable_all.geometry] .< (y_i+dL)*Unitful.m)
+        obs_close = domain(view(geotable_all,i_close))
+        if isempty(i_close) error("No observation found.") end
+        # searchdist
+        point_i   = Point(x_i, y_i)
+        _, dist = searchdists(point_i, KNearestSearch(obs_close,1))
+        min_dists[id] = ustrip(dist[1])
     end
-    if save_coords
-        rt = (rt..., vcat(xcoord_blocks...), vcat(ycoord_blocks...))
-    end
-    return rt
+    return min_dists
 end

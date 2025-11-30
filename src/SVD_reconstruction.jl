@@ -93,7 +93,7 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, data_mean, output_dir)
         gdalgrid(tempname_csv; grd, dest=tempname_nc)
     end
     obs_atm = NCDataset(tempname_nc)["Band1"][:,:]
-    idx_atm = findall(.!ismissing.(obs_atm))
+    idx_atm = findall(.!ismissing.(vec(obs_atm)))
 
     # find aerodem indices
     id_df_aero = findall(df_all.source .== "aerodem")
@@ -107,11 +107,12 @@ function prepare_obs_SVD(grd, csv_dest, I_no_ocean, data_mean, output_dir)
     # obtain I_obs and x_data vector
     I_obs      = findall(obs[I_no_ocean] .!= 0.0)
     x_data     = obs[I_no_ocean[I_obs]] .- data_mean[I_obs]
+    i_atm      = findall(I_no_ocean[I_obs] .∈ Ref(idx_atm))
 
     # save matrix of observations as netcdf
     obs[obs .== 0] .= no_data_value
     save_netcdf(joinpath(output_dir,"obs_all_gr$(grd).nc"), tempname_nc, [obs], ["h"], Dict("h"=>Dict{String,Any}()))
-    return x_data, I_obs
+    return x_data, I_obs, i_atm
 end
 
 function solve_optim(UΣ::Matrix{T}, I_obs::Vector{Int}, r::Int, λ::Real, x_data) where T <: Real
@@ -171,7 +172,7 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     filename    = get_rec_file_SVD(logλ, r, grd)
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
                                                       "units" => "m"),
-                       "std_uncertainty" => Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
+                       "std_uncertainty" => Dict{String,Any}("long_name" => "uncertainty estimated from standard deviation of cross-validation error",
                                                                  "units" => "m")
                         )
     save_netcdf(filename, href_file, [dem_rec, std_uncertainty], ["surface", "std_uncertainty"], attributes)
