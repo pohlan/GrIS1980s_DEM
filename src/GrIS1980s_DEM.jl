@@ -14,7 +14,7 @@ using Arpack, LinearAlgebra, ImageMorphology, Optim
 using DataStructures: OrderedDict
 using Plots, StatsPlots, LaTeXStrings
 
-export parse_commandline, get_ix, get_iy, varg_to_kernel
+export parse_commandline, get_ix, get_iy, varg_to_kernel, nearest_neighb_distance_from_cv, nearest_neighb_distance_raster
 export get_std_uncrt_file, get_cv_file_SVD, get_cv_file_GP, get_rec_file_SVD, get_rec_file_GP, get_rec_file_SVD_combined
 export uncertainty_from_cv, create_reconstructed_bedmachine, prepare_obs, download_velocity
 export SVD_reconstruction, geostats_interpolation, combined_SVD_AeroDEM

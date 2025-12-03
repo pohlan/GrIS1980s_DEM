@@ -20,12 +20,13 @@ grd                 = parsed_args["grid_size"]
 # load data
 csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, "")
 @unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
-@unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean, nsamples_bins = load(jld2_preprocessing)
+@unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean, nsamples_bins, bfields_file = load(jld2_preprocessing)
 df_all = CSV.read(csv_preprocessing, DataFrame)
 
 h_ref_m = nomissing(NCDataset(href_file)["surface"][:,:], 0.0)
 x       = NCDataset(href_file)["x"][:]
 y       = NCDataset(href_file)["y"][:]
+bfield_1_m = nomissing(NCDataset(bfields_file)["bf_1"][:,:], 0.0)
 
 # to plot outline, polygon needs to be reprojected
 shp    = Shapefile.shapes(Shapefile.Table(outline_shp_file))
@@ -37,7 +38,6 @@ outl   = df.geometry
 outl = GeometryOps.transform(p -> p .*1e-3, outl)
 
 # chosen parameters for kriging and SVD
-const maxn0 = 1500
 const r0    = 500
 const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))

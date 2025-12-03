@@ -9,7 +9,7 @@ csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, outline_s
 
 # interpolation
 tic = Base.time()
-rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2_preprocessing, ℓ_block=5e4, δl=1.2e5)
+rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2_preprocessing, ℓ_block=1e5, δl=1.4e5)
 toc = Base.time() - tic
 dys = round(toc ./ (3600*24), digits=1); println("GP took $dys days.")
 

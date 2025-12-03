@@ -129,12 +129,14 @@ function do_GP(coords_input, Z_input, coords_output, kernel_signal, kernel_error
     return out
 end
 
-function add_sigma_obs!(df_all, standardize)
+function add_sigma_obs!(df_all, standardize=nothing)
     σ_aero, σ_atm = 10.0, 0.5
     σ_obs = zeros(F, length(df_all.x))
     σ_obs .= σ_atm; σ_obs[df_all.source .== "aerodem"] .= σ_aero
     df_all.sigma_obs = σ_obs
-    df_all.sigma_obs_detrend = standardize(σ_obs, df_all.bfield_1, df_all.bfield_2)
+    if !isnothing(standardize)
+        df_all.sigma_obs_detrend = standardize(σ_obs, df_all.bfield_1, df_all.bfield_2)
+    end
     return
 end
 
@@ -195,7 +197,8 @@ function geostats_interpolation(grd,
 
     # loop through blocks to do GP
     println("Gaussian Process interpolation...")
-    @showprogress for i_block in idcs
+    println("Number of blocks: $(length(idcs))")
+    @showprogress Threads.@threads for i_block in idcs
         # subset of coordinates to interpolate in this block
         coords_output = coords_sim[i_block]
 
@@ -215,7 +218,7 @@ function geostats_interpolation(grd,
     # 'fill' aerodem with de-standardized kriging output, save as netcdf
     h_predict[ir_sim]           .= h_ref[ir_sim] .- destandardize(dh_predict[ir_sim], bin_field_1[ir_sim], h_ref[ir_sim])
     h_predict[h_predict .<= 0.] .= no_data_value
-    σ_predict[ir_sim]           .= destandardize(std_predict[ir_sim], bin_field_1[ir_sim], h_ref[ir_sim])
+    σ_predict[ir_sim]           .= destandardize(std_predict[ir_sim], bin_field_1[ir_sim], h_ref[ir_sim], add_mean=false)
     σ_predict[σ_predict .<= 0.] .= no_data_value
 
     # save as netcdf

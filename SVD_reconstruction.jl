@@ -30,7 +30,7 @@ if !isfile(outline_shp_file)
 end
 
 # Pre-process and standardize data #
-csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file, nbins1=40, nbins2=50)
+csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file)
 @unpack href_file = load(jld2_preprocessing)
 
 # uncertainty estimation from cross-validation
