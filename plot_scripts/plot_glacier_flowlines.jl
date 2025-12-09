@@ -32,8 +32,11 @@ end
 files        = [get_rec_file_SVD_combined(logλ, r0, grd),
                 GrIS1980s_DEM.create_aerodem(grd)[2],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
-                get_rec_file_SVD(logλ, r0, grd),
-                get_rec_file_GP(grd)]
+                # get_rec_file_SVD(logλ, r0, grd),
+                # get_rec_file_GP(grd)
+                "output/reconstructions/bedmachine1980_SVD_reconstruction_g600.nc",
+                "output/reconstructions/bedmachine1980_GP_reconstruction_g600.nc"
+                ]
                 # "output/reconstructions/rec_kriging_g600_maxn1500.nc" # get_rec_file_kriging(grd, maxn0)
 
 labels       = ["Combined SVD/AeroDEM reconstruction", "AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "GP"]
@@ -132,7 +135,9 @@ coords = Dict("Helheim"         => crds_tup(yb = -2600000, xl =  260000),
 # plot
 Plots.gr_cbar_width[] = 0.01  # default 0.03
 xtick_interval        = 2e4
-function plot_dif(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol, shift_x=0; title, cmap=cgrad(:vik, rev=true), clims=(-200,200), inset=false, ins_crds=(0,0), arrow_crds=(0,0,0,0))
+function plot_dif(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol, shift_x=0; title, cmap=cgrad(:vik, rev=true), clims=(-200,200), inset=false, ins_crds=(0,0), arrow_crds=(0,0,0,0), id_plot)
+    # don't plot anything outside the ice sheet
+    map_field[id_plot] .= missing
     # load
     iplot        = 1:ixmaxs[glacier_name]
     prof_name    = prof_files[findfirst(occursin.(glacier_name, prof_files))]
@@ -172,29 +177,33 @@ function plot_dif(map_field, glacier_name, panel_letter, flowline_panel, legend_
     return p_dif
 end
 
-# GP
-h_GP = NCDataset(files[5])["surface"][:,:]
-p_GP1 = plot_dif(h_GP, "Sermeq-Kujalleq", "e", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1300))
-p_GP2 = plot_dif(h_GP, "Helheim", "f", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1900))
-
-# SVD
-h_SVD = NCDataset(files[4])["surface"][:,:]
-p_SVD1 = plot_dif(h_SVD, "Sermeq-Kujalleq", "g", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1300))
-p_SVD2 = plot_dif(h_SVD, "Helheim", "h", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1900))
-
 # difference GP and SVD
+h_GP = NCDataset(files[5])["surface"][:,:]
+h_SVD = NCDataset(files[4])["surface"][:,:]
+mask = NCDataset("data/gris-imbie-1980/outline_mask_g600.nc")["Band1"][:,:]
+id_plot = findall(ismissing.(mask))
+
 h_dif = h_GP .- h_SVD
 h_aero = NCDataset(files[2])["Band1"][:,:]
-p_dif1 = plot_dif(h_dif, "Sermeq-Kujalleq", "g", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{SVD}$")
+p_dif1 = plot_dif(h_dif, "Sermeq-Kujalleq", "c", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{GP}-h_\mathrm{SVD}$"; id_plot)
 dd = zeros(size(h_dif)) .+ NaN
 dd[.!ismissing.(h_aero)] .= 1
 xl = xlims(p_dif1); ix = findall(xl[1] .<= x.*1e-3 .<= xl[2])
 yl = ylims(p_dif1); iy = findall(yl[1] .<= y.*1e-3 .<= yl[2])
 heatmap!(p_dif1, x[ix].*1e-3, y[iy].*1e-3, dd[ix,iy]', alpha=0.2, color=:gray, colorbar=false, xlims=xl, ylims=yl)
-p_dif2 = plot_dif(h_dif, "Helheim", "h", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{SVD}$")
+p_dif2 = plot_dif(h_dif, "Helheim", "d", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{GP}-h_\mathrm{SVD}$"; id_plot)
 xl = xlims(p_dif2); ix = findall(xl[1] .<= x.*1e-3 .<= xl[2])
 yl = ylims(p_dif2); iy = findall(yl[1] .<= y.*1e-3 .<= yl[2])
 heatmap!(p_dif2, x[ix].*1e-3, y[iy].*1e-3, dd[ix,iy]', alpha=0.2, color=:gray, colorbar=false, xlims=xl, ylims=yl)
+
+# GP
+p_GP1 = plot_dif(h_GP, "Sermeq-Kujalleq", "e", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1300); id_plot)
+p_GP2 = plot_dif(h_GP, "Helheim", "f", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1900); id_plot)
+
+# SVD
+p_SVD1 = plot_dif(h_SVD, "Sermeq-Kujalleq", "g", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1300); id_plot)
+p_SVD2 = plot_dif(h_SVD, "Helheim", "h", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1900); id_plot)
+
 
 
 plot(p2, p1_nolegend, p_dif1, p_dif2, p_GP1, p_GP2, p_SVD1, p_SVD2, wsize=(2400, 2900), dpi=300, layout=grid(4, 2, widths=(0.5, 0.5), heights=(0.16, 0.28,0.28,0.28)), left_margin=15mm)
