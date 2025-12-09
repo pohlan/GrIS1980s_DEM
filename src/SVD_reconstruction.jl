@@ -34,18 +34,18 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-    d = ncread(file, "usurf")
-    if isnothing(tsteps)
-        ts = 1:size(d,3)
-    elseif minimum(tsteps) > size(d,3)
-        continue
-    else
-        ts = tsteps[1]:min(tsteps[end], size(d, 3))
-    end
-    nt_out = length(ts)
-    data = reshape(d[:,:,ts], ny*nx, nt_out)
-    @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
-    ntcount += nt_out
+        d = ncread(file, "usurf")
+        if isnothing(tsteps)
+            ts = 1:size(d,3)
+        elseif minimum(tsteps) > size(d,3)
+            continue
+        else
+            ts = tsteps[1]:min(tsteps[end], size(d, 3))
+        end
+        nt_out = length(ts)
+        data = reshape(d[:,:,ts], ny*nx, nt_out)
+        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
+        ntcount += nt_out
     end
     return Data
 end

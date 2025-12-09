@@ -78,6 +78,7 @@ function do_validation_and_save(f)
     # load data
     @unpack U, Σ, data_mean, nfiles = load(f)
     UΣ = U*diagm(Σ)
+    norms_UΣ = [norm(rw) for rw in eachrow(UΣ)]
 
     # load datasets, take full SVD (to be truncated with different rs later)
     x_data, _, _ = GrIS1980s_DEM.prepare_obs_SVD(grd, csv_preprocessing, I_no_ocean, data_mean, main_output_dir)
@@ -101,7 +102,7 @@ function do_validation_and_save(f)
     end
     idx = vcat(ids_test...)
     # save
-    to_save = (; Σ, dict, grd, λs, rs, m_difs, dists, idx=I_no_ocean[I_obs[idx]], nfiles, only_atm, method="SVD")
+    to_save = (; norms_UΣ, Σ, dict, grd, λs, rs, m_difs, dists, idx=I_no_ocean[I_obs[idx]], nfiles, only_atm, method="SVD")
     dest = get_cv_file_SVD(grd, nfiles, logℓ, only_atm)
     jldsave(dest; to_save...)
 end

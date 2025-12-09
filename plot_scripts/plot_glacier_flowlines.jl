@@ -33,10 +33,11 @@ files        = [get_rec_file_SVD_combined(logλ, r0, grd),
                 GrIS1980s_DEM.create_aerodem(grd)[2],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
                 get_rec_file_SVD(logλ, r0, grd),
-                "output/reconstructions/rec_kriging_g600_maxn1500.nc" # get_rec_file_kriging(grd, maxn0)
-                ]
-labels       = ["Combined SVD/AeroDEM reconstruction", "AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "Kriging"]
-name_for_col = ["combined", "aerodem", "GrIMP", "SVD", "kriging"]
+                get_rec_file_GP(grd)]
+                # "output/reconstructions/rec_kriging_g600_maxn1500.nc" # get_rec_file_kriging(grd, maxn0)
+
+labels       = ["Combined SVD/AeroDEM reconstruction", "AeroDEM (Korsgaard et al., 2016)", "GrIMP (Howat et al., 2015)", "SVD method", "GP"]
+name_for_col = ["combined", "aerodem", "GrIMP", "SVD", "GP"]
 bandnm       = ["surface", "Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]
 lstls        = [:dashdotdot, :solid, :solid, :dot, :dot]
@@ -61,7 +62,7 @@ for (ip, pf) in enumerate(prof_files)
     xc = prof.X
     yc = prof.Y
     # initialize figure
-    p_i = Plots.plot(title="\n"*glacier_title, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight); xlabel, ylabel, margin = 10Plots.mm,
+    p_i = Plots.plot(title=glacier_title, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight); xlabel, ylabel, margin = 10Plots.mm,
               fg_legend=:transparent, bg_legend=:transparent, legend)
     # plot the projected elevations of the different DEMs
     for (i,(f, label, col_nm, ls, z_order, band, lw)) in enumerate(zip(files, labels, name_for_col, lstls, z_orders, bandnm, lws))
@@ -105,9 +106,9 @@ Plots.plot(ps[[2,4,5,6,7,8]]..., size=(2300,2000), left_margin = 12Plots.mm, bot
 Plots.savefig(joinpath(fig_dir_main, "fS05.png"))
 # plot two selected glaciers only
 i_glaciers = findall(glacier_titles .== "Helheim" .|| glacier_titles .== "Sermeq Kujalleq")
-p1_nolegend = plot(ps[i_glaciers[1]], legend=false)
+p1_nolegend = plot(ps[i_glaciers[1]], legend=false, aspect_ratio=0.02)
 GrIS1980s_DEM.panel_annotate!(p1_nolegend, "b")
-p2          = plot(ps[i_glaciers[2]])
+p2          = plot(ps[i_glaciers[2]], aspect_ratio=0.02, legend=:topleft)
 GrIS1980s_DEM.panel_annotate!(p2, "a")
 
 
@@ -116,8 +117,8 @@ GrIS1980s_DEM.panel_annotate!(p2, "a")
 ############################################
 
 # load data
-dif = nomissing(NCDataset(files[2])[bandnm[2]][:,:] .- NCDataset(files[4])[bandnm[4]][:,:], 0.0)
-dif[dif .== 0] .= NaN
+# dif = nomissing(NCDataset(files[2])[bandnm[2]][:,:] .- NCDataset(files[4])[bandnm[4]][:,:], 0.0)
+# dif[dif .== 0] .= NaN
 # coordinates of glacier catchments
 function crds_tup(;yb, xl, δx=80000, δy=68000)
     return (;yb,xl,δx,δy)
@@ -131,7 +132,7 @@ coords = Dict("Helheim"         => crds_tup(yb = -2600000, xl =  260000),
 # plot
 Plots.gr_cbar_width[] = 0.01  # default 0.03
 xtick_interval        = 2e4
-function plot_dif(glacier_name, panel_letter, flowline_panel, ins_crds::Tuple, arrow_crds::Tuple, legend_pos::Symbol, shift_x=0)
+function plot_dif(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol, shift_x=0; title, cmap=cgrad(:vik, rev=true), clims=(-200,200), inset=false, ins_crds=(0,0), arrow_crds=(0,0,0,0))
     # load
     iplot        = 1:ixmaxs[glacier_name]
     prof_name    = prof_files[findfirst(occursin.(glacier_name, prof_files))]
@@ -142,38 +143,62 @@ function plot_dif(glacier_name, panel_letter, flowline_panel, ins_crds::Tuple, a
     iy = findall(yb .< y .< yb + δy)
     xv = Vector(x[ix[1]]:(x[ix[1]]+xtick_interval))
     xtick1 = xv[findfirst(xv .% xtick_interval .== 0)]
-    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, dif[ix,iy]', cmap=cgrad(:vik, rev=true), clims=(-200,200), aspect_ratio=1, size=(1000,900), margin=10Plots.mm, xlabel="Easting (km)", ylabel="Northing (km)", title=" \n \n"*L"$h_\mathrm{obs}- h_\mathrm{SVD}$", colorbar_title="", grid=false)
-    annotate!(((xl + 1.25(δx+shift_x)).*1e-3, (yb + 0.5δy).*1e-3, text("(m)", 18)))
+    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, map_field[ix,iy]', aspect_ratio=1, size=(1000,900), xlabel="Easting (km)", ylabel="Northing (km)", colorbar_title="", grid=false; cmap, clims, title)
+    annotate!(((xl + 1.32(δx+shift_x)).*1e-3, (yb + 0.5δy).*1e-3, text("(m)", 18)))
     plot!(p_dif, outl, fill=nothing, xlims=(extrema(x[ix]).+shift_x).*1e-3, ylims=extrema(y[iy]).*1e-3, xticks  = (xtick1:xtick_interval:x[ix[end]]).*1e-3, xtick_direction=:out, lw=0.5)
 
     # flow line + distance markers + annotation
-    plot!(p_dif, df.X[iplot].*1e-3, df.Y[iplot].*1e-3, label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:slategray, legend=legend_pos, legend_foreground_color=nothing, legend_background_color=:transparent)
+    plot!(p_dif, df.X[iplot].*1e-3, df.Y[iplot].*1e-3, label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:black, legend=legend_pos, legend_foreground_color=nothing, legend_background_color=:transparent)
     dists, _   = GrIS1980s_DEM.interpolate_raster_to_profile(files[4], df.X, df.Y; band="surface")
     d_marker = [10e3, 30e3, 50e3]
     i_marker = [findmin(abs.(dists .- dm))[2] for dm in d_marker]
     scatter!(p_dif, df.X[i_marker].*1e-3, df.Y[i_marker].*1e-3, color=:slategray, label="", markersize=5, markerstrokewidth=0.5)
     annotate!(p_dif, df.X[i_marker].*1e-3 .+2, df.Y[i_marker].*1e-3 .+3, text.(["10 km", "30 km", "50 km"], 20))
-
     GrIS1980s_DEM.panel_annotate!(p_dif, panel_letter)
-    # insert for Greenland outline
-    rectangle(w, h, x, y) = Shape([x .+ [0,w,w,0], y .+ [0,0,h,h]].*1e-3 ...)
-    ins = bbox(ins_crds[1], ins_crds[2], 0.2, 0.4, :left)
-    plot!(p_dif, inset=ins, subplot=2, aspect_ratio=1)
-    plot!(p_dif[2], outl, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false), aspect_ratio=1, lw=0.3)
-    plot!(p_dif[2], rectangle(x[ix[end]]-x[ix[1]],y[iy[end]]-y[iy[1]],x[ix[1]],y[iy[1]]), fillalpha=0, linewidth=2, linecolor=:red3, label="")
-    # draw arrow manually (didn't manage to adjust arrowhead size with arrow=(..))
-    x1, xend = (x[ix[1]]+arrow_crds[1], x[ix[1]]+arrow_crds[2]).*1e-3
-    y1, yend = (y[iy[1]]+arrow_crds[3], y[iy[1]]+arrow_crds[4]).*1e-3
-    plot!(p_dif[2], [x1,xend], [y1,yend], color=:red3, lw=2, label="")
-    plot!(p_dif[2], [xend,xend], [yend,yend+3e2], color=:red3, lw=2, label="")
-    plot!(p_dif[2], [xend,xend+sign(arrow_crds[1]-arrow_crds[2])*3e2], [yend,yend+1e2], color=:red3, lw=2, label="")
+    if inset
+        # insert for Greenland outline
+        rectangle(w, h, x, y) = Shape([x .+ [0,w,w,0], y .+ [0,0,h,h]].*1e-3 ...)
+        ins = bbox(ins_crds[1], ins_crds[2], 0.2, 0.4, :left)
+        plot!(p_dif, inset=ins, subplot=2, aspect_ratio=1)
+        plot!(p_dif[2], outl, background_color_inside=nothing, fill=nothing, grid=false, label="", cbar=false, axis=([],false), aspect_ratio=1, lw=0.3)
+        plot!(p_dif[2], rectangle(x[ix[end]]-x[ix[1]],y[iy[end]]-y[iy[1]],x[ix[1]],y[iy[1]]), fillalpha=0, linewidth=2, linecolor=:red3, label="")
+        # draw arrow manually (didn't manage to adjust arrowhead size with arrow=(..))
+        x1, xend = (x[ix[1]]+arrow_crds[1], x[ix[1]]+arrow_crds[2]).*1e-3
+        y1, yend = (y[iy[1]]+arrow_crds[3], y[iy[1]]+arrow_crds[4]).*1e-3
+        plot!(p_dif[2], [x1,xend], [y1,yend], color=:red3, lw=2, label="")
+        plot!(p_dif[2], [xend,xend], [yend,yend+3e2], color=:red3, lw=2, label="")
+        plot!(p_dif[2], [xend,xend+sign(arrow_crds[1]-arrow_crds[2])*3e2], [yend,yend+1e2], color=:red3, lw=2, label="")
+    end
     return p_dif
 end
-p_dif1 = plot_dif("Sermeq-Kujalleq", "c", "a", (0.57,0.15), (5e5, 1.5e5, +6e5, +1.5e5), :bottomright, 2e3)
-p_dif2 = plot_dif("Helheim", "d", "b", (0.13,0.40), (-3.5e5, -6e4, +5e5, +1.2e5), :topleft, -1.5e3)
-plot(p2, p1_nolegend, p_dif1, p_dif2, wsize=(2500, 1800), left_margin=12Plots.mm, dpi=300)
-savefig(joinpath(fig_dir_main, "f05.png"))
 
+# GP
+h_GP = NCDataset(files[5])["surface"][:,:]
+p_GP1 = plot_dif(h_GP, "Sermeq-Kujalleq", "e", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1300))
+p_GP2 = plot_dif(h_GP, "Helheim", "f", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{GP}$", cmap=:terrain, clims=(0,1900))
+
+# SVD
+h_SVD = NCDataset(files[4])["surface"][:,:]
+p_SVD1 = plot_dif(h_SVD, "Sermeq-Kujalleq", "g", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1300))
+p_SVD2 = plot_dif(h_SVD, "Helheim", "h", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{SVD}$", cmap=:terrain, clims=(0,1900))
+
+# difference GP and SVD
+h_dif = h_GP .- h_SVD
+h_aero = NCDataset(files[2])["Band1"][:,:]
+p_dif1 = plot_dif(h_dif, "Sermeq-Kujalleq", "g", "a", :bottomright, 2e3, title=" \n"*L"$h_\mathrm{SVD}$")
+dd = zeros(size(h_dif)) .+ NaN
+dd[.!ismissing.(h_aero)] .= 1
+xl = xlims(p_dif1); ix = findall(xl[1] .<= x.*1e-3 .<= xl[2])
+yl = ylims(p_dif1); iy = findall(yl[1] .<= y.*1e-3 .<= yl[2])
+heatmap!(p_dif1, x[ix].*1e-3, y[iy].*1e-3, dd[ix,iy]', alpha=0.2, color=:gray, colorbar=false, xlims=xl, ylims=yl)
+p_dif2 = plot_dif(h_dif, "Helheim", "h", "b", :bottomright, -1.5e3, title=" \n"*L"$h_\mathrm{SVD}$")
+xl = xlims(p_dif2); ix = findall(xl[1] .<= x.*1e-3 .<= xl[2])
+yl = ylims(p_dif2); iy = findall(yl[1] .<= y.*1e-3 .<= yl[2])
+heatmap!(p_dif2, x[ix].*1e-3, y[iy].*1e-3, dd[ix,iy]', alpha=0.2, color=:gray, colorbar=false, xlims=xl, ylims=yl)
+
+
+plot(p2, p1_nolegend, p_dif1, p_dif2, p_GP1, p_GP2, p_SVD1, p_SVD2, wsize=(2400, 2900), dpi=300, layout=grid(4, 2, widths=(0.5, 0.5), heights=(0.16, 0.28,0.28,0.28)), left_margin=15mm)
+savefig(joinpath(fig_dir_main, "f05.png"))
 
 ######################################
 # Plot map with flowlines, Figure S6 #

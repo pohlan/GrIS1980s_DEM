@@ -4,7 +4,7 @@ archgdal_read(file) = AG.read(AG.getband(AG.read(file),1))
 get_distance_file(grd)                   = joinpath("output", "validation", "nearest_neighb_dist_g$(grd).nc")
 get_std_uncrt_file(method, grd)          = joinpath("output", "validation", "std_error_$(method)_g$(grd).nc")
 get_cv_file_SVD(grd, nfiles; logℓ=5.3, only_atm=true) = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_SVD_nfiles$(nfiles)_onlyatm_$(only_atm).jld2")
-get_cv_file_GP(grd, logℓ=5.3)            = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_GP.jld2")
+get_cv_file_GP(grd; logℓ=5.3, only_atm=true)          = joinpath("output", "validation", "cv_1e$(logℓ)_gr$(grd)_GP_onlyatm_$(only_atm).jld2")
 get_rec_file_SVD(logλ, r, grd)           = joinpath("output", "reconstructions", "rec_SVD_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
 get_rec_file_SVD_combined(logλ, r, grd)  = joinpath("output", "reconstructions", "rec_combined_SVD-AeroDEM_g$(grd)_lambda_1e$(logλ)_r$(r).nc")
 get_rec_file_GP(grd)                     = joinpath("output", "reconstructions", "rec_GP_g$(grd).nc")
@@ -205,7 +205,7 @@ function create_bedmachine_grid(grd)
 
     # gdalwarp
     println("Using gdalwarp to project bedmachine on model grid..")
-    layernames = ["geoid", "bed", "surface", "thickness", "mask"]
+    layernames = ["geoid", "bed", "surface", "thickness", "mask", "errbed"]
     fieldvals  = Matrix[]
     attr_template = NCDataset(bedmachine_original)
     spatial_template_file = "template_file.nc"

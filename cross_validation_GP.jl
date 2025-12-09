@@ -15,6 +15,8 @@ parsed_args         = parse_commandline(ARGS)
 outline_shp_file    = parsed_args["shp_file"]
 grd                 = parsed_args["grid_size"]
 
+only_atm = false
+
 ################################################
 # Preprocessing, standardization and variogram #
 ################################################
@@ -26,6 +28,7 @@ df_all = CSV.read(csv_preprocessing, DataFrame)
 coords_obs = [GrIS1980s_DEM.F.([x,y]) for (x,y) in zip(df_all.x, df_all.y)]
 dict   = load(jld2_preprocessing)
 @unpack I_no_ocean, idx_aero, gamma, gamma_error, href_file = dict
+@unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
 varg = GrIS1980s_DEM.get_var(gamma)
 varg_error = GrIS1980s_DEM.get_var(gamma_error, nVmax=1)
 kernel_signal = varg_to_kernel(varg)
@@ -37,7 +40,7 @@ geotable_all = GrIS1980s_DEM.make_geotable(df_all.dh_detrend, df_all.x, df_all.y
 geotable_atm = GrIS1980s_DEM.make_geotable(df_all.dh_detrend[i_atm], df_all.x[i_atm], df_all.y[i_atm])
 
 # add measurement uncertainty for AeroDEM / ATM
-GrIS1980s_DEM.add_sigma_obs!(df_all)
+GrIS1980s_DEM.add_sigma_obs!(df_all, standardize)
 
 ##############################################
 # Standard cross-validation, leave block out #
@@ -45,12 +48,13 @@ GrIS1980s_DEM.add_sigma_obs!(df_all)
 
 # create sets of training and test data
 ℓ         = 2e5
-δl        = 1.5e5
-blocks    = partition(geotable_atm, BlockPartition(ℓ))
+δl        = 1.4e5
+geotable_partition = only_atm ? geotable_atm : geotable_all
+blocks    = partition(geotable_partition, BlockPartition(ℓ))
 ids_test  = indices(blocks)
 ids_train = []
 for i in eachindex(ids_test)
-    ids_test[i] = i_atm[ids_test[i]]
+    if only_atm ids_test[i] = i_atm[ids_test[i]] end
     x_min, x_max = extrema(first.(coords_obs[ids_test[i]]))
     y_min, y_max = extrema(last.(coords_obs[ids_test[i]]))
     i_big = findall(x_min-δl .<= df_all.x .<= x_max+δl .&& y_min-δl .<= df_all.y .<= y_max+δl)
@@ -62,7 +66,7 @@ function evaluate_fun(i_train, i_test)
     m_pred = GrIS1980s_DEM.do_GP(coords_obs[i_train], GrIS1980s_DEM.F.(df_all.dh_detrend[i_train]), coords_obs[i_test], kernel_signal, kernel_error, df_all.sigma_obs[i_train], var=false)
     return m_pred
 end
-difs = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, df_all.dh_detrend, save_distances=true)
+difs = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, df_all.dh_detrend)
 
 # calculate distance to closest observation
 dists = nearest_neighb_distance_from_cv(ids_train, ids_test, df_all.x, df_all.y)
@@ -70,7 +74,7 @@ dists = nearest_neighb_distance_from_cv(ids_train, ids_test, df_all.x, df_all.y)
 # get indices and save
 idx  = vcat(ids_test...)
 logℓ = round(log10(ℓ),digits=1)
-dest = get_cv_file_GP(grd, logℓ)
+dest = get_cv_file_GP(grd; logℓ, only_atm)
 cv_dict = (; difs, dists, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="GP")
 jldsave(dest; cv_dict...)
 

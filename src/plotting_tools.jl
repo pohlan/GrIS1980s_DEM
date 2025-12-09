@@ -5,9 +5,11 @@ pt2 = Plots.palette(:bamO25)
 pt3 = Plots.palette(:berlin10)
 palette_dict = Dict("combined"       => pt2[6],
                     "GP"             => pt3[2],
+                    "GP_std"         => pt3[3],
                     "SVD_dh_detrend" => pt2[2],
                     "SVD_dh"         => pt2[4],
-                    "SVD"            => pt2[6],
+                    "SVD"            => pt2[7],
+                    "SVD_std"        => pt2[3],
                     "aerodem"        => pt1[1],
                     "GrIMP"          => pt1[7])
 

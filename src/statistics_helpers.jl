@@ -193,7 +193,8 @@ function get_stddization_fcts(dict_file)
     itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
     itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
 
-    function standardize(dh, bin_field_1::AbstractVector, bin_field_2::AbstractVector)
+    function standardize(dh, bin_field_1::AbstractVector, bin_field_2::AbstractVector; subtract_mean=true)
+        if !subtract_mean return dh ./ (std_y .* itp_var.(bin_field_1, bin_field_2)) end
         dh_detrend  = (dh .- itp_bias.(bin_field_1, bin_field_2)) ./  itp_var.(bin_field_1, bin_field_2)
         dh_detrend .= (dh_detrend .- mean_y) ./ std_y
         return dh_detrend
