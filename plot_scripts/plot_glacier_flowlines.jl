@@ -43,6 +43,32 @@ function get_glacier_idx(glacier_name)
 end
 rectangle(w, h, x, y) = Shape([x .+ [0,w,w,0], y .+ [0,0,h,h]].*1e-3 ...)
 
+using Colors, Geomorphometry
+
+function get_shaded(h, ix, iy)
+    # normed hillshade
+    h_nomiss = nomissing(h, 0.0)
+    hs = hillshade(h_nomiss; cellsize=(grd,grd), azimuth = 315, zenith = 45)
+    hs_norm = (hs .- minimum(hs[ix,iy])) ./ (maximum(hs[ix,iy])*0.9 - minimum(hs[ix,iy]))
+    hs_norm = hs_norm .^ 0.5
+    # normed elevations
+    zmin, zmax = extrema(h_nomiss[ix,iy])
+    znorm = (h_nomiss .- zmin) ./ (zmax*0.9 - zmin)
+    znorm = clamp.(znorm, 0, 1)
+    # colormap
+    cp = cgrad(:terrain)
+    colors = get.(Ref(cp), znorm)
+    shaded = RGB{Float32}.(
+        red.(colors) .* hs_norm,
+        green.(colors) .* hs_norm,
+        blue.(colors) .* hs_norm
+    )
+    # mask out values
+    shaded[ismissing.(mask)] .= RGB(1,1,1)
+    # bla = similar(shaded)
+    return shaded
+end
+
 ########################################################
 # Plot elevations along flowlines, Figures 5a/b and S5 #
 ########################################################
@@ -63,7 +89,7 @@ bandnm       = ["Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]
 lstls        = [:solid, :solid, :dot, :dot]
 lws          = [6,6,6,6]
-z_orders     = [1,1,3,4]
+z_orders     = [1,1,2,3]
 # plotting attributes
 Plots.scalefontsizes()
 Plots.scalefontsizes(1.9)
@@ -158,9 +184,9 @@ p_profs = plot(p2, p_outl, p1_nolegend, layout=grid(1,3,widths=(0.35,0.2,0.45)),
 # function for plotting zoomed-in map over area
 Plots.gr_cbar_width[] = 0.01  # default 0.03
 xtick_interval        = 2e4
-function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol; cmap=cgrad(:vik, rev=true), clims=(-200,200), id_plot, clabel="   (m)")
+function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol; cmap=cgrad(:vik, rev=true), clims=nothing, colorbar=true, id_plot, clabel="(m)", no_data=missing)
     # don't plot anything outside the ice sheet
-    map_field[id_plot] .= missing
+    map_field[id_plot] .= no_data
     # load
     iplot        = 1:ixmaxs[glacier_name]
     prof_name    = prof_files[findfirst(occursin.(glacier_name, prof_files))]
@@ -171,21 +197,24 @@ function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_
     iy = findall(yb .< y .< yb + δy)
     xv = Vector(x[ix[1]]:(x[ix[1]]+xtick_interval))
     xtick1 = xv[findfirst(xv .% xtick_interval .== 0)]
-    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, map_field[ix,iy]', aspect_ratio=1, xaxis=false, yaxis=false, colorbar_title="", grid=false; cmap, clims)
-    annotate!(((xl + 1.32(δx)).*1e-3, (yb + 0.5δy).*1e-3, text(clabel, 18)))
-    plot!(p_dif, outl, fill=nothing, xlims=(extrema(x[ix])).*1e-3, ylims=extrema(y[iy]).*1e-3, xticks  = (xtick1:xtick_interval:x[ix[end]]).*1e-3, xtick_direction=:out, lw=0.5)
+    yflip = false
+    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, map_field[ix,iy]', aspect_ratio=1, xaxis=false, yaxis=false, colorbar_title="", grid=false, yflip=yflip; clims, cmap, colorbar)
+    if eltype(map_field) != RGB{Float32}
+        annotate!(((xl + 1.32(δx)).*1e-3, (yb + 0.5δy).*1e-3, text(clabel, 18)); yflip)
+    end
+    plot!(p_dif, outl, fill=nothing, xlims=(extrema(x[ix])).*1e-3, ylims=extrema(y[iy]).*1e-3, xticks  = (xtick1:xtick_interval:x[ix[end]]).*1e-3, xtick_direction=:out, lw=0.5; yflip)
     # flow line + distance markers + annotation
-    plot!(p_dif, df.X[iplot].*1e-3, df.Y[iplot].*1e-3, label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:black, legend=legend_pos, legend_foreground_color=nothing, legend_background_color=:transparent)
+    plot!(p_dif, df.X[iplot].*1e-3, df.Y[iplot].*1e-3, label="Flowline in ($(flowline_panel))", aspect_ratio=1, lw=3, color=:black, legend=legend_pos, legend_foreground_color=nothing, legend_background_color=:transparent; yflip)
     dists, _   = GrIS1980s_DEM.interpolate_raster_to_profile(files[4], df.X, df.Y; band="surface")
     d_marker = [10e3, 30e3, 50e3]
     i_marker = [findmin(abs.(dists .- dm))[2] for dm in d_marker]
-    scatter!(p_dif, df.X[i_marker].*1e-3, df.Y[i_marker].*1e-3, color=:slategray, label="", markersize=5, markerstrokewidth=0.5)
-    annotate!(p_dif, df.X[i_marker].*1e-3 .+5, df.Y[i_marker].*1e-3 .+4, text.(["10 km", "30 km", "50 km"], 20))
+    scatter!(p_dif, df.X[i_marker].*1e-3, df.Y[i_marker].*1e-3, color=:slategray, label="", markersize=5, markerstrokewidth=0.5; yflip)
+    annotate!(p_dif, df.X[i_marker].*1e-3 .+5, df.Y[i_marker].*1e-3 .+4, text.(["10 km", "30 km", "50 km"], 20); yflip)
     GrIS1980s_DEM.panel_annotate!(p_dif, panel_letter)
     return p_dif
 end
-marg_left = 60mm 
-marg_bot  = -20mm
+marg_left = 60mm
+marg_bot  = -5mm
 title_pos = 26
 
 # difference GP and SVD
@@ -200,31 +229,49 @@ dd = zeros(size(h_dif)) .+ NaN
 dd[.!ismissing.(h_aero)] .= 1
 multipolygon = polygonize(==(1.0), range(extrema(x.*1e-3)..., step=1e-3*grd), range(extrema(y.*1e-3)..., step=1e-3*grd), dd)
 # Sermeq Kujalleq
-p_dif1 = plot_map(h_dif, "Sermeq-Kujalleq", "c", "a", :bottomright; id_plot)
+p_dif1 = plot_map(h_dif, "Sermeq-Kujalleq", "c", "a", :bottomright, clims=(-200,200); id_plot)
 ix, iy = get_glacier_idx("Sermeq-Kujalleq")
-plot!(p_dif1, multipolygon, fillstyle=:x, fillcolor=:black, fillalpha=0.3, linewidth=0, label="AeroDEM", right_margin=-35mm, left_margin=marg_left, xlims=xlims(p_dif1))
+plot!(p_dif1, multipolygon, fillstyle=:x, fillcolor=:black, fillalpha=0.3, linewidth=0, label="AeroDEM", right_margin=-25mm, left_margin=marg_left, xlims=xlims(p_dif1))
 annotate!(p_dif1, xlims(p_dif1)[1]-title_pos, mean(ylims(p_dif1)), text(L"h_\mathrm{GP}-h_\mathrm{SVD}", "Computer Modern", 30, :center))
+# add scalebar and North arrow
+plot!(p_dif1, [-145,-135], [-2245, -2245], color=:black, lw=4, label="")
+annotate!(p_dif1, [(-140, -2250, text("10 km", 20, :center))])
+plot!(p_dif1, [-140,-140], [-2265, -2255], color=:black, lw=2, label="")
+plot!(p_dif1, [-138.5,-140], [-2259, -2255], color=:black, lw=2, label="")
+plot!(p_dif1, [-141.5,-140], [-2259, -2255], color=:black, lw=2, label="")
+annotate!(p_dif1, [(-136, -2263, text("N", 22, :bottomright, :Helvetica))])
 # Helheim
-p_dif2 = plot_map(h_dif, "Helheim", "d", "b", :bottomleft; id_plot)
+p_dif2 = plot_map(h_dif, "Helheim", "d", "b", :bottomleft, clims=(-200,200); id_plot)
 ix, iy = get_glacier_idx("Helheim")
 plot!(p_dif2, multipolygon, fillstyle=:x, fillcolor=:black, fillalpha=0.3, linewidth=0, label="AeroDEM", margin=10mm, xlims=extrema(x[ix].*1e-3))
+# add scalebar and North arrow
+plot!(p_dif2, [327,337], [-2598, -2598], color=:black, lw=4, label="")
+annotate!(p_dif2, [(332, -2593, text("10 km", 20, :center))])
+plot!(p_dif2, [332,332], [-2589, -2579], color=:black, lw=2, label="")
+plot!(p_dif2, [330.5,332], [-2583, -2579], color=:black, lw=2, label="")
+plot!(p_dif2, [333.5,332], [-2583, -2579], color=:black, lw=2, label="")
+annotate!(p_dif2, [(336, -2587, text("N", 22, :bottomleft, :Helvetica))])
 # both
 p_difs = plot(p_dif1, p_dif2, layout=(1,2), size=(1800,650), bottom_margin=marg_bot)
 
 # GP
-p_GP1 = plot_map(h_GP, "Sermeq-Kujalleq", "e", "a", :bottomright, cmap=:terrain, clims=(0,1300); id_plot)
-p_GP1 = plot(p_GP1, right_margin=-35mm, left_margin=marg_left)
+shaded = get_shaded(h_GP, get_glacier_idx("Sermeq-Kujalleq")...)
+p_GP1 = plot_map(shaded, "Sermeq-Kujalleq", "e", "a", :bottomright, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot)
+p_GP1 = plot(p_GP1, right_margin=-35mm, left_margin=marg_left-110mm)
 annotate!(p_GP1, xlims(p_GP1)[1]-title_pos, mean(ylims(p_GP1)), text(L"h_\mathrm{GP}", "Computer Modern", 30, :center))
-p_GP2 = plot_map(h_GP, "Helheim", "f", "b", :bottomleft, cmap=:terrain, clims=(0,1900), clabel="         (m)"; id_plot)
-p_GP2 = plot(p_GP2, margin=10mm)
+shaded = get_shaded(h_GP, get_glacier_idx("Helheim")...)
+p_GP2 = plot_map(shaded, "Helheim", "f", "b", :bottomleft, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot)
+p_GP2 = plot(p_GP2, margin=10mm, left_margin=-95mm)
 p_GPs = plot(p_GP1, p_GP2, layout=(1,2), size=(1800,650), bottom_margin=marg_bot)
 
 # SVD
-p_SVD1 = plot_map(h_SVD, "Sermeq-Kujalleq", "g", "a", :bottomright, cmap=:terrain, clims=(0,1300); id_plot)
-p_SVD1 = plot(p_SVD1, right_margin=-35mm, left_margin=marg_left)
+shaded = get_shaded(h_SVD, get_glacier_idx("Sermeq-Kujalleq")...)
+p_SVD1 = plot_map(shaded, "Sermeq-Kujalleq", "g", "a", :bottomright, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot)
+p_SVD1 = plot(p_SVD1, right_margin=-35mm, left_margin=marg_left-110mm)
 annotate!(p_SVD1, xlims(p_SVD1)[1]-title_pos, mean(ylims(p_SVD1)), text(L"h_\mathrm{SVD}", "Computer Modern", 30, :center))
-p_SVD2 = plot_map(h_SVD, "Helheim", "h", "b", :bottomleft, cmap=:terrain, clims=(0,1900), clabel="         (m)"; id_plot)
-p_SVD2 = plot(p_SVD2, margin=10mm)
+shaded = get_shaded(h_SVD, get_glacier_idx("Helheim")...)
+p_SVD2 = plot_map(shaded, "Helheim", "h", "b", :bottomleft, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot)
+p_SVD2 = plot(p_SVD2, margin=10mm, left_margin=-95mm)
 p_SVDs = plot(p_SVD1, p_SVD2, layout=(1,2), size=(1800,650), bottom_margin=marg_bot)
 
 # all together
