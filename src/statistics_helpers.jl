@@ -405,11 +405,13 @@ end
 # for validation
 function step_through_folds(ids_train, ids_test, evaluate_fun, Z_true)
     dif_blocks     = [Float64[] for i in ids_test]
-    @showprogress for (j,(i_dat, i_test)) in enumerate(zip(ids_train, ids_test))
-        y_pred = evaluate_fun(i_dat, i_test)
-        dif_blocks[j] = y_pred .- Z_true[i_test]
+    sig_blocks     = [Float64[] for i in ids_test]
+    @showprogress Threads.@threads for j in eachindex(ids_train)
+        y_pred, σ_pred = evaluate_fun(ids_train[j], ids_test[j])
+        dif_blocks[j] = y_pred .- Z_true[ids_test[j]]
+        sig_blocks[j] = σ_pred
     end
-    return vcat(dif_blocks...)
+    return vcat(dif_blocks...), vcat(sig_blocks...)
 end
 
 function nearest_neighb_distance_from_cv(ids_train, ids_test, x_coords, y_coords; dL=1e5)

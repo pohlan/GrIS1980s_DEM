@@ -89,6 +89,15 @@ p_bot = plot(p_hist, p_varg, right_margin=[40mm 10mm], left_margin=30mm)
 p_all = plot(p_top, p_bot, layout=(2,1), dpi=300, top_margin=20mm, bottom_margin=20mm, size=(wwidth*3, wheight*2))
 savefig(joinpath(fig_dir_main, "f01_raero0.2.png"))
 
+#############################################
+# Variogram over stable terrain, Figure SX  #
+#############################################
+xvals, yvals = values(gamma_error)
+varg = GrIS1980s_DEM.get_var(gamma_error, nVmax=1, adjust_sill=true)
+p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:darkorchid, markerstrokewidth=0, markersize=7, xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), margin=6mm)
+plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing, legend_background_color=nothing, legend=:bottomright)
+savefig(joinpath(fig_dir_main, "fS0x_error_varg.png"))
+
 
 #############################################
 # Interpolated/Extrapolated bins, Figure S1 #

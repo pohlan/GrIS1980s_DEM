@@ -18,6 +18,7 @@ wwidth  = 1000
 wheight = 700
 
 panel_annotate!(p, letter) = annotate!(p, (xlims(p)[1]+(xlims(p)[2]-xlims(p)[1])*0.02, ylims(p)[1]+(ylims(p)[2]-ylims(p)[1])*1.07, Plots.text(L"\textbf{(%$letter)}", :left, p.attr[:plot_titlefontsize]-4)))
+panel_annotate_with_title!(p, letter, title) = annotate!(p, (xlims(p)[1]+(xlims(p)[2]-xlims(p)[1])*0.02, ylims(p)[1]+(ylims(p)[2]-ylims(p)[1])*1.07, Plots.text(L"$\textbf{(%$letter)}$  %$title", :left, p.attr[:plot_titlefontsize]-4)))
 panel_annotate_xlog!(p, letter) = annotate!(p, (10 .^(log10(xlims(p)[1])+(log10(xlims(p)[2])-log10(xlims(p)[1]))*0.02), ylims(p)[1]+(ylims(p)[2]-ylims(p)[1])*1.07, Plots.text(L"\textbf{(%$letter)}", :left, p.attr[:plot_titlefontsize]-4)))
 panel_annotate_ylog!(p, letter) = annotate!(p, (xlims(p)[1]+(xlims(p)[2]-xlims(p)[1])*0.02, 10 .^(log10(ylims(p)[1])+(log10(ylims(p)[2])-log10(ylims(p)[1]))*1.07), Plots.text(L"\textbf{(%$letter)}", :left, p.attr[:plot_titlefontsize]-4)))
 

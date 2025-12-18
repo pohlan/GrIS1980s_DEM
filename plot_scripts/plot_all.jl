@@ -20,7 +20,7 @@ grd                 = parsed_args["grid_size"]
 # load data
 csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, "")
 @unpack standardize, destandardize = GrIS1980s_DEM.get_stddization_fcts(jld2_preprocessing)
-@unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, I_no_ocean, nsamples_bins, bfields_file = load(jld2_preprocessing)
+@unpack href_file, bin_centers_1, bin_centers_2, nmads, meds, gamma, gamma_error, I_no_ocean, nsamples_bins, bfields_file = load(jld2_preprocessing)
 df_all = CSV.read(csv_preprocessing, DataFrame)
 
 h_ref_m = nomissing(NCDataset(href_file)["surface"][:,:], 0.0)

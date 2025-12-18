@@ -85,7 +85,7 @@ function do_validation_and_save(f)
 
     function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
         _, x_rec = GrIS1980s_DEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
-        return x_rec[I_obs[i_test]]
+        return x_rec[I_obs[i_test]], nothing
     end
 
     # loop through λ and r values
@@ -96,7 +96,7 @@ function do_validation_and_save(f)
             logλ = round(log(10, λ),digits=1)
             println("r = $r, logλ = $logλ")
             evaluate_fun(i_train,i_test) = predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
-            difs = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, x_data)
+            difs, _ = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, x_data)
             m_difs[iλ,ir]  = difs
         end
     end

@@ -63,10 +63,10 @@ end
 
 println("GP cross-validation...")
 function evaluate_fun(i_train, i_test)
-    m_pred = GrIS1980s_DEM.do_GP(coords_obs[i_train], GrIS1980s_DEM.F.(df_all.dh_detrend[i_train]), coords_obs[i_test], kernel_signal, kernel_error, df_all.sigma_obs[i_train], var=false)
-    return m_pred
+    m_pred, σ_pred = GrIS1980s_DEM.do_GP(coords_obs[i_train], GrIS1980s_DEM.F.(df_all.dh_detrend[i_train]), coords_obs[i_test], kernel_signal, kernel_error, df_all.sigma_obs[i_train], var=true)
+    return m_pred, σ_pred
 end
-difs = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, df_all.dh_detrend)
+difs, sigmas = GrIS1980s_DEM.step_through_folds(ids_train[1:2], ids_test[1:2], evaluate_fun, df_all.dh_detrend)
 
 # calculate distance to closest observation
 dists = nearest_neighb_distance_from_cv(ids_train, ids_test, df_all.x, df_all.y)
@@ -75,7 +75,7 @@ dists = nearest_neighb_distance_from_cv(ids_train, ids_test, df_all.x, df_all.y)
 idx  = vcat(ids_test...)
 logℓ = round(log10(ℓ),digits=1)
 dest = get_cv_file_GP(grd; logℓ, only_atm)
-cv_dict = (; difs, dists, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="GP")
+cv_dict = (; difs, sigmas, dists, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="GP")
 jldsave(dest; cv_dict...)
 
 # # make map of distances to closest observation (for uncertainty estimation)
