@@ -529,10 +529,9 @@ function download_velocity()
     return vx_file_nc, vy_file_nc
 end
 
-function create_reconstructed_bedmachine(rec_file, dest)
+function create_reconstructed_bedmachine(rec_file, dest; uncertainty=false)
     # load reconstruction and determine grid size
     surfaceDEM      = ncread(rec_file, "surface")
-    std_uncertainty = ncread(rec_file, "std_uncertainty")
     x               = ncread(rec_file, "x")
     grd             = x[2] - x[1]
 
@@ -565,23 +564,30 @@ function create_reconstructed_bedmachine(rec_file, dest)
     h_ice[floating_mask] .= surfaceDEM[floating_mask] ./  (1-ρi/ρw)
 
     # save to netcdf file
-    layers      = [surfaceDEM, std_uncertainty, bedDEM, h_ice, new_mask]
-    layernames  = ["surface", "std_uncertainty", "bed", "thickness", "mask"]
+    layers      = [surfaceDEM, bedDEM, h_ice, new_mask]
+    layernames  = ["surface", "bed", "thickness", "mask"]
     template    = NCDataset(bedmachine_file)
-    attributes  = get_attr(template, layernames)
     # overwrite some attributes
     sources_rec = Dict("surface"         => "svd reconstruction",
                        "bed"             => "Bedmachine-v5: Morlighem et al. (2022). IceBridge BedMachine Greenland, Version 5. Boulder, Colorado USA. NASA National Snow and Ice Data Center Distributed Active Archive Center. https://doi.org/10.5067/GMEVBWFLWA7X; projected on new grid with gdalwarp",
                        "thickness"       => "computed from surface and bed",
                        "mask"            => "bedrock from Morlighem et al. (2022); ice, floating and ocean computed from surface and bed elevation",
-                       "std_uncertainty" => "cross-validation error"
                        )
+    if uncertainty
+        std_uncertainty = ncread(rec_file, "std_uncertainty")
+        push!(layers, std_uncertainty)
+        push!(layernames, "std_uncertainty")
+        sources_rec["std_uncertainty"] = "standard deviation of GP output"
+    end
+    attributes  = get_attr(template, layernames)
     for l in layernames
         attributes[l]["source"] = sources_rec[l]
     end
     attributes["mask"]["long_name"] = "mask (0 = ocean, 1 = ice-free land, 2 = grounded ice, 3 = floating ice)"
-    attributes["std_uncertainty"] = Dict{String,Any}("long_name" => "standard deviation of error estimated from cross-validation",
-                                                         "units" => "m")
+    if uncertainty
+        attributes["std_uncertainty"] = Dict{String,Any}("long_name" => "standard deviation of GP output",
+                                                             "units" => "m")
+    end
     save_netcdf(dest, bedmachine_file, layers, layernames, attributes)
 
     return dest

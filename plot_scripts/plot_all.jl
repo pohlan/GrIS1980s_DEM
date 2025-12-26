@@ -1,5 +1,6 @@
 using GrIS1980s_DEM, NCDatasets, JLD2, UnPack, CSV, DataFrames, Glob, Dates, GeoDataFrames, GeometryOps
 using Plots, StatsPlots, LaTeXStrings, GeoStats, Shapefile, StatsBase, Statistics, Meshes, Distributions
+using Colors, Geomorphometry
 import ArchGDAL as AG
 import GeoFormatTypes as GFT
 
@@ -38,7 +39,7 @@ outl   = df.geometry
 outl = GeometryOps.transform(p -> p .*1e-3, outl)
 
 # chosen parameters for kriging and SVD
-const r0    = 500
+const r0    = 1000
 const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))
 

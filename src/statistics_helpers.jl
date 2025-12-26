@@ -409,7 +409,9 @@ function step_through_folds(ids_train, ids_test, evaluate_fun, Z_true)
     @showprogress Threads.@threads for j in eachindex(ids_train)
         y_pred, σ_pred = evaluate_fun(ids_train[j], ids_test[j])
         dif_blocks[j] = y_pred .- Z_true[ids_test[j]]
-        sig_blocks[j] = σ_pred
+        if !isnothing(σ_pred)
+            sig_blocks[j] = σ_pred
+        end
     end
     return vcat(dif_blocks...), vcat(sig_blocks...)
 end

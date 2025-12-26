@@ -163,19 +163,14 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     dem_rec[I_no_ocean]    .= x_rec .+ data_mean
     dem_rec[dem_rec .<= 0] .= no_data_value
 
-    # estimated error from cross-validation
-    std_uncertainty = NCDataset(get_std_uncrt_file("SVD", grd))["std_uncertainty"][:,:]
-
     # save as nc file
     println("Saving file..")
     logλ        = Int(round(log(10, λ)))
     filename    = get_rec_file_SVD(logλ, r, grd)
     attributes  = Dict("surface" => Dict{String, Any}("long_name" => "ice surface elevation",
-                                                      "units" => "m"),
-                       "std_uncertainty" => Dict{String,Any}("long_name" => "uncertainty estimated from standard deviation of cross-validation error",
-                                                                 "units" => "m")
-                        )
-    save_netcdf(filename, href_file, [dem_rec, std_uncertainty], ["surface", "std_uncertainty"], attributes)
+                                                      "units" => "m"))
+
+    save_netcdf(filename, href_file, [dem_rec], ["surface"], attributes)
 
     # save difference between reconstruction and observations
     save_netcdf(joinpath(main_output_dir, "dif_lambda_1e$logλ"*"_g$grd"*"_r$r.nc"), href_file, [dif], ["dif"], Dict("dif" => Dict{String,Any}()))

@@ -69,7 +69,7 @@ for i in eachindex(ids_test)
 end
 
 # calculate distances to nearest observation
-dists = get_closest_neighbors_from_cv(ids_train, ids_test, x_Iobs, y_Iobs)
+dists = nearest_neighb_distance_from_cv(ids_train, ids_test, x_Iobs, y_Iobs)
 
 # give λ and r values to loop through
 λs        = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11]
@@ -103,7 +103,7 @@ function do_validation_and_save(f)
     idx = vcat(ids_test...)
     # save
     to_save = (; norms_UΣ, Σ, dict, grd, λs, rs, m_difs, dists, idx=I_no_ocean[I_obs[idx]], nfiles, only_atm, method="SVD")
-    dest = get_cv_file_SVD(grd, nfiles, logℓ, only_atm)
+    dest = get_cv_file_SVD(grd, nfiles; logℓ, only_atm)
     jldsave(dest; to_save...)
 end
 
