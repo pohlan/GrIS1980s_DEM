@@ -38,7 +38,15 @@ function make_validation_plots(l1, l2, l3; standardized::Bool)
             iλ         = findfirst(λs .== λ0)
             ir         = findfirst(rs .== r0)
             difs       = m_difs[iλ, ir]
-            bin_metric = h_ref_m[idx]
+            if standardized
+                # difs       = standardize(difs, bfield_1_m[idx], h_ref_m[idx], subtract_mean=false)
+                bin_metric = vcat(dists...)
+                ii = findall(bin_metric .> 110e3)
+                deleteat!(bin_metric, ii)
+                deleteat!(difs, ii)
+            else
+                bin_metric = h_ref_m[idx]
+            end
         end
         # bin error vs elevation
         dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(bin_metric, difs, 14)
@@ -73,12 +81,12 @@ function make_validation_plots(l1, l2, l3; standardized::Bool)
             plot!(p_tw_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, y_foreground_color_text=color, y_guidefontcolor=color, label=""; color, attr...)
             bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label=""; color)
         end
-        boxplot!(p_box, difs, outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2],["GP (only ATM)", "SVD", "SVD (only ATM)"]), label="", fillalpha=0.7, grid=false; color)
+        boxplot!(p_box, difs, outliers=false, label="", fillalpha=0.7, grid=false; color)
         if method == "SVD"
             @unpack m_difs, λs, rs = load(f_SVD_only_atm)
             iλ         = findfirst(λs .== λ0)
             ir         = findfirst(rs .== r0)
-            boxplot!(p_box, m_difs[iλ, ir], outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2,3],["GP (only ATM)", "SVD", "SVD (only ATM)"]), label="", fillalpha=0.7, grid=false; color)
+            boxplot!(p_box, m_difs[iλ, ir], outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2,3],["GP\n(only ATM)", "SVD\n(all)", "SVD\n(only ATM)"]), label="", fillalpha=0.7, grid=false; color)
         end
     end
     p_std = plot(p_std, legend=:topright, legend_foreground_color=nothing)
@@ -157,9 +165,9 @@ savefig(joinpath(fig_dir_main, "f05.png"))
 
 
 
-###############################
-# SVD with vs without weights #
-###############################
+##########################################
+# SVD with vs without weights, Figure S6 #
+##########################################
 
 
 fs_SVD = [get_cv_file_SVD(grd, 70, only_atm=false),"output/validation/SVD_with_W_onlyatm_false.jld2"]
@@ -169,51 +177,39 @@ p_box  = plot()
 cols   = palette(:batlow10)[[2,7]]
 labels = ["no weights", "with weights"]
 xlabel = "Elevation of reference DEM (m)"
-xticks = ([0.0, 50.,100.,150.], string.([0, 50,100,150]))
+# xticks = ([0.0, 50.,100.,150.], string.([0, 50,100,150]))
 for (f_SVD, color, label) in zip(fs_SVD, cols, labels)
     @unpack idx, m_difs, λs, rs, nfiles, norms_UΣ, Σ = load(f_SVD)
-    # m_B = zeros(size(h_ref_m))
-    # m_B[I_no_ocean] .= norms_UΣ ./ sqrt(length(Σ)-1)
-    if nfiles == 10   # doesn't have 500 modes
-        iλ = findfirst(λs .== 1e6)
-        ir = findfirst(rs .== 300)
-    else
-        iλ = findfirst(λs .== λ0)
-        ir = findfirst(rs .== r0)
-    end
+    iλ = findfirst(λs .== λ0)
+    ir = findfirst(rs .== 500)
     difs = m_difs[iλ, ir]
-    # ii = findall(m_B[idx] .< 150)
-    # dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(m_B[idx[ii]], difs[ii], 12)
     dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
-    plot!(p_mean, bin_centers, mean.(dh_binned), ylabel=L"Mean $\epsilon$ (m)", ls=:dot; label, color, xlabel, xticks, attr...)
+    plot!(p_mean, bin_centers, mean.(dh_binned), ylabel=L"Error mean $\mu_\epsilon$ (m)", ls=:dot, marker=:circle; label, color, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
-    plot!(p_std,    bin_centers, std.(dh_binned), ylabel=L"Error standard deviation $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot; label, color, xlabel, xticks, attr...)
+    plot!(p_std,    bin_centers, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, marker=:circle; label, color, xlabel, attr...)
     boxplot!(p_box, difs, outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2],labels), label="", fillalpha=0.5, grid=false; color)
     if label == "with weights"
         global bin_centers = bin_centers
         global n_samples   = length.(dh_binned)
     end
 end
-p_mean = plot(p_mean, legend_foreground_color=nothing, legend=:topright, grid=false)
-GrIS1980s_DEM.panel_annotate!(p_mean, "a")
-p_std = plot(p_std, legend=false, grid=false)
-GrIS1980s_DEM.panel_annotate!(p_std, "b")
-# p_tw = twinx(p_std)
-# bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="relative sample size", grid=false, legend=:top, legend_foreground_color=nothing, yaxis=false, right_margin=-30mm)
-plot(p_mean, p_std, p_box ,size=(2000,700), margin=15Plots.mm, dpi=300, layout=grid(1, 3, widths=(0.38, 0.37, 0.25)))
-savefig(joinpath(fig_dir_main, "fS0xx.png"))
+p_std = plot(p_std, legend_foreground_color=nothing, legend=:topright, grid=false)
+GrIS1980s_DEM.panel_annotate!(p_std, "a")
+p_mean = plot(p_mean, legend=false, grid=false)
+GrIS1980s_DEM.panel_annotate!(p_mean, "b")
+p_tw = twinx(p_std)
+bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="relative sample size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
+plot(p_std, p_mean, p_box ,size=(2000,700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300, layout=grid(1, 3, widths=(0.38, 0.37, 0.25)))
+savefig(joinpath(fig_dir_main, "fS06.png"))
 
 
 
 ##############################################################
-# SVD error for different λ&r and singular values, Figure S3 #
+# SVD error for different λ&r and singular values, Figure S5 #
 ##############################################################
 
 # get file
 f_SVD = get_cv_file_SVD(grd, 70, only_atm=false)
-# f_SVD = "output/validation/cv_file_it3.jld2"
-# f_SVD = "output/validation/cv_1e5.3_gr600_SVD_nfiles10.jld2"
-# f_SVD = "output/validation/SVD_with_W_onlyatm_false.jld2"
 # plot absolute mean of cross-validation error for different λ and r values
 attr = (;size=(900,700), margin=15Plots.mm, markersize=6, lw=3.5, markerstrokewidth=0)
 p_mean = plot(xlabel="Elevation of reference DEM (m)", ylabel=L"Mean $\epsilon$ (m)")
@@ -231,11 +227,11 @@ p_sigm = plot(Σ.^2, yscale=:log10, yticks=[1e5, 1e7, 1e9, 1e11, 1e13, 1e15, 1e1
 GrIS1980s_DEM.panel_annotate_ylog!(p_sigm, "b")
 # save both in one figure
 plot(p, p_sigm, size=(1800,600), dpi=300)
-savefig(joinpath(fig_dir_main,"fS03.png"))
+savefig(joinpath(fig_dir_main,"fS05.png"))
 
 
 ####################################################################
-# SVD error for different number of training data files, Figure S4 #
+# SVD error for different number of training data files, Figure S7 #
 ####################################################################
 
 # get file
@@ -245,7 +241,7 @@ attr = (;margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), l
 p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_std  = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 cols   = palette(:batlow10)[1:2:end]
-xlabel = "Standard deviation of model realizations (m)"
+xlabel = "Elevation of reference DEM (m)"
 for (f_SVD, color) in zip(fs_SVD, cols)
     @unpack idx, m_difs, λs, rs, nfiles, Σ = load(f_SVD)
     # m_B = zeros(size(h_ref_m))
@@ -260,14 +256,16 @@ for (f_SVD, color) in zip(fs_SVD, cols)
     difs = m_difs[iλ, ir]
     # ii = findall(m_B[idx] .< 200)
     # dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(m_B[idx[ii]], difs[ii], 12)
-    dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
-    plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", label=" $(length(Σ))", ylabel=L"Mean $\epsilon$ (m)"; color, xlabel, attr...)
+    global dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
+    plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", ylabel=L"Error mean $\mu_\epsilon$ (m)"; color, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
-    plot!(p_std,    bin_centers, std.(dh_binned), legend_title=L"$m$", ylabel=L"Error standard deviation $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
+    plot!(p_std,    bin_centers, std.(dh_binned), legend_title=L"$m$", label=" $(length(Σ))", ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
 end
-p_mean = plot(p_mean, legend_foreground_color=nothing, legend=:bottomright)
-GrIS1980s_DEM.panel_annotate!(p_mean, "a")
-p_std = plot(p_std, legend=false)
-GrIS1980s_DEM.panel_annotate!(p_std, "b")
-plot(p_mean, p_std,size=(2000,700), margin=15Plots.mm, dpi=300)
-savefig(joinpath(fig_dir_main, "fS04.png"))
+p_std = plot(p_std, legend_foreground_color=nothing, legend=:topright)
+GrIS1980s_DEM.panel_annotate!(p_std, "a")
+p_tw = twinx(p_std)
+bar!(p_tw, bin_centers, length.(dh_binned), color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative bin size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
+p_mean = plot(p_mean, legend=false)
+GrIS1980s_DEM.panel_annotate!(p_mean, "b")
+plot(p_std, p_mean, size=(2000,700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300)
+savefig(joinpath(fig_dir_main, "fS07.png"))

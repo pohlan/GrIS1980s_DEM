@@ -386,11 +386,11 @@ function create_aerodem(grd_target, grd_coreg=150, outline_shp_file="", bedmachi
 
         # co-registration
         fig_name = joinpath(fig_path, "coregistration_before_after.png")
-        py_coreg_raster(ref_coreg_file_geoid, not_aligned_file, aerodem_highres_file, outline_shp_file, fig_name) # note: output is upside down but will be reversed in gdalwarp below
+        # note: output is upside down but will be reversed in gdalwarp below
+        GrISenv = parse_commandline(ARGS)["GrISenv"]
+        run(`$GrISenv python_scripts/py_aerodem_coreg.py --reference_file $ref_coreg_file_geoid --dem_file_not_aligned $not_aligned_file
+                                                         --dest_file_aligned $aerodem_highres_file --outline_shp_file $outline_shp_file --fig_name $fig_name`)
 
-        rm(merged_aero_dest)
-        rm(merged_rm_dest)
-        rm(not_aligned_file)
     end
 
     # gdalwarp to desired grid
@@ -488,25 +488,21 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
         return atm_dh_dest_file
     end
 
-    # need a file with only one band for interp_points operation in xdem python;
-    # plus need to reference to ellipsoid to be consistent with atm before differencing the two
-
     # co-registration
+    GrISenv = parse_commandline(ARGS)["GrISenv"]
     atm_data_aligned  = splitext(raw_atm_data_file)[1]*"_aligned"*splitext(raw_atm_data_file)[2]
-    py_coreg_points(ref_coreg_file_ellips, raw_atm_data_file, atm_data_aligned, outline_shp_file)
+    run(`$GrISenv python_scripts/py_coreg_points.py --reference_file $ref_coreg_file_ellips --point_data_file $raw_atm_data_file
+                                                    --outline_shp_file $outline_shp_file --dest_file_aligned $atm_data_aligned`)
 
     # interpolate GrIMP DEM on ATM points and calculate difference
     dh_interpolated_file = joinpath(dirname(raw_atm_data_file), "atm_dh_interpolated.csv")
-    py_point_interp(ref_coreg_file_ellips, ref_coreg_file_geoid, atm_data_aligned, dh_interpolated_file)
+    run(`$GrISenv python_scripts/py_point_interp.py --ref_file $ref_coreg_file_ellips --ref_file_geoid $ref_coreg_file_geoid
+                                                    --point_data_file $atm_data_aligned --dest_file $dh_interpolated_file`)
 
     # block reduce with python package verde; average data that is heavily oversampled in direction of flight
     println("Doing blockreduce...")
-    py_block_reduce(dh_interpolated_file, atm_dh_dest_file, blockspacing)
-
-    # delete all temporary files
-    rm(atm_data_aligned)
-    rm(dh_interpolated_file)
-
+    run(`$GrISenv python_scripts/py_block_reduce.py --fname_in $dh_interpolated_file --fname_out $atm_dh_dest_file
+                                                    --spacing $blockspacing`)
     return atm_dh_dest_file
 end
 
@@ -592,114 +588,3 @@ function create_reconstructed_bedmachine(rec_file, dest; uncertainty=false)
 
     return dest
 end
-
-# python functions
-# const xdem = Ref{Py}()
-# const np   = Ref{Py}()
-# const pd   = Ref{Py}()
-# const gpd  = Ref{Py}()
-# function __init__()
-#     xdem[] = pyimport("xdem")
-#     np[] = pyimport("numpy")
-#     pd[] = pyimport("pandas")
-#     gpd[] = pyimport("geopandas")
-# end
-
-# function py_point_interp(fname_ref, fname_ref_geoid, fname_atm, fname_out)
-#     ref_DEM       = xdem[].DEM(fname_ref)
-#     ref_DEM_geoid = xdem[].DEM(fname_ref_geoid)
-#     # extract ATM points
-#     df       = pd[].read_csv(fname_atm)
-#     geometry = gpd[].points_from_xy(df.x, df.y, crs=ref_DEM.crs)
-#     g        = geometry.to_crs(ref_DEM.crs)
-#     # interpolate
-#     ref_pts       = ref_DEM.interp_points(points=(g.x, g.y), prefilter=false)
-#     ref_pts_geoid = ref_DEM_geoid.interp_points(points=(g.x, g.y), prefilter=false)
-#     # save
-#     # note: "h_ref" below is referenced to geoid !!
-#     # (easier to remove geoid from grimp to do the grimp-atm difference rather than add it to atm, because already on the same grid;
-#     # however, for destandardization we need the geoid-referenced elevation of grimp)
-#     ds_save = pd[].DataFrame()
-#     ds_save["x"]     = g.x
-#     ds_save["y"]     = g.y
-#     ds_save["h_ref"] = ref_pts_geoid
-#     ds_save["dh"]    = ref_pts-df.z
-#     ds_save.to_csv(fname_out, index=false)
-# end
-
-# function py_block_reduce(fname_in, fname_out, spacing)
-#     df                      = pd[].read_csv(fname_in)
-#     reducer                 = pyimport("verde").BlockReduce(reduction=np[].median, spacing=spacing)
-#     coordinates, dh_reduced = reducer.filter((df.x, df.y), df.dh)
-#     coordinates, h_reduced  = reducer.filter((df.x, df.y), df.h_ref)
-#     xn, yn                  = coordinates
-#     df_reduced              = pd[].DataFrame()
-#     df_reduced["x"]         = xn
-#     df_reduced["y"]         = yn
-#     df_reduced["h_ref"]     = h_reduced
-#     df_reduced["dh"]        = dh_reduced
-#     df_reduced.to_csv(fname_out, index=false)
-# end
-
-# function py_coreg_raster(reference_file, dem_file_not_aligned, dest_file_aligned, outline_shp_file, fig_name)
-#     dem_not_aligned = xdem[].DEM(dem_file_not_aligned)
-#     reference_dem   = xdem[].DEM(reference_file)
-#     # calculate dh before co-registration
-#     diff_before     = reference_dem - dem_not_aligned
-#     # Create a mask of stable terrain, removing outliers outside 3 NMAD
-#     glacier_outlines = pyimport("geoutils").Vector(outline_shp_file)
-#     mask_noglacier   = ~glacier_outlines.create_mask(reference_dem)
-#     mask_nooutliers  = np[].abs(diff_before - np[].nanmedian(diff_before)) < 3 * xdem[].spatialstats.nmad(diff_before)
-#     # Create inlier mask
-#     inlier_mask      = mask_noglacier & mask_nooutliers
-#     # co-register
-#     nuth_kaab = xdem[].coreg.NuthKaab()
-#     println("Doing Nuth and Kaab co-registration...")
-#     nuth_kaab.fit(reference_dem, dem_not_aligned, inlier_mask)
-#     println(nuth_kaab._meta)
-#     aligned_dem = nuth_kaab.apply(dem_not_aligned)
-#     # calculate dh after co-registration
-#     diff_after = reference_dem - aligned_dem
-#     # make a zoomed-in plot to show the difference
-#     diff_before_jl = PyArray(diff_before.data); diff_before_jl[PyArray(diff_before.data.mask)] .= NaN
-#     diff_after_jl  = PyArray(diff_after.data);    diff_after_jl[PyArray(diff_after.data.mask)] .= NaN
-#     p1 = heatmap(diff_before_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="before co-registration", aspect_ratio=1, size=(700,900))
-#     p2 = heatmap(diff_after_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="after co-registration", aspect_ratio=1, size=(700,900))
-#     plot(p1,p2,size=(1500,900))
-#     savefig(fig_name)
-#     # save aligned dem
-#     dem_xa = aligned_dem.to_xarray("surface")
-#     dem_xa.to_netcdf(dest_file_aligned)
-# end
-
-# # without calculating and plotting diff_before and diff_after
-# function py_coreg_points(reference_file, point_data_file, dest_file_aligned, outline_shp_file)
-#     # read reference DEM
-#     ds            = pyimport("rioxarray").open_rasterio(reference_file)
-#     reference_dem = xdem[].DEM.from_xarray(ds)
-#     # read point data
-#     df            = pd[].read_csv(point_data_file)
-#     geometry      = gpd[].points_from_xy(df.lon, df.lat, crs="WGS84")
-#     g             = geometry.to_crs(reference_dem.crs)
-#     # GeoDataFrame
-#     gdf      = gpd[].GeoDataFrame(geometry=g, crs=reference_dem.crs)
-#     gdf["z"] = df.z
-#     gdf["E"] = g.x   # xdem is expecting columns named "E" and "N"
-#     gdf["N"] = g.y
-#     # stable terrain mask (no outlier removal here, in contrast to raster version)
-#     glacier_outlines = pyimport("geoutils").Vector(outline_shp_file)
-#     mask_noglacier   = ~glacier_outlines.create_mask(reference_dem)
-#     # coregistration
-#     println("Doing Nuth and Kaab fit...")
-#     nuth_kaab        = xdem[].coreg.NuthKaab()
-#     nuth_kaab.fit(reference_dem, gdf, mask_noglacier)
-#     gdf_aligned      = nuth_kaab.apply(gdf)
-#     println(nuth_kaab.meta)
-#     # save
-#     df_save = pd[].DataFrame()
-#     df_save["z"] = gdf_aligned.z
-#     df_save["x"] = gdf_aligned.geometry.x
-#     df_save["y"] = gdf_aligned.geometry.y
-#     df_save.to_csv(dest_file_aligned, index=false)
-#     return
-# end

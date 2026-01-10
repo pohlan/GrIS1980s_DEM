@@ -3,7 +3,7 @@ fig_dir_others = joinpath("output", "data_preprocessing", "figures")
 mkpath(fig_dir_others)
 
 ##############################
-# Standardization, Figure 1  #
+# Standardization, Figure 2  #
 ##############################
 
 # plotting parameters
@@ -71,36 +71,36 @@ p_bins_density = bin_plot(nsamples_bins, "# samples per bin", :dense, "c", 2000:
 p_top = plot(p_bins_std, p_bins_med, p_bins_density, size=(wwidth*3, wheight), layout=grid(1,3, widths=(3/9,3/9,3/9)), left_margin=[18mm 18mm 18mm]) #, right_margin=[-2mm -2mm -10mm]) #, size=(wwidth*1.5, wheight), left_margin=18Plots.mm, right_margin=18Plots.mm, top_margin=14Plots.mm, bottom_margin=12Plots.mm)
 
 # histogram
-p_hist = histogram(df_all.dh_detrend, label="Standardized \nobservations", xlims=(-7,7), yticks=false, xlabel="Elevation difference (m)", ylabel="Frequency", normalize=:pdf, nbins=800, color=:cornflowerblue, linecolor=:cornflowerblue)
+p_hist = histogram(df_all.dh_detrend, label="Standardized \nobservations", xlims=(-7,7), yticks=false, xlabel="Elevation difference (-)", ylabel="Frequency", normalize=:pdf, nbins=800, color=:cornflowerblue, linecolor=:cornflowerblue)
 plot!(p_hist, Normal(), lw=2.5, label="Normal distribution", color="black", foreground_color_legend = nothing)
 GrIS1980s_DEM.panel_annotate!(p_hist, "d")
 
 # variogram
 xvals, yvals = values(gamma)
 varg = GrIS1980s_DEM.get_var(gamma; adjust_sill=false)
-p_varg1 = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:cornflowerblue, markerstrokewidth=0, markersize=5, xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", xlims=(0, 150))
+p_varg1 = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:cornflowerblue, markerstrokewidth=0, markersize=5, xlabel="Distance (km)", ylabel=L"\gamma", xlims=(0, 150))
 plot!(p_varg1, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing)
 GrIS1980s_DEM.panel_annotate!(p_varg1, "e")
 p_varg = p_varg1
 
 p_bot = plot(p_hist, p_varg, right_margin=[40mm 10mm], left_margin=30mm)
 
-# FIGURE 1
+# FIGURE 2
 p_all = plot(p_top, p_bot, layout=(2,1), dpi=300, top_margin=20mm, bottom_margin=20mm, size=(wwidth*3, wheight*2))
-savefig(joinpath(fig_dir_main, "f01_raero0.2.png"))
+savefig(joinpath(fig_dir_main, "f02.png"))
 
 #############################################
-# Variogram over stable terrain, Figure SX  #
+# Variogram over stable terrain, Figure S4  #
 #############################################
 xvals, yvals = values(gamma_error)
-varg = GrIS1980s_DEM.get_var(gamma_error, nVmax=1, adjust_sill=true)
-p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:darkorchid, markerstrokewidth=0, markersize=7, xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), margin=6mm)
+varg = GrIS1980s_DEM.get_var(gamma_error, nVmax=1, adjust_sill=false)
+p_varg = scatter(ustrip.(xvals) .* 1e-3, yvals ./ sill(varg), label="Empirical variogram", color=:darkorchid, markerstrokewidth=0, markersize=7, xlabel="Distance (km)", ylabel=L"\gamma", size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), margin=6mm)
 plot!(p_varg, [1e-5; ustrip.(xvals)] .* 1e-3, varg.([1e-5; ustrip.(xvals)]) ./ sill(varg), label="Variogram fit", lw=3.5, ylims=(0,1.3), color=:black, foreground_color_legend=nothing, legend_background_color=nothing, legend=:bottomright)
-savefig(joinpath(fig_dir_main, "fS0x_error_varg.png"))
+savefig(joinpath(fig_dir_main, "fS04.png"))
 
 
 #############################################
-# Interpolated/Extrapolated bins, Figure S1 #
+# Interpolated/Extrapolated bins, Figure S2 #
 #############################################
 
 # fine-scale x values
@@ -108,21 +108,21 @@ x1 = range(bin_edges_1[1], bin_edges_1[end], length=10000)
 x2 = range(bin_edges_2[1], bin_edges_2[end], length=1000)
 # std
 itp_var = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, nmads)
-p_std  = heatmap(x1, x2, itp_var.(x1, x2')',  xlabel=L"Slope $s$ (°)", ylabel=L"Elevation $h_\mathrm{ref}$ (m)", colorbar_titlefontsize=25, colorbar_title=L"$\sigma_{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), cmap=cmap_else)
+p_std  = heatmap(x1, x2, itp_var.(x1, x2')',  xlabel=L"Slope $s_\mathrm{ref}$ (°)", ylabel=L"Elevation $h_\mathrm{ref}$ (m)", colorbar_titlefontsize=25, colorbar_title=L"$\sigma_{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), cmap=cmap_else)
 plot!(p_std, pol, lw=2, fillalpha=0, linecolor=:black)
 GrIS1980s_DEM.panel_annotate!(p_std, "a")
 # median
 itp_bias = GrIS1980s_DEM.get_itp_interp(bin_centers_1, bin_centers_2, meds)
-p_bias = heatmap(x1, x2, itp_bias.(x1, x2')', xlabel=L"Slope $s$ (°)", ylabel=L"Elevation $h_\mathrm{ref}$ (m)", colorbar_titlefontsize=25, colorbar_title=L"$\overline{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), cmap=cmap_div, clims=(-40,40))
+p_bias = heatmap(x1, x2, itp_bias.(x1, x2')', xlabel=L"Slope $s_\mathrm{ref}$ (°)", ylabel=L"Elevation $h_\mathrm{ref}$ (m)", colorbar_titlefontsize=25, colorbar_title=L"$\overline{\Delta h}\,\mathrm{(m)}$", wsize=(wwidth, wheight), cmap=cmap_div, clims=(-40,40))
 plot!(p_bias, pol, lw=2, fillalpha=0, linecolor=:black)
 GrIS1980s_DEM.panel_annotate!(p_bias, "b")
 # subplots
 plot(p_std, p_bias, size=(wwidth*2, wheight), margin=18mm)
-savefig(joinpath(fig_dir_main, "fS01_new.png"))
+savefig(joinpath(fig_dir_main, "fS02.png"))
 
 
 ####################################
-# Variogram supplements, Figure S2 #
+# Variogram supplements, Figure S3 #
 ####################################
 
 
@@ -139,7 +139,7 @@ p_varg_atm_aero = plot(size=(wwidth,wheight), xlims=(-10,190), legend=:bottomrig
 for (gm_i, source) in zip(gms_aero_atm, ["AeroDEM", "ATM"])
     xv, yv = values(gm_i)
     ysc = yv[findmin(abs.(ustrip.(xv) .- 150e3))[2]]
-    scatter!(p_varg_atm_aero, ustrip.(xv) .* 1e-3, yv ./ ysc, label=source, markersize=4, markerstrokewidth=0, xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}")
+    scatter!(p_varg_atm_aero, ustrip.(xv) .* 1e-3, yv ./ ysc, label=source, markersize=4, markerstrokewidth=0, xlabel="Distance (km)", ylabel=L"\gamma")
 end
 # add the ice-sheet wide variogram used for kriging (ATM + part of AeroDEM)
 xv, yv = values(gamma)
@@ -149,16 +149,18 @@ scatter!(p_varg_atm_aero, ustrip.(xv) .* 1e-3, yv ./ ysc, markersize=4, markerst
 plot!(p_varg_atm_aero, [1e-5; ustrip.(xv)] .* 1e-3, varg.([1e-5; ustrip.(xv)]) ./ varg(150e3), color=:black, label="Fitted model", lw=3.5)
 GrIS1980s_DEM.panel_annotate!(p_varg_atm_aero, "a")
 # map
-aero_atm_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xlabel="Easting (km)", ylabel="Northing (km)"; palette)
+aero_atm_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false; palette)
 for source in ["aerodem", "atm"]
     i_g = findall(df_all.source .== source)
     scatter!(aero_atm_map, df_all.x[i_g].*1e-3, df_all.y[i_g].*1e-3, markerstrokewidth=0, markersize=0.5, aspect_ratio=1, label="")
 end
 GrIS1980s_DEM.panel_annotate!(aero_atm_map, "b")
+# scalebar and north arrow
+plot!(aero_atm_map, [-7e2,-5e2], [-3e3, -3e3], color=:black, lw=3, label="")
+annotate!(aero_atm_map, [(-6e2, -2.85e3, text("200 km", :center, :Helvetica, 20))])
+plot!(aero_atm_map, [-6e2,-6e2], [-2.6e3, -2.2e3], arrow=true, color=:black, lw=1, label="")
+annotate!(aero_atm_map, [(-6.4e2, -2.45e3, text("N", :right, :Helvetica, 20))])
 p_atm_aero = plot(p_varg_atm_aero, aero_atm_map, layout=grid(1,2,widths=(0.65, 0.35)), size=(wwidth*2, wheight), right_margin=[0mm 10mm], left_margin=[20mm 5mm], bottom_margin=15mm)
-savefig("gamma_aero_atm.png")
-
-
 
 # divide Greenland into sections
 # take only a subsample of aerodem
@@ -170,34 +172,9 @@ n_aero = round(Int, 0.2 * length(i_aero))
 i_sampl = [rand(1:length(i_aero), n_aero); i_atm]
 df_not_all = df_all[i_sampl,:]
 
-
-# ymid = -2e6
-# xmid = 1e5
-# is = [findall(df_all.y .<= ymid .&& df_all.x .<= xmid),
-#       findall(df_all.y .<= ymid .&& df_all.x .> xmid),
-#       findall(df_all.y .> ymid .&& df_all.x .<= xmid),
-#       findall(df_all.y .> ymid .&& df_all.x .> xmid)]
 ymid = -2e6
 is = [findall(df_not_all.y .<= ymid),
       findall(ymid .< df_not_all.y)]
-# ymids = [-2.5e6, -2e6, -1.5e6]
-# is = [findall(df_not_all.y .<= ymids[1]),
-#       findall(ymids[1] .< df_not_all.y .<= ymids[2]),
-#       findall(ymids[2] .< df_not_all.y .<= ymids[3]),
-#       findall(ymids[3] .< df_not_all.y)]
-# ymids = [-2.2e6, -1.6e6]
-# is = [findall(df_not_all.y .<= ymids[1]),
-#       findall(ymids[1] .< df_not_all.y .<= ymids[2]),
-#       findall(ymids[2] .< df_not_all.y)]
-# is = [findall((df_all.y .<= ymids[1])), # .&& (df_all.x .<= xmid)),
-#       findall(ymids[1] .< df_all.y .<= ymids[2] .&& df_all.x .<= xmid),
-#       findall(ymids[2] .< df_all.y .<= ymids[3] .&& df_all.x .<= xmid),
-#       findall(ymids[3] .< df_all.y .&& df_all.x .<= xmid),
-#     #   findall(df_all.y .<= ymids[1] .&& df_all.x .> xmid),
-#       findall(ymids[1] .< df_all.y .<= ymids[2] .&& df_all.x .> xmid),
-#       findall(ymids[2] .< df_all.y .<= ymids[3] .&& df_all.x .> xmid),
-#       findall(ymids[3] .< df_all.y .&& df_all.x .> xmid)
-#       ]
 xvals_4 = []
 yvals_4 = []
 # rs_aero = [0.5,0.5,0.2]
@@ -212,27 +189,26 @@ p4_varg = plot(legend=:topleft, size=(wwidth,wheight), xlims=(-3,150), ylims=(0,
 yscls = [95e3,140e3]
 for (xvals, yvals, yhat) in zip(xvals_4, yvals_4, yscls)
     ysc = yvals[findmin(abs.(ustrip.(xvals) .- yhat))[2]]
-    scatter!(p4_varg, ustrip.(xvals) .* 1e-3, yvals ./ ysc , markersize=4, markerstrokewidth=0, xlabel="Distance (km)", ylabel=L"\gamma\,\,\mathrm{(m^2)}", label="")
+    scatter!(p4_varg, ustrip.(xvals) .* 1e-3, yvals ./ ysc , markersize=4, markerstrokewidth=0, xlabel="Distance (km)", ylabel=L"\gamma", label="")
 end
 # add the fitted model
 plot!(p4_varg, [1e-5; ustrip.(xvals_4[1])] .* 1e-3, varg.([1e-5; ustrip.(xvals_4[1])]) ./ varg(150e3), label="Fitted model", lw=3.5, color=:black)
 GrIS1980s_DEM.panel_annotate!(p4_varg, "c")
 # map
-p4_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xlabel="Easting (km)", ylabel="Northing (km)"; palette)
+p4_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false; palette)
 for i_g in is
     scatter!(p4_map, df_not_all.x[i_g].*1e-3, df_not_all.y[i_g].*1e-3, markerstrokewidth=0, markersize=0.5, aspect_ratio=1, label="")
 end
 GrIS1980s_DEM.panel_annotate!(p4_map, "d")
 p_sections = plot(p4_varg, p4_map, layout=grid(1,2,widths=(0.65, 0.35)), size=(wwidth*2, wheight), right_margin=[0mm 10mm], left_margin=[20mm 5mm], bottom_margin=15mm)
-savefig("gamma_2_map.png")
 
 plot(p_atm_aero, p_sections, layout=(2,1), size=(wwidth*1.6,wheight*1.8), bottom_margin=[10mm 10mm], top_margin=[20mm 0mm])
-savefig(joinpath(fig_dir_main, "fS02_new.png"))
+savefig(joinpath(fig_dir_main, "fS03.png"))
 
 
 
 ##############################
-# Heatmaps of data, Figure 2 #
+# Heatmaps of data, Figure 1 #
 ##############################
 
 function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4,4), title)
@@ -242,7 +218,7 @@ function heatmap_from_df(df_all, sm::Symbol, x, y, dims::Tuple, fname; clims=(-4
     wsize          = (1000,1200)
     xlabel         = "Easting (km)"
     ylabel         = "Northing (km)"
-    colorbar_title = "(m)"
+    colorbar_title = "(-)"
     cmap           = cgrad(:vik, rev=true)
     # plot raster with aerodem data
     id_df_aero = findall(df_all.source .== :aerodem .|| df_all.source .== "aerodem")
@@ -264,4 +240,4 @@ end
 heatmap_from_df(df_all, :dh, x, y, size(h_ref_m), joinpath(fig_dir_others,"data_non-standardized.png"), clims=(-20,20), title=L"Non-standardized observations $\Delta h$")
 
 # plot after standardizing (FIGURE 2)
-heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref_m), joinpath(fig_dir_main,"f02.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")
+heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref_m), joinpath(fig_dir_main,"f01.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")

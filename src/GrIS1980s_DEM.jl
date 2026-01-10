@@ -25,6 +25,9 @@ const F = Float32              # Julia default is Float64 but that kills the pro
 function parse_commandline(args)
     s = ArgParseSettings()
     @add_arg_table s begin
+        "--GrISenv"
+            help     = "output of `which python`; needed for calling python scripts in co-registration"
+            arg_type = String
         "--λ", "--lambda"
             help     = "regularization parameter for the least squares problem"
             arg_type = Float64
