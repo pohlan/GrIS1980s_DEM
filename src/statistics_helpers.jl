@@ -82,6 +82,24 @@ function bin_equal_sample_size(x1, x2, y, n_bins_1, n_bins_2, maxdiff_1, maxdiff
     return out, bin_centers_1, bin_centers_2
 end
 
+function get_error_df(csv_file, x, y, I_no_ocean)
+    df    = CSV.read(csv_file, DataFrame)
+    i_val = findall(.!ismissing.(df.dh))
+    df    = df[i_val,:]
+    function choose_atm(x_, y_)::Bool
+        ix    = findmin(abs.(x_ .- x))[2]
+        iy    = findmin(abs.(y_ .- y))[2]
+        iglob = GrIS1980s_DEM.get_global_i(ix, iy, length(x))
+        # filter values inside the ice sheet (we want the stable terrain differences)
+        is_inside_icesheet = iglob ∈ I_no_ocean
+        return !is_inside_icesheet
+    end
+    filter!([:x,:y] => choose_atm, df)
+    i_del = findall(abs.(df.dh) .> 7*mad(df.dh))
+    deleteat!(df, i_del)
+    return df
+end
+
 function get_ATM_df(fname, x, y, bin_field_1, df_aero; mindist=1e4, I_no_ocean)
     df_atm = CSV.read(fname, DataFrame)
     df_atm[!,:source] .= :atm
@@ -206,6 +224,26 @@ function get_stddization_fcts(dict_file)
         return dh_std + dh_mean
     end
     return (;standardize, destandardize)
+end
+
+function get_df_all_from_stddardization_fcts(df_all, jld2_dict)
+    # get standardization functions from 600 m grid data
+    @unpack bin_centers_1, bin_centers_2, nmads, meds, nsamples_bins = load(jld2_dict)
+    itp_var     = get_itp_interp(bin_centers_1, bin_centers_2, nmads)
+    itp_bias    = get_itp_interp(bin_centers_1, bin_centers_2, meds)
+    # standardize
+    df_all.dh_detrend  = (df_all.dh .- itp_bias.(df_all.bfield_1, df_all.bfield_2)) ./  itp_var.(df_all.bfield_1, df_all.bfield_2)
+    # remove outliers
+    all_to_delete = findall(abs.(df_all.dh_detrend) .> 10 .* mad(df_all.dh_detrend))
+    deleteat!(df_all, all_to_delete)
+    # make sure it's truly centered around zero and has std=1 exactly
+    std_y          = std(df_all.dh_detrend)
+    mean_y         = mean(df_all.dh_detrend)
+    df_all.dh_detrend  = (df_all.dh_detrend .- mean_y) ./ std_y
+    @printf("Kurtosis after standardization: %1.2f\n", kurtosis(df_all.dh_detrend))
+
+    interp_data = (; bin_centers_1, bin_centers_2, nmads, meds, std_y, mean_y, nsamples_bins)
+    return df_all, interp_data
 end
 
 function standardizing_2D(df::DataFrame; nbins1, nbins2, maxdiff1=7, maxdiff2=200, min_n_sample=500, fig_path)

@@ -506,6 +506,18 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
     return atm_dh_dest_file
 end
 
+function get_atm_aero_error_file(aero_g150_file, atm_file)
+    output_file = joinpath("data", "ATM", "aero_minus_ATM.csv")
+    if isfile(output_file)
+        return output_file
+    end
+    # point interpolation and differencing in python
+    GrISenv = parse_commandline(ARGS)["GrISenv"]
+    py_file = joinpath("python_scripts", "py_aero_atm_error.py")
+    run(`$GrISenv $py_file --aerodem_file $aero_g150_file --atm_file $atm_file --output_file $output_file`)
+    return output_file
+end
+
 function download_velocity()
     vel_dir = joinpath("data", "velocity/")
     mkpath(vel_dir)

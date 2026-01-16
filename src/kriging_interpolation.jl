@@ -17,6 +17,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, 
     aerodem_g150, obs_aero_file     = create_aerodem(target_grid, coreg_grid, outline_shp_file, bedmachine_original, ref_coreg_file_geoid)
     atm_dh_file                     = get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_shp_file, blockspacing)
     mask_file                       = create_outline_mask(target_grid, outline_shp_file, aerodem_g150)
+    dh_error_file                   = get_atm_aero_error_file(aerodem_g150, atm_dh_file)
 
     # read in
     h_ref        = NCDataset(ref_file)["Band1"][:,:]
@@ -84,9 +85,14 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, 
     i_sampl = [rand(1:length(i_aero), n_aero); i_atm]
     gamma = emp_variogram(df_all.x[i_sampl], df_all.y[i_sampl], df_all.dh_detrend[i_sampl]; maxlag=2e5, nlags=200, fig_path)
 
+    # error variogram
+    df_error    = get_error_df(dh_error_file, x, y, I_no_ocean)
+    U           = make_geotable(df_error.dh, df_error.x, df_error.y)
+    gamma_error = EmpiricalVariogram(U, :Z; estimator=:cressie, nlags=20,  maxlag=1.2e4)
+
     # save
     CSV.write(csv_dest, df_all)
-    to_save = (; interp_data..., gamma, I_no_ocean, idx_aero, bfields_file, href_file, coreg_grid)
+    to_save = (; interp_data..., gamma, gamma_error, I_no_ocean, idx_aero, bfields_file, href_file, coreg_grid)
     jldsave(dict_dest; to_save...)
 
     # make sure standardize and destandardize functions are correct

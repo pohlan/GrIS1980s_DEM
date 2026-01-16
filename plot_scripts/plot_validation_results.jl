@@ -198,7 +198,7 @@ GrIS1980s_DEM.panel_annotate!(p_std, "a")
 p_mean = plot(p_mean, legend=false, grid=false)
 GrIS1980s_DEM.panel_annotate!(p_mean, "b")
 p_tw = twinx(p_std)
-bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="relative sample size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
+bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative bin size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
 plot(p_std, p_mean, p_box ,size=(2000,700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300, layout=grid(1, 3, widths=(0.38, 0.37, 0.25)))
 savefig(joinpath(fig_dir_main, "fS06.png"))
 
