@@ -7,9 +7,9 @@ Plots.scalefontsizes()
 Plots.scalefontsizes(GrIS1980s_DEM.font_scaling)
 attr = (;margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth,GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, markersize=6, markeralpha=1.0)
 
-##############################################
-# SVD vs kriging cross-validation, Figure 4  #
-##############################################
+#########################################
+# SVD vs GP cross-validation, Figure 4  #
+#########################################
 
 function make_validation_plots(l1, l2, l3; standardized::Bool)
     f_dict = [get_cv_file_GP(grd, only_atm=true), get_cv_file_SVD(grd, 70, only_atm=false)]

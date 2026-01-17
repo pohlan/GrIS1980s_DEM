@@ -141,7 +141,7 @@ for (gm_i, source) in zip(gms_aero_atm, ["AeroDEM", "ATM"])
     ysc = yv[findmin(abs.(ustrip.(xv) .- 150e3))[2]]
     scatter!(p_varg_atm_aero, ustrip.(xv) .* 1e-3, yv ./ ysc, label=source, markersize=4, markerstrokewidth=0, xlabel="Distance (km)", ylabel=L"\gamma")
 end
-# add the ice-sheet wide variogram used for kriging (ATM + part of AeroDEM)
+# add the ice-sheet wide variogram used for the GP (ATM + part of AeroDEM)
 xv, yv = values(gamma)
 varg = GrIS1980s_DEM.get_var(gamma, adjust_sill=false)
 ysc = yv[findmin(abs.(ustrip.(xv) .- 150e3))[2]]
@@ -241,3 +241,27 @@ heatmap_from_df(df_all, :dh, x, y, size(h_ref_m), joinpath(fig_dir_others,"data_
 
 # plot after standardizing (FIGURE 2)
 heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref_m), joinpath(fig_dir_main,"f01.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")
+
+######################################
+# overlap AeroDEM and ATM, Figure S1 #
+######################################
+
+csv_aero_atm = joinpath("data", "ATM", "aero_minus_ATM.csv")
+df_dh = CSV.read(csv_aero_atm, DataFrame)
+i_nonan = findall(.!ismissing.(df_dh.dh))
+
+scalefontsizes()
+scalefontsizes(1.9)
+histogram(df_dh.dh[i_nonan], xlims=(-100,100), normalize=:pdf, yticks=false, grid=false,
+          fillcolor=:cornflowerblue, linecolor=:cornflowerblue,
+          ylabel="Frequency", xlabel="\n"*L"$h_\mathrm{AeroDEM}-h_\mathrm{ATM}\;\;\mathrm{(m)}$", label="",
+          size=(900,700), margin=10mm)
+savefig(joinpath(fig_dir_main, "fS01.png"))
+
+# map
+# scalefontsizes()
+# scalefontsizes(2.7)
+# plot(multipolygon, fillcolor=:grey, fillalpha=0.2, linewidth=0, label="AeroDEM\ncoverage")
+# scatter!(df_dh.x[i_nonan].*1e-3, df_dh.y[i_nonan].*1e-3, marker_z=df_dh.dh[i_nonan], legend_foreground_color=nothing, legend=(0.01,0.4), markersize=4, markerstrokewidth=0, cmap=cgrad(:vik, rev=true), clims=(-50,50), aspect_ratio=1, xaxis=false, yaxis=false, grid=false, size=(1500,1900), label="", margin=10mm, xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3)
+# savefig(joinpath(fig_dir_main, "fSXX_aero_minus_atm.png"))
+

@@ -38,7 +38,7 @@ outl   = df.geometry
 # scale coords of outl to km
 outl = GeometryOps.transform(p -> p .*1e-3, outl)
 
-# chosen parameters for kriging and SVD
+# chosen parameters for GP and SVD
 const r0    = 1000
 const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))

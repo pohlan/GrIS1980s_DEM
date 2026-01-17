@@ -77,15 +77,13 @@ end
 ########################################################
 
 # files and labels/attributes to zip-loop through
-files        = [#get_rec_file_SVD_combined(logλ, r0, grd),
-                GrIS1980s_DEM.create_aerodem(grd)[2],
+files        = [GrIS1980s_DEM.create_aerodem(grd)[2],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
                 # get_rec_file_SVD(logλ, r0, grd),
                 # get_rec_file_GP(grd)
-                "output/reconstructions/bedmachine1980_SVD_reconstruction_g600.nc",
-                "output/reconstructions/bedmachine1980_GP_reconstruction_g600.nc"
+                joinpath("output", "reconstructions", "bedmachine1980_SVD_reconstruction_g$(grd).nc"),
+                joinpath("output", "reconstructions", "bedmachine1980_GP_reconstruction_g$(grd).nc")
                 ]
-                # "output/reconstructions/rec_kriging_g600_maxn1500.nc" # get_rec_file_kriging(grd, maxn0)
 labels       = ["AeroDEM", "GIMP", "SVD method", "GP"]
 name_for_col = ["aerodem", "GrIMP", "SVD", "GP"]
 bandnm       = ["Band1", "surface", "surface", "surface"]

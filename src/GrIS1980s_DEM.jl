@@ -40,12 +40,6 @@ function parse_commandline(args)
             help     = "model-generated realizations of ice sheet elevation as netcdf files, e.g. train_folder/usurf*.nc"
             nargs    = '*'
             arg_type = String
-        "--initialization_run_kriging"
-            help     = "simulation initialized with kriging DEM"
-            arg_type = String
-        "--initialization_run_SVD"
-            help     = "simulation initialized with SVD DEM"
-            arg_type = String
         "--shp_file"
             help     = "shape file outlining the ice sheet"
             arg_type = String
@@ -53,17 +47,10 @@ function parse_commandline(args)
             help     = "if set to true, the Arpack svd is used instead of the standard LinearAlgebra algorithm; Arpack is iterative and matrix free and thus useful when memory becomes limiting, but it can be slower"
             arg_type = Bool
             default  = false
-        "--maxn"
-            help     = "maximum number of neighbors used for kriging"
-            arg_type = Int
-            default  = 1500
         "--grid_size"
             help     = "cell size of grid, same in x and y direction; not needed for svd reconstruction where training_data is provided"
             arg_type = Int
             default  = 600.0
-        "--svd_mask"
-            help     = "for combined SVD/AeroDEM: shape file specifying where SVD rec. should be used"
-            arg_type = String
     end
     return parse_args(args,s)
 end
@@ -74,7 +61,7 @@ get_global_i(ix, iy, nx) = nx * (iy-1) + ix
 
 include("gdal_helpers.jl")
 include("statistics_helpers.jl")
-include("kriging_interpolation.jl")
+include("GP_interpolation.jl")
 include("SVD_reconstruction.jl")
 include("plotting_tools.jl")
 
