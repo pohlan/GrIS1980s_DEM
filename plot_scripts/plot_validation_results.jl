@@ -53,13 +53,13 @@ function make_validation_plots(l1, l2, l3; standardized::Bool)
         # color
         color = GrIS1980s_DEM.palette_dict[method]
         # plot mean and std errors
-        label = method == "GP" ? split(method,"_")[1]*" (only ATM)" : split(method,"_")[1]*"(all)"
+        label = method == "GP" ? split(method,"_")[1]*" error (only ATM)" : split(method,"_")[1]*" error (all)"
         ylabel_mean = standardized ? L"Error mean $\mu_\epsilon$ (standardized)" : L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$"
         xlabel = standardized ? "Distance to closest observation (km)" : "Elevation of reference DEM (m)"
         xscl    = standardized ? 1e-3 : 1
         if !standardized
             plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, ylims=(0,43); color, xlabel, label, attr...)
-            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./1600, alpha=0.4; color, label=method*" rel. bin size")
+            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./1600, alpha=0.4; color, label=method*" sample size")
             plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot; color, xlabel, label, attr...)
             hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash) #, alpha=0.7; color)
             if method =="SVD" GrIS1980s_DEM.panel_annotate!(p_mean, l2) end
@@ -89,7 +89,7 @@ function make_validation_plots(l1, l2, l3; standardized::Bool)
             boxplot!(p_box, m_difs[iλ, ir], outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2,3],["GP\n(only ATM)", "SVD\n(all)", "SVD\n(only ATM)"]), label="", fillalpha=0.7, grid=false; color)
         end
     end
-    p_std = plot(p_std, legend=:topright, legend_foreground_color=nothing)
+    p_std = plot(p_std, legend_position=(0.55,1.0), legend_foreground_color=nothing)
     GrIS1980s_DEM.panel_annotate!(p_std, l1)
     p_mean = plot(p_mean, legend=false, legend_foreground_color=nothing)
     p_box = plot(p_box, legend=:topright, legend_foreground_color=nothing)
@@ -198,7 +198,7 @@ GrIS1980s_DEM.panel_annotate!(p_std, "a")
 p_mean = plot(p_mean, legend=false, grid=false)
 GrIS1980s_DEM.panel_annotate!(p_mean, "b")
 p_tw = twinx(p_std)
-bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative bin size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
+bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative sample size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
 plot(p_std, p_mean, p_box ,size=(2000,700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300, layout=grid(1, 3, widths=(0.38, 0.37, 0.25)))
 savefig(joinpath(fig_dir_main, "fS06.png"))
 
@@ -264,7 +264,7 @@ end
 p_std = plot(p_std, legend_foreground_color=nothing, legend=:topright)
 GrIS1980s_DEM.panel_annotate!(p_std, "a")
 p_tw = twinx(p_std)
-bar!(p_tw, bin_centers, length.(dh_binned), color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative bin size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
+bar!(p_tw, bin_centers, length.(dh_binned), color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative sample size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
 p_mean = plot(p_mean, legend=false)
 GrIS1980s_DEM.panel_annotate!(p_mean, "b")
 plot(p_std, p_mean, size=(2000,700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300)

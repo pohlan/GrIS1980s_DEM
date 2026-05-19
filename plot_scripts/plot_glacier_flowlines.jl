@@ -68,29 +68,31 @@ function get_shaded(h, ix, iy; zmin_=NaN, zmax_=NaN)
     )
     # mask out values
     shaded[ismissing.(mask)] .= RGB(1,1,1)
+    hs_norm[ismissing.(mask)] .= NaN
     # bla = similar(shaded)
     return shaded, zmin, zmax
 end
 
-########################################################
-# Plot elevations along flowlines, Figures 6a/b and SXX #
-########################################################
+##################################################################
+# Plot elevations along flowlines, Figures 6a/b and S8a/b, S9a/b #
+##################################################################
 
 # files and labels/attributes to zip-loop through
 files        = [GrIS1980s_DEM.create_aerodem(grd)[2],
+                GrIS1980s_DEM.create_grimpv2(grd)[3],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
                 # get_rec_file_SVD(logλ, r0, grd),
                 # get_rec_file_GP(grd)
                 joinpath("output", "reconstructions", "bedmachine1980_SVD_reconstruction_g$(grd).nc"),
                 joinpath("output", "reconstructions", "bedmachine1980_GP_reconstruction_g$(grd).nc")
                 ]
-labels       = ["AeroDEM", "GIMP", "SVD method", "GP"]
-name_for_col = ["aerodem", "GrIMP", "SVD", "GP"]
-bandnm       = ["Band1", "surface", "surface", "surface"]
+labels       = ["AeroDEM", "GrIMP version 2", "GIMP version 1", "SVD method", "GP"]
+name_for_col = ["aerodem", "GrIMP2", "GrIMP1", "SVD", "GP"]
+bandnm       = ["Band1", "Band1", "surface", "surface", "surface"]
 cols         = Plots.palette(:tol_bright)[2:end]
-lstls        = [:solid, :solid, :dot, :dot]
-lws          = [6,6,6,6]
-z_orders     = [1,1,2,3]
+lstls        = [:solid, :solid, :solid, :dot, :dot]
+lws          = [6,6,6,6,6]
+z_orders     = [1,1,1,3,4]
 # plotting attributes
 Plots.scalefontsizes()
 Plots.scalefontsizes(1.9)
@@ -135,12 +137,6 @@ for (ip, pf) in enumerate(prof_files)
             else
                 Plots.plot!(dist./1e3, vals; label, color, ls, lw, ylims, z_order)
             end
-            if label == "GP"
-                # uncertainty
-                dist, vals_std = GrIS1980s_DEM.interpolate_raster_to_profile(f, xc, yc; band = "std_uncertainty")
-                vals_std[isnan.(vals_std)] .= 0
-                plot!(dist./1e3, vals .- vals_std, fillrange = vals .+ vals_std, label="", fillcolor=color, fillalpha=0.5, lw=0; z_order) #; label, color, ls, lw, ylims, z_order, alpha=0.7)
-            end
         end
     end
     push!(ps, p_i)
@@ -177,13 +173,13 @@ function plot_flowlines_glaciers(glacier1, glacier2)
 end
 
 ############################################
-# Plot difference rec. vs obs, Figure 5c-h #
+# Plot difference rec. vs obs, Figure 6c-h #
 ############################################
 
 # function for plotting zoomed-in map over area
 Plots.gr_cbar_width[] = 0.01  # default 0.03
 xtick_interval        = 2e4
-function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol; cmap=cgrad(:vik, rev=true), clims=nothing, colorbar=true, id_plot, clabel="(m)", no_data=missing, x_shift=5)
+function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_pos::Symbol; cmap=cgrad(:vik, rev=true), clims=(0,1), id_plot, clabel="(m)", no_data=missing, x_shift=5)
     # don't plot anything outside the ice sheet
     map_field[id_plot] .= no_data
     # load
@@ -197,8 +193,15 @@ function plot_map(map_field, glacier_name, panel_letter, flowline_panel, legend_
     xv = Vector(x[ix[1]]:(x[ix[1]]+xtick_interval))
     xtick1 = xv[findfirst(xv .% xtick_interval .== 0)]
     yflip = false
-    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, map_field[ix,iy]', aspect_ratio=1, xaxis=false, yaxis=false, colorbar_title="", grid=false, yflip=yflip; clims, cmap, colorbar)
-    if eltype(map_field) != RGB{Float32}
+    p_dif = heatmap(x[ix].*1e-3, y[iy].*1e-3, map_field[ix,iy]', aspect_ratio=1, xaxis=false, yaxis=false, colorbar_title="", grid=false, yflip=yflip; clims, cmap)
+    if eltype(map_field) == RGB{Float32}
+        annotate!(((xl + 1.25(δx)).*1e-3, (yb + 0.5δy).*1e-3, text(clabel, 18, rotation=90)); yflip)
+        # dummy field to add colorbar to hillshade (because the type of shaded is RGB, it doesn't add a colorbar with heatmap)
+        dummy = zeros(size(h_GP))
+        dummy[ismissing.(mask)] .= NaN
+        heatmap!(p_dif, x[ix].*1e-3, y[iy].*1e-3, dummy[ix,iy]', cmap=:terrain, z_order=1, colorbar_ticks=false)
+    else
+        # no rotation
         annotate!(((xl + 1.32(δx)).*1e-3, (yb + 0.5δy).*1e-3, text(clabel, 18)); yflip)
     end
     plot!(p_dif, outl, fill=nothing, xlims=(extrema(x[ix])).*1e-3, ylims=extrema(y[iy]).*1e-3, xticks  = (xtick1:xtick_interval:x[ix[end]]).*1e-3, xtick_direction=:out, lw=0.5; yflip)
@@ -256,23 +259,23 @@ function plot_maps_two_glaciers(glacier1, glacier2; title_pos=26, x_shift=5)
     # GP
     shaded, zmin_, zmax_ = get_shaded(h_SVD, get_glacier_idx(glacier1)...)
     shaded, _ = get_shaded(h_GP, get_glacier_idx(glacier1)...; zmin_, zmax_)
-    p_GP1 = plot_map(shaded, glacier1, "e", "a", :bottomright, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot, x_shift)
-    p_GP1 = plot(p_GP1, right_margin=-35mm, left_margin=marg_left-110mm)
+    p_GP1 = plot_map(shaded, glacier1, "e", "a", :bottomright, cmap=nothing, no_data=RGB(1,1,1), clabel="Shaded elevation"; id_plot, x_shift)
+    p_GP1 = plot(p_GP1, right_margin=-25mm, left_margin=marg_left)
     annotate!(p_GP1, xlims(p_GP1)[1]-title_pos, mean(ylims(p_GP1)), text(L"h_\mathrm{GP}", "Computer Modern", 30, :center))
     shaded, zmin_, zmax_ = get_shaded(h_SVD, get_glacier_idx(glacier2)...)
     shaded, _ = get_shaded(h_GP, get_glacier_idx(glacier2)...; zmin_, zmax_)
-    p_GP2 = plot_map(shaded, glacier2, "f", "b", :bottomleft, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot, x_shift)
-    p_GP2 = plot(p_GP2, margin=10mm, left_margin=-95mm)
+    p_GP2 = plot_map(shaded, glacier2, "f", "b", :bottomleft, cmap=nothing, no_data=RGB(1,1,1), clabel="Shaded elevation"; id_plot, x_shift)
+    p_GP2 = plot(p_GP2, margin=10mm)
     p_GPs = plot(p_GP1, p_GP2, layout=(1,2), size=(1800,650), bottom_margin=marg_bot)
 
     # SVD
     shaded, _ = get_shaded(h_SVD, get_glacier_idx(glacier1)...)
-    p_SVD1 = plot_map(shaded, glacier1, "g", "a", :bottomright, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot, x_shift)
-    p_SVD1 = plot(p_SVD1, right_margin=-35mm, left_margin=marg_left-110mm)
+    p_SVD1 = plot_map(shaded, glacier1, "g", "a", :bottomright, cmap=nothing, no_data=RGB(1,1,1), clabel="Shaded elevation"; id_plot, x_shift)
+    p_SVD1 = plot(p_SVD1, right_margin=-25mm, left_margin=marg_left)
     annotate!(p_SVD1, xlims(p_SVD1)[1]-title_pos, mean(ylims(p_SVD1)), text(L"h_\mathrm{SVD}", "Computer Modern", 30, :center))
     shaded, _ = get_shaded(h_SVD, get_glacier_idx(glacier2)...)
-    p_SVD2 = plot_map(shaded, glacier2, "h", "b", :bottomleft, colorbar=false, cmap=nothing, no_data=RGB(1,1,1); id_plot, x_shift)
-    p_SVD2 = plot(p_SVD2, margin=10mm, left_margin=-95mm)
+    p_SVD2 = plot_map(shaded, glacier2, "h", "b", :bottomleft, cmap=nothing, no_data=RGB(1,1,1), clabel="Shaded elevation"; id_plot, x_shift)
+    p_SVD2 = plot(p_SVD2, margin=10mm)
     p_SVDs = plot(p_SVD1, p_SVD2, layout=(1,2), size=(1800,650), bottom_margin=marg_bot)
     return p_difs, p_GPs, p_SVDs
 end
@@ -282,19 +285,19 @@ end
 p_profs = plot_flowlines_glaciers("Sermeq-Kujalleq", "Helheim")
 p_difs, p_GPs, p_SVDs = plot_maps_two_glaciers("Sermeq-Kujalleq", "Helheim")
 plot(p_profs, p_difs, p_GPs, p_SVDs, layout=(4,1), size=(1800,2300))
-savefig(joinpath(fig_dir_main, "f05.png"))
+savefig(joinpath(fig_dir_main, "f06.png"))
 
 # 79N and Kangerlussuaq
 p_profs = plot_flowlines_glaciers("79N", "Ryder")
 p_difs, p_GPs, p_SVDs = plot_maps_two_glaciers("79N", "Ryder", title_pos=40, x_shift=17)
 plot(p_profs, p_difs, p_GPs, p_SVDs, layout=(4,1), size=(1800,2300))
-savefig(joinpath(fig_dir_main, "fSXX_79N_Ryder.png"))
+savefig(joinpath(fig_dir_main, "fS08.png"))
 
 # Ryder and Kangerlussuaq
 p_profs = plot_flowlines_glaciers("Petermann", "Kangerlussuaq")
 p_difs, p_GPs, p_SVDs = plot_maps_two_glaciers("Petermann", "Kangerlussuaq", title_pos=40, x_shift=17)
 plot(p_profs, p_difs, p_GPs, p_SVDs, layout=(4,1), size=(1800,2300))
-savefig(joinpath(fig_dir_main, "fSXX_Petermann_Kangerlussuaq.png"))
+savefig(joinpath(fig_dir_main, "fS09.png"))
 
 
 ######################################################

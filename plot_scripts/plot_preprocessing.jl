@@ -240,7 +240,7 @@ end
 heatmap_from_df(df_all, :dh, x, y, size(h_ref_m), joinpath(fig_dir_others,"data_non-standardized.png"), clims=(-20,20), title=L"Non-standardized observations $\Delta h$")
 
 # plot after standardizing (FIGURE 2)
-heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref_m), joinpath(fig_dir_main,"f01.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{std}$")
+heatmap_from_df(df_all, :dh_detrend, x, y, size(h_ref_m), joinpath(fig_dir_main,"f01.png"), clims=(-3.0,3.0), title=L"Standardized observations $\Delta h_\mathrm{z}$")
 
 ######################################
 # overlap AeroDEM and ATM, Figure S1 #

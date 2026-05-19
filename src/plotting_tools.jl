@@ -11,7 +11,9 @@ palette_dict = Dict("combined"       => pt2[6],
                     "SVD"            => pt2[7],
                     "SVD_std"        => pt2[3],
                     "aerodem"        => pt1[1],
-                    "GrIMP"          => pt1[7])
+                    "GrIMP"          => pt1[7],
+                    "GrIMP1"         => pt1[7],
+                    "GrIMP2"         => alphacolor(pt1[7],0.5))
 
 font_scaling = 1.9
 wwidth  = 1000
