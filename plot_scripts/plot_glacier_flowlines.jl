@@ -77,14 +77,15 @@ end
 # Plot elevations along flowlines, Figures 6a/b and S8a/b, S9a/b #
 ##################################################################
 
+file_SVD = joinpath("output", "reconstructions", "SVD_reconstruction_1980_g$(grd).nc")
+file_GP  = joinpath("output", "reconstructions", "GP_reconstruction_1980_g$(grd).nc")
+
 # files and labels/attributes to zip-loop through
 files        = [GrIS1980s_DEM.create_aerodem(grd)[2],
                 GrIS1980s_DEM.create_grimpv2(grd)[3],
                 GrIS1980s_DEM.create_bedmachine_grid(grd)[2],
-                # get_rec_file_SVD(logλ, r0, grd),
-                # get_rec_file_GP(grd)
-                joinpath("output", "reconstructions", "bedmachine1980_SVD_reconstruction_g$(grd).nc"),
-                joinpath("output", "reconstructions", "bedmachine1980_GP_reconstruction_g$(grd).nc")
+                file_SVD,
+                file_GP
                 ]
 labels       = ["AeroDEM", "GrIMP version 2", "GIMP version 1", "SVD method", "GP"]
 name_for_col = ["aerodem", "GrIMP2", "GrIMP1", "SVD", "GP"]
@@ -219,8 +220,8 @@ marg_left = 60mm
 marg_bot  = -5mm
 
 # difference GP and SVD
-h_GP = NCDataset(files[4])["surface"][:,:]
-h_SVD = NCDataset(files[3])["surface"][:,:]
+h_GP = NCDataset(file_GP)["surface"][:,:]
+h_SVD = NCDataset(file_SVD)["surface"][:,:]
 mask = NCDataset("data/gris-imbie-1980/outline_mask_g600.nc")["Band1"][:,:]
 id_plot = findall(ismissing.(mask))
 h_dif = h_GP .- h_SVD

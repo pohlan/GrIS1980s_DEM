@@ -14,5 +14,5 @@ toc = Base.time() - tic
 dys = round(toc ./ (3600*24), digits=1); println("GP took $dys days.")
 
 # calculate the floating mask and create nc file according to the bedmachine template
-dest = joinpath("output", "reconstructions", "bedmachine1980_GP_reconstruction_g$(Int(grd)).nc")
+dest = joinpath("output", "reconstructions", "GP_reconstruction_1980_g$(Int(grd)).nc")
 create_reconstructed_bedmachine(rec_file, dest, uncertainty=true)

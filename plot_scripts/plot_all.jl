@@ -44,6 +44,6 @@ const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))
 
 include("plot_preprocessing.jl")
-# include("plot_eigenmodes.jl")
+include("plot_eigenmodes.jl")
 include("plot_validation_results.jl")
 include("plot_glacier_flowlines.jl")

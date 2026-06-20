@@ -222,7 +222,7 @@ function create_bedmachine_grid(grd)
     return bedmachine_original, dest_file
 end
 
-function create_grimpv2(grd_target, grd_coreg, bedmachine_original; kw="")
+function create_grimpv2(grd_target, grd_coreg=150, bedmachine_original=""; kw="")
     data_path = joinpath("data","grimpv2")
     get_dest_file(grd_target) = joinpath(data_path, "grimpv2_geoid_corrected_g$(Int(grd_target)).nc")
     dest_grd_coreg_file       = get_dest_file(grd_coreg)

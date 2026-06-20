@@ -36,5 +36,5 @@ csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file)
 rec_file, dict_file = SVD_reconstruction(λ, r, grd, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)
 
 # calculate the floating mask and create nc file according to the bedmachine template
-dest        = joinpath("output", "reconstructions", "bedmachine1980_SVD_reconstruction_g$(Int(grd)).nc")
+dest        = joinpath("output", "reconstructions", "SVD_reconstruction_1980_g$(Int(grd)).nc")
 create_reconstructed_bedmachine(rec_file, dest)

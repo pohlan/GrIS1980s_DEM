@@ -134,8 +134,8 @@ for (source,lab) in zip(["aerodem", "atm"],["AeroDEM", "ATM"])
     push!(gms_aero_atm, gm_i)
 end
 # plot the two
-palette = Plots.palette(Plots.palette(:Archambault)[[1,4]])
-p_varg_atm_aero = plot(size=(wwidth,wheight), xlims=(-10,190), legend=:bottomright; palette)
+pal = Plots.palette(Plots.palette(:Archambault)[[1,4]])
+p_varg_atm_aero = plot(size=(wwidth,wheight), xlims=(-10,190), legend=:bottomright, palette=pal)
 for (gm_i, source) in zip(gms_aero_atm, ["AeroDEM", "ATM"])
     xv, yv = values(gm_i)
     ysc = yv[findmin(abs.(ustrip.(xv) .- 150e3))[2]]
@@ -149,7 +149,7 @@ scatter!(p_varg_atm_aero, ustrip.(xv) .* 1e-3, yv ./ ysc, markersize=4, markerst
 plot!(p_varg_atm_aero, [1e-5; ustrip.(xv)] .* 1e-3, varg.([1e-5; ustrip.(xv)]) ./ varg(150e3), color=:black, label="Fitted model", lw=3.5)
 GrIS1980s_DEM.panel_annotate!(p_varg_atm_aero, "a")
 # map
-aero_atm_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false; palette)
+aero_atm_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false, palette=pal)
 for source in ["aerodem", "atm"]
     i_g = findall(df_all.source .== source)
     scatter!(aero_atm_map, df_all.x[i_g].*1e-3, df_all.y[i_g].*1e-3, markerstrokewidth=0, markersize=0.5, aspect_ratio=1, label="")
@@ -184,8 +184,8 @@ for i_g in is
     push!(xvals_4, xvals); push!(yvals_4, yvals)
 end
 # plot the sections
-palette = Plots.palette(Plots.palette(:tableau_temperature)[[3,6]])
-p4_varg = plot(legend=:topleft, size=(wwidth,wheight), xlims=(-3,150), ylims=(0,1.2), foreground_color_legend=nothing; palette) #, xticks=([10,50,100],string.([10,50,100])))
+pal = Plots.palette(Plots.palette(:tableau_temperature)[[3,6]])
+p4_varg = plot(legend=:topleft, size=(wwidth,wheight), xlims=(-3,150), ylims=(0,1.2), foreground_color_legend=nothing, palette=pal) #, xticks=([10,50,100],string.([10,50,100])))
 yscls = [95e3,140e3]
 for (xvals, yvals, yhat) in zip(xvals_4, yvals_4, yscls)
     ysc = yvals[findmin(abs.(ustrip.(xvals) .- yhat))[2]]
@@ -195,7 +195,7 @@ end
 plot!(p4_varg, [1e-5; ustrip.(xvals_4[1])] .* 1e-3, varg.([1e-5; ustrip.(xvals_4[1])]) ./ varg(150e3), label="Fitted model", lw=3.5, color=:black)
 GrIS1980s_DEM.panel_annotate!(p4_varg, "c")
 # map
-p4_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false; palette)
+p4_map = plot(aspect_ratio=1, size=(wheight,wwidth), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false, palette=pal)
 for i_g in is
     scatter!(p4_map, df_not_all.x[i_g].*1e-3, df_not_all.y[i_g].*1e-3, markerstrokewidth=0, markersize=0.5, aspect_ratio=1, label="")
 end
@@ -253,7 +253,7 @@ i_nonan = findall(.!ismissing.(df_dh.dh))
 scalefontsizes()
 scalefontsizes(1.9)
 histogram(df_dh.dh[i_nonan], xlims=(-100,100), normalize=:pdf, yticks=false, grid=false,
-          fillcolor=:cornflowerblue, linecolor=:cornflowerblue,
+          fillcolor=:cornflowerblue, linecolor=:cornflowerblue, bins=1124,
           ylabel="Frequency", xlabel="\n"*L"$h_\mathrm{AeroDEM}-h_\mathrm{ATM}\;\;\mathrm{(m)}$", label="",
           size=(900,700), margin=10mm)
 savefig(joinpath(fig_dir_main, "fS01.png"))

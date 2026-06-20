@@ -110,7 +110,7 @@ savefig(joinpath(fig_dir_main, "f04.png"))
 ##################################
 
 scalefontsizes()
-scalefontsizes(1.3)
+scalefontsizes(1.6)
 attr = (; grid=false, aspect_ratio=1, size=(500,900), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false, margin=10mm)
 std_GP_std = NCDataset("output/reconstructions/interpolated_dh_std_GP.nc")["sigma_std"][:,:]
 p1 = heatmap(x.*1e-3, y.*1e-3, std_GP_std', cmap=cgrad(:lapaz,rev=true), colorbar_title="\n(-)"; attr...)
@@ -172,14 +172,17 @@ savefig(joinpath(fig_dir_main, "f05.png"))
 # SVD with vs without weights, Figure S6 #
 ##########################################
 
+scalefontsizes()
+scalefontsizes(GrIS1980s_DEM.font_scaling)
 
 fs_SVD = [get_cv_file_SVD(grd, 70, only_atm=false), "output/validation/SVD_with_W_onlyatm_false.jld2"]
 p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_std = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_box = plot()
-cols = palette(:batlow10)[[2, 7]]
+cols = Plots.palette(:batlow10)[[2, 7]]
 labels = ["no weights", "with weights"]
 xlabel = "Elevation of reference DEM (m)"
+attr = (; margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, ls=:dot, markersize=6, markeralpha=1.0)
 # xticks = ([0.0, 50.,100.,150.], string.([0, 50,100,150]))
 for (f_SVD, color, label) in zip(fs_SVD, cols, labels)
     @unpack idx, m_difs, λs, rs, nfiles, norms_UΣ, Σ = load(f_SVD)
@@ -200,6 +203,7 @@ p_std = plot(p_std, legend_foreground_color=nothing, legend=:topright, grid=fals
 GrIS1980s_DEM.panel_annotate!(p_std, "a")
 p_mean = plot(p_mean, legend=false, grid=false)
 GrIS1980s_DEM.panel_annotate!(p_mean, "b")
+GrIS1980s_DEM.panel_annotate!(p_box, "c")
 p_tw = twinx(p_std)
 bar!(p_tw, bin_centers, n_samples, color=:slategray, linecolor=:slategray, alpha=0.2, label="Relative sample size", grid=false, legend=:bottomleft, legend_foreground_color=:white, yaxis=false, right_margin=-30mm)
 plot(p_std, p_mean, p_box, size=(2000, 700), left_margin=15mm, bottom_margin=15mm, top_margin=15mm, dpi=300, layout=grid(1, 3, widths=(0.38, 0.37, 0.25)))
@@ -219,14 +223,14 @@ p_mean = plot(xlabel="Elevation of reference DEM (m)", ylabel=L"Mean $\epsilon$ 
 p_std = plot(xlabel="Elevation of reference DEM (m)", ylabel=L"Std $\epsilon$ (m)")
 @unpack m_difs, λs, rs, Σ = load(f_SVD)
 p = plot(xscale=:log10, xlabel="λ", xticks=10 .^ (5:11), ylabel="Mean absolute error (m)", title="\n Cross-validation error", size=(1300, 800), grid=false,
-    legend=(0.15, 0.92), palette=:tol_light, legend_foreground_color=nothing)
+    legend=(0.15, 0.92), palette=:tol_light, legend_foreground_color=nothing, titlefontsize=22)
 for i in eachindex(rs)
     md_abs = [abs.(md) for md in m_difs[:, i]]
     plot!(p, λs, mean.(md_abs), label="r=" * string(rs[i]), marker=:circle; attr...)
 end
 GrIS1980s_DEM.panel_annotate_xlog!(p, "a")
 # plot singular values
-p_sigm = plot(Σ .^ 2, yscale=:log10, yticks=[1e5, 1e7, 1e9, 1e11, 1e13, 1e15, 1e17], color=:black, ylabel=L"$\sigma_i^2$", xlabel=L"Mode index $i$", title="\n Singular values", label=""; attr...)
+p_sigm = plot(Σ .^ 2, yscale=:log10, yticks=[1e5, 1e7, 1e9, 1e11, 1e13, 1e15, 1e17], color=:black, ylabel=L"$\sigma_i^2$", xlabel=L"Mode index $i$", title="\n Singular values", label="", titlefontsize=22; attr...)
 GrIS1980s_DEM.panel_annotate_ylog!(p_sigm, "b")
 # save both in one figure
 plot(p, p_sigm, size=(1800, 600), dpi=300)
@@ -243,7 +247,7 @@ fs_SVD = glob(get_cv_file_SVD(grd, "*", only_atm=false))
 attr = (; margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, ls=:dot, markersize=6, markeralpha=1.0)
 p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_std = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
-cols = palette(:batlow10)[1:2:end]
+cols = Plots.palette(:batlow10)[1:2:end]
 xlabel = "Elevation of reference DEM (m)"
 for (f_SVD, color) in zip(fs_SVD, cols)
     @unpack idx, m_difs, λs, rs, nfiles, Σ = load(f_SVD)
