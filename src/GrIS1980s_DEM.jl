@@ -43,6 +43,7 @@ function parse_commandline(args)
         "--shp_file"
             help     = "shape file outlining the ice sheet"
             arg_type = String
+            default  = "data/outline/gris-outline-imbie-1980_updated.shp"
         "--use_arpack"
             help     = "if set to true, the Arpack svd is used instead of the standard LinearAlgebra algorithm; Arpack is iterative and matrix free and thus useful when memory becomes limiting, but it can be slower"
             arg_type = Bool

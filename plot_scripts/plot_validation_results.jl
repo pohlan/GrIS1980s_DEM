@@ -50,43 +50,43 @@ function make_validation_plots(l1, l2, l3; standardized::Bool, bottom_margin=25m
         # bin error vs elevation
         dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(bin_metric, difs, 14)
         # color
-        color = GrIS1980s_DEM.palette_dict[method]
+        cl = GrIS1980s_DEM.palette_dict[method]
         # plot mean and std errors
         label = method == "GP" ? split(method,"_")[1]*" error (only ATM)" : split(method,"_")[1]*" error (all)"
         ylabel_mean = standardized ? L"Error mean $\mu_\epsilon$ (standardized)" : L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$"
         xlabel = standardized ? "Distance to closest observation (km)" : "Elevation of reference DEM (m)"
         xscl    = standardized ? 1e-3 : 1
         if !standardized
-            plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, ylims=(0,43); color, xlabel, label, attr...)
-            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./1600, alpha=0.4; color, label=method*" sample size")
-            plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot; color, xlabel, label, attr...)
+            plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, ylims=(0,43), color=cl; xlabel, label, attr...)
+            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./1600, alpha=0.4, color=cl; label=method*" sample size")
+            plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot, color=cl; xlabel, label, attr...)
             hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
             if method =="SVD" GrIS1980s_DEM.panel_annotate!(p_mean, l2) end
             if method == "GP"
                 plot!(p_std, bin_centers.*xscl, std.(dh_binned).*NaN, color=:cyan2, label="GP uncertainty")
             end
         elseif method == "GP"
-            plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon$ (standardized)", ls=:dot, y_foreground_color_text=color, y_guidefontcolor=color; label="", color, xlabel, attr...)
-            plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot, y_foreground_color_text=color, y_guidefontcolor=color, legend=false; label="", color, xlabel, attr...)
-            hline!(p_mean, [0.0], lw=3, z_order=1, label="", ls=:dash, alpha=0.7; color)
+            plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon$ (standardized)", ls=:dot, y_foreground_color_text=cl, y_guidefontcolor=cl, color=cl; label="", xlabel, attr...)
+            plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot, y_foreground_color_text=cl, y_guidefontcolor=cl, legend=false, color=cl; label="", xlabel, attr...)
+            hline!(p_mean, [0.0], lw=3, z_order=1, label="", ls=:dash, alpha=0.7, color=cl)
             GrIS1980s_DEM.panel_annotate!(p_mean, l2)
             sig_binned, sig_bins = GrIS1980s_DEM.bin_equal_bin_size(bin_metric, sqrt.(sigmas), 14)
             plot!(p_std, sig_bins.*xscl, mean.(sig_binned).- 0.35, color=:cyan2, marker=:x, z_order=1, label="")
-            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label=""; color)
+            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label="", color=cl)
         else
             p_tw_m = twinx(p_mean)
-            plot!(p_tw_m, bin_centers.*xscl, mean.(dh_binned), ylabel=L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$", ls=:dot, y_foreground_color_text=color, y_guidefontcolor=color, legend=false; color, attr...)
-            hline!(p_tw_m, [0.0], lw=3, z_order=1, label="", ls=:dash, alpha=0.7; color)
+            plot!(p_tw_m, bin_centers.*xscl, mean.(dh_binned), ylabel=L"Error mean $\mu_\epsilon\quad\mathrm{(m)}$", ls=:dot, y_foreground_color_text=cl, y_guidefontcolor=cl, legend=false, color=cl; attr...)
+            hline!(p_tw_m, [0.0], lw=3, z_order=1, label="", ls=:dash, alpha=0.7, color=cl)
             p_tw_std = twinx(p_std)
-            plot!(p_tw_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, y_foreground_color_text=color, y_guidefontcolor=color, label=""; color, attr...)
-            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label=""; color)
+            plot!(p_tw_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, y_foreground_color_text=cl, y_guidefontcolor=cl, label="", color=cl; attr...)
+            bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label="", color=cl)
         end
-        boxplot!(p_box, difs, outliers=false, label="", fillalpha=0.7, grid=false; color)
+        boxplot!(p_box, difs, outliers=false, label="", fillalpha=0.7, grid=false, color=cl)
         if method == "SVD"
             @unpack m_difs, λs, rs = load(f_SVD_only_atm)
             iλ         = findfirst(λs .== λ0)
             ir         = findfirst(rs .== r0)
-            boxplot!(p_box, m_difs[iλ, ir], outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2,3],["GP\n(only ATM)", "SVD\n(all)", "SVD\n(only ATM)"]), label="", fillalpha=0.7, grid=false; color)
+            boxplot!(p_box, m_difs[iλ, ir], outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1,2,3],["GP\n(only ATM)", "SVD\n(all)", "SVD\n(only ATM)"]), label="", fillalpha=0.7, grid=false, color=cl)
         end
     end
     p_std = plot(p_std, legend_position=(1.24,-0.25), legend_foreground_color=nothing, legend_font_pointsize=18; bottom_margin)
@@ -144,16 +144,16 @@ cols = Plots.palette(:batlow10)[[2, 7]]
 labels = ["no weights", "with weights"]
 xlabel = "Elevation of reference DEM (m)"
 attr = (; margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, ls=:dot, markersize=6, markeralpha=1.0)
-for (f_SVD, color, label) in zip(fs_SVD, cols, labels)
+for (f_SVD, cl, label) in zip(fs_SVD, cols, labels)
     @unpack idx, m_difs, λs, rs, nfiles, norms_UΣ, Σ = load(f_SVD)
     iλ = findfirst(λs .== λ0)
     ir = findfirst(rs .== 500)
     difs = m_difs[iλ, ir]
     dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
-    plot!(p_mean, bin_centers, mean.(dh_binned), ylabel=L"Error mean $\mu_\epsilon$ (m)", ls=:dot, marker=:circle; label, color, xlabel, attr...)
+    plot!(p_mean, bin_centers, mean.(dh_binned), ylabel=L"Error mean $\mu_\epsilon$ (m)", ls=:dot, marker=:circle, color=cl; label, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
-    plot!(p_std, bin_centers, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, marker=:circle; label, color, xlabel, attr...)
-    boxplot!(p_box, difs, outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1, 2], labels), label="", fillalpha=0.5, grid=false; color)
+    plot!(p_std, bin_centers, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, marker=:circle, color=cl; label, xlabel, attr...)
+    boxplot!(p_box, difs, outliers=false, ylabel=L"Cross-validation error $\epsilon\quad\mathrm{(m)}$", xticks=([1, 2], labels), label="", fillalpha=0.5, grid=false, color=cl)
     if label == "with weights"
         global bin_centers = bin_centers
         global n_samples = length.(dh_binned)
@@ -209,7 +209,7 @@ p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_std = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 cols = Plots.palette(:batlow10)[1:2:end]
 xlabel = "Elevation of reference DEM (m)"
-for (f_SVD, color) in zip(fs_SVD, cols)
+for (f_SVD, cl) in zip(fs_SVD, cols)
     @unpack idx, m_difs, λs, rs, nfiles, Σ = load(f_SVD)
     if nfiles == 10   # doesn't have 500 modes
         iλ = findfirst(λs .== 1e6)
@@ -220,9 +220,9 @@ for (f_SVD, color) in zip(fs_SVD, cols)
     end
     difs = m_difs[iλ, ir]
     global dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
-    plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", ylabel=L"Error mean $\mu_\epsilon$ (m)"; color, xlabel, attr...)
+    plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", ylabel=L"Error mean $\mu_\epsilon$ (m)", color=cl; xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
-    plot!(p_std, bin_centers, std.(dh_binned), legend_title=L"$m$", label=" $(length(Σ))", ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$"; color, xlabel, attr...)
+    plot!(p_std, bin_centers, std.(dh_binned), legend_title=L"$m$", label=" $(length(Σ))", ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", color=cl; xlabel, attr...)
 end
 p_std = plot(p_std, legend_foreground_color=nothing, legend=:topright)
 GrIS1980s_DEM.panel_annotate!(p_std, "a")
