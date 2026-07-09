@@ -15,10 +15,14 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     # determine total number of time steps
     nts = []
     for f in files_out
-        ds   = NCDataset(f)
-        nt_f = size(ds["usurf"], 3)
-        push!(nts, nt_f)
-        close(ds)
+        try
+            ds   = NCDataset(f)
+            nt_f = size(ds["usurf"], 3)
+            push!(nts, nt_f)
+            close(ds)
+        catch
+            continue
+        end
     end
     if isnothing(tsteps)
         nttot = sum(nts)
@@ -34,18 +38,22 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        d = ncread(file, "usurf")
-        if isnothing(tsteps)
-            ts = 1:size(d,3)
-        elseif minimum(tsteps) > size(d,3)
+        try
+            d = ncread(file, "usurf")
+            if isnothing(tsteps)
+                ts = 1:size(d,3)
+            elseif minimum(tsteps) > size(d,3)
+                continue
+            else
+                ts = tsteps[1]:min(tsteps[end], size(d, 3))
+            end
+            nt_out = length(ts)
+            data = reshape(d[:,:,ts], ny*nx, nt_out)
+            @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
+            ntcount += nt_out
+        catch
             continue
-        else
-            ts = tsteps[1]:min(tsteps[end], size(d, 3))
         end
-        nt_out = length(ts)
-        data = reshape(d[:,:,ts], ny*nx, nt_out)
-        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
-        ntcount += nt_out
     end
     return Data
 end

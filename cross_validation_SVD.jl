@@ -72,8 +72,8 @@ end
 dists = nearest_neighb_distance_from_cv(ids_train, ids_test, x_Iobs, y_Iobs)
 
 # give λ and r values to loop through
-λs        = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11]
-rs        = [10, 50, 100, 300, 500, 700]
+λs        = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10]
+rs        = [50, 100, 300, 500, 700, 1000]
 function do_validation_and_save(f)
     # load data
     @unpack U, Σ, data_mean, nfiles = load(f)
