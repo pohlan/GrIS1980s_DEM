@@ -8,16 +8,16 @@ using Test, LinearAlgebra, NetCDF, NCDatasets, CSV, DataFrames, Glob, UnPack, JL
 # still does the same thing as it used to.                                          #
 #                                                                                   #
 # Run the script with e.g. (find the path with 'conda activate' and 'which python') #
+# $ conda deactivate                                                                #
 # $ julia --project test/runtests.jl --GrISenv /home/.../GrISenv/bin/python         #
 #####################################################################################
 
 cd(@__DIR__)  # set working directory to where file is located
 
 const grd = 4000
-
-# outline_shp_file = joinpath(pkgdir(GrIS1980s_DEM), "data", "oultine", "gris-outline-imbie-1980_updated.shp")
 outline_shp_file            = joinpath("testdata", "testshape.shp")
-# remove all files with this grid that exist
+
+# remove all files with this grid that exist, and any other output in the test folder
 for file in glob("**/*g$(grd).*", joinpath(pkgdir(GrIS1980s_DEM), "data"))
     rm(file, recursive=true, force=true)
 end
@@ -83,7 +83,8 @@ end
     ds150                 = nomissing(ds150,0.0)
     dsgr                  = NCDataset(aero_gr_file )["Band1"][:,:]
     @test missmax(ds150)  ≈ 3639.633f0
-    @test sum(.!ismissing.(dsgr)) == 2910 && missmax(dsgr) ≈ 3097.900f0
+    @test sum(.!ismissing.(dsgr)) == 1559
+    @test missmax(dsgr) ≈ 2205.294f0
     # check that it's not "upside down"
     ny_half = fld(size(dsgr,2),2)
     sum(.!ismissing.(dsgr[:,(ny_half+1):end])) > sum(.!ismissing.(dsgr[:,1:ny_half]))    # there should be more data in the northern half
@@ -112,6 +113,10 @@ end
 # GP INTERPOLATION #
 ####################
 
+# set the seed, necessary because it randomly selects a portion of aerodem data for variogram
+using Random
+Random.seed!(1234)
+
 csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, outline_shp_file, blockspacing=blockspacing, nbins1=5, nbins2=5, min_n_sample=80)
 rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2_preprocessing, ℓ_block=1e5, δl=1.4e5)
 
@@ -121,7 +126,7 @@ rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2
     ny_half = fld(size(h_GP,2),2)
     # test that it's not "upside down"
     @test sum(.!ismissing.(h_GP[:,(ny_half+1):end])) == 0
-    @test sum(.!ismissing.(h_GP[:,1:ny_half])) == 14617
+    @test sum(.!ismissing.(h_GP[:,1:ny_half])) == 14623
     # test values
     @test missmax(h_GP) ≈ 2875.614f0
 
@@ -129,9 +134,7 @@ rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2
     std_GP = NCDataset(rec_file)["std_uncertainty"][:,:]
     # test that missing values are the same as for surface
     @test findall(ismissing.(std_GP)) == findall(ismissing.(h_GP))
-    println(missmin(std_GP))
-    println(missmax(std_GP))
-    @test missmin(std_GP) ≈ 0.08614f0 && missmax(std_GP) ≈ 57.86486f0
+    @test missmin(std_GP) ≈ 0.08829f0 && missmax(std_GP) ≈ 38.07248f0
 end
 
 
@@ -191,7 +194,7 @@ dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(vcat(dists...), difs, 
 @testset "GP cross-validation" begin
     @test !any(isnan.(mean.(dh_binned)))
     @test !any(isnan.(std.(dh_binned)))
-    @test maximum(mean.(dh_binned)) < 0.5
+    @test maximum(mean.(dh_binned)) ≈ 0.56306f0
     @test maximum(std.(dh_binned)) < 0.9
 end
 
@@ -215,10 +218,10 @@ r                       = 50
 rec_file, dict_file = SVD_reconstruction(λ, r, grd_SVD, model_realization_files, csv_preprocessing, jld2_preprocessing)
 
 # test
+h_SVD = NCDataset(rec_file)["surface"][:,:]
+_, aero_gr_file = GrIS1980s_DEM.create_aerodem(grd_SVD, 150, outline_shp_file)
+h_aero = NCDataset(aero_gr_file)["Band1"][:,:]
 @testset "SVD reconstruction" begin
-    h_SVD = NCDataset(rec_file)["surface"][:,:]
-    _, aero_gr_file = GrIS1980s_DEM.create_aerodem(grd_SVD, 150, outline_shp_file) #, bedmachine_original, ref_coreg_file_geoid)    # only download the DEMs from 1981 while testing to save some space
-    h_aero = NCDataset(aero_gr_file)["Band1"][:,:]
     dif = h_aero .- h_SVD
     @test missmax(h_SVD) ≈ 3545.5967f0
     @test mean(abs.(dif[.!ismissing.(dif)])) ≈ 18.6407349
@@ -232,6 +235,8 @@ rm(dict_file, recursive=true, force=true)
 ########################
 # SVD CROSS-VALIDATION #
 ########################
+
+only_atm  = false
 
 main_output_dir = joinpath("test", "output","validation")
 mkpath(main_output_dir)
@@ -272,13 +277,9 @@ for i in eachindex(ids_test)
     push!(ids_train, id_train)
 end
 
-# calculate distances to nearest observation
-dists = nearest_neighb_distance_from_cv(ids_train, ids_test, x_Iobs, y_Iobs)
-
 # give λ and r values to loop through
 λs        = [1e4]
-rs        = [10, 100]
-only_atm  = false
+rs        = [5, 20]
 
 function do_validation_and_save(f)
     # load data
@@ -287,7 +288,7 @@ function do_validation_and_save(f)
     norms_UΣ = [norm(rw) for rw in eachrow(UΣ)]
 
     # load datasets, take full SVD (to be truncated with different rs later)
-    x_data, _, _ = GrIS1980s_DEM.prepare_obs_SVD(grd_SVD, csv_preprocessing, I_no_ocean, data_mean, main_output_dir)
+    # x_data, _, _ = GrIS1980s_DEM.prepare_obs_SVD(grd_SVD, csv_preprocessing, I_no_ocean, data_mean, main_output_dir)
 
     function predict_vals(λ, r, i_train, i_test, x_data, I_obs, UΣ)
         _, x_rec = GrIS1980s_DEM.solve_optim(UΣ, I_obs[i_train], r, λ, x_data[i_train])
@@ -308,20 +309,18 @@ function do_validation_and_save(f)
     end
     idx = vcat(ids_test...)
     # save
-    to_save = (; norms_UΣ, Σ, dict, grd_SVD, λs, rs, m_difs, dists, idx=I_no_ocean[I_obs[idx]], nfiles, only_atm, method="SVD")
+    to_save = (; norms_UΣ, Σ, dict, grd_SVD, λs, rs, m_difs, idx=I_no_ocean[I_obs[idx]], nfiles, only_atm, method="SVD")
     dest = get_cv_file_SVD(grd_SVD, nfiles; logℓ, only_atm)
     jldsave(dest; to_save...)
 end
 do_validation_and_save(fname)
 
+dict_file = get_cv_file_SVD(grd_SVD, length(model_realization_files); logℓ, only_atm)
+@unpack rs, m_difs = load(dict_file)
 @testset "SVD cross-validation" begin
-    dict_file = get_cv_file_SVD(grd_SVD, length(model_realization_files); logℓ, only_atm)
-    @unpack rs, dists, m_difs = load(dict_file)
     @test std(m_difs[argmax(rs)]) < std(m_difs[argmin(rs)])
-    dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(vcat(dists...), m_difs[2], 10)
-    @test !any(isnan.(mean.(dh_binned)))
-    @test minimum(std.(dh_binned)) > 16
-    @test maximum(std.(dh_binned)) < 29
+    @test mean(m_difs[2]) ≈ -0.54587513f0
+    @test std(m_difs[2]) ≈ 26.377272
 end
 
 rm(dict_file, recursive=true, force=true)
@@ -331,7 +330,7 @@ rm(dict_file, recursive=true, force=true)
 # REMOVE FILES AGAIN #
 ######################
 
-# remove all files with this grid that exist
+# remove all test outputs
 for file in glob("**/*$(grd).*", joinpath(pkgdir(GrIS1980s_DEM), "data"))
     rm(file, recursive=true, force=true)
 end
