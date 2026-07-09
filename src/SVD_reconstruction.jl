@@ -135,13 +135,11 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     @unpack I_no_ocean, href_file = dict
 
     h_ref        = NCDataset(href_file)["surface"]
-    # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
     saved_file       = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
     UΣ, data_mean, _ = prepare_model(model_files, I_no_ocean, saved_file, r; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs    = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, data_mean, main_output_dir)
     r                = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
-    # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
     # ad v_rec to output and save

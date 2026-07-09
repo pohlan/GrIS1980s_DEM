@@ -1,5 +1,13 @@
 # GrIS1980s_DEM
 
+## Products
+
+- `output/reconstructions/rec_GP_g600.nc`: surface DEM reconstructed with GP (Gaussian Process regression)
+- `output/reconstructions/rec_GP_with_bedmachine_g600.nc`: same as above, but includes additional layers with mask (calculated where ice is floating), bed elevation etc., after the BedMachine template
+- `output/reconstructions/rec_SVD_g600_lambda_1e7_r1000.nc`: surface DEM reconstructed with the SVD method
+- `output/reconstructions/rec_SVD_with_bedmachine_g600.nc`: same as above, but includes additional layers with mask (calculated where ice is floating), bed elevation etc., after the BedMachine template
+
+
 
 ## Installation / setup
 
@@ -11,7 +19,7 @@ Clone the repo:
 $ git clone git@github.com:pohlan/GrIS1980s_DEM.git
 $ cd GrIS1980s_DEM
 ```
-Next, download all the required packages either directly in the shell over
+Next, (ideally using Julia 1.12) download all the required packages either directly in the shell over
 ```
 $ julia --project -e 'import Pkg; Pkg.instantiate()'
 ```
@@ -57,6 +65,9 @@ replacing `myusername` with the actual username and `abcd123` with the password.
 
 ## Running the scripts
 
+### Reproducing figures with intermediate results from data submission
+In this case, `plot_scripts/plot_all.jl` can be run directly (note that this calls `plot_scripts/plot_eigenmodes.jl`, which is memory-intensive).
+
 ### Scripts to run full analysis from scratch (probably don't want to run everything in one go)
 The first script that is run will download all the data and do the pre-processing. Scripts can be run independently except `plot_all.jl` obviously as it relies on the output.
 1) `cross_validation_GP.jl`: the 'shortest' but may still take several hours / a full day
@@ -72,9 +83,9 @@ The scripts above can be run directly from the shell with the following command 
 $ julia --project cross_validation_GP.jl --help
 
 usage: cross_validation_GP.jl [--GrISenv GRISENV] [--λ Λ] [--r R]
-                        [--training_data [TRAINING_DATA...]]
+                        [--model_realizations [MODEL_REALIZATIONS...]]
                         [--shp_file SHP_FILE]
-                        [--use_arpack USE_ARPACK] [--maxn MAXN]
+                        [--use_arpack USE_ARPACK]
                         [--grid_size GRID_SIZE] [-h]
 
 optional arguments:
@@ -84,7 +95,7 @@ optional arguments:
                         problem (type: Float64, default: 1.0e7)
   --r R                 truncation of SVD, default is a full SVD
                         (type: Int64, default: 5076944270305263616)
-  --training_data [TRAINING_DATA...]
+  --model_realizations [MODEL_REALIZATIONS...]
                         model-generated realizations of ice sheet
                         elevation as netcdf files, e.g.
                         train_folder/usurf*.nc
@@ -97,18 +108,18 @@ optional arguments:
                         can be slower (type: Bool, default: false)
   --grid_size GRID_SIZE
                         cell size of grid, same in x and y direction;
-                        not needed for svd reconstruction where
-                        training_data is provided (type: Int64,
+                        not needed for svd reconstruction where model
+                        realizations are provided (type: Int64,
                         default: 600)
   -h, --help            show this help message and exit
 ```
 The training data and the shape file outlining the ice sheet have to be provided locally and their paths have to be passed as a commandline argument.
 
-For Gaussian process regression (GP), only the `grid_size` and `shp_file` arguments have to be provided. `GrISenv` has to be provided with the first file that is run and that does the pre-processing.
+For Gaussian process regression (GP), only the `shp_file` argument has to be provided. `GrISenv` has to be provided with the first file that is run and that does the pre-processing.
 For example:
 ```
-$ julia --project cross_validation_GP.jl --grid_size 600 --shp_file outline.shp --GrISenv /home/.../envs/GrISenv/bin/python
-$ julia --project cross_validation_SVD.jl --training_data training_data/usurf_*.nc --shp_file outline.shp --r 1000 --lambda 1e7
+$ julia --project cross_validation_GP.jl --shp_file data/outline/gris-outline-imbie-1980_updated.shp --GrISenv /home/.../envs/GrISenv/bin/python
+$ julia --project cross_validation_SVD.jl --model_realizations model_realizations/usurf_*.nc --shp_file outline.shp --r 1000 --lambda 1e7
 ```
 
 
@@ -119,7 +130,7 @@ To prescribe those parameters in interactive mode, every of the above mentioned 
 ```
 # for running the script interactively
 # ARGS = [
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
 #         "--grid_size", 600.0]
 ```
 
@@ -129,4 +140,4 @@ Then run
 $ julia --project
 julia> include("cross_validation_GP.jl")
 ```
-Although, it should be noted that interactive mode is only useful for development as the performance may be reduced.
+Although, it should be noted that interactive mode is only useful for development as the computational efficiency may be reduced.

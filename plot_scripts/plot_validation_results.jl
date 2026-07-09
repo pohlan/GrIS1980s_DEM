@@ -39,7 +39,6 @@ function make_validation_plots(l1, l2, l3; standardized::Bool, bottom_margin=25m
             ir         = findfirst(rs .== r0)
             difs       = m_difs[iλ, ir]
             if standardized
-                # difs       = standardize(difs, bfield_1_m[idx], h_ref_m[idx], subtract_mean=false)
                 bin_metric = vcat(dists...)
                 ii = findall(bin_metric .> 110e3)
                 deleteat!(bin_metric, ii)
@@ -61,7 +60,7 @@ function make_validation_plots(l1, l2, l3; standardized::Bool, bottom_margin=25m
             plot!(p_std, bin_centers.*xscl, std.(dh_binned), ylabel=L"Error STD $\sigma_\epsilon\quad\mathrm{(m)}$", ls=:dot, ylims=(0,43); color, xlabel, label, attr...)
             bar!(p_std, bin_centers.*xscl, length.(dh_binned)./1600, alpha=0.4; color, label=method*" sample size")
             plot!(p_mean, bin_centers.*xscl, mean.(dh_binned), ylabel=ylabel_mean, ls=:dot; color, xlabel, label, attr...)
-            hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash) #, alpha=0.7; color)
+            hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)
             if method =="SVD" GrIS1980s_DEM.panel_annotate!(p_mean, l2) end
             if method == "GP"
                 plot!(p_std, bin_centers.*xscl, std.(dh_binned).*NaN, color=:cyan2, label="GP uncertainty")
@@ -72,9 +71,7 @@ function make_validation_plots(l1, l2, l3; standardized::Bool, bottom_margin=25m
             hline!(p_mean, [0.0], lw=3, z_order=1, label="", ls=:dash, alpha=0.7; color)
             GrIS1980s_DEM.panel_annotate!(p_mean, l2)
             sig_binned, sig_bins = GrIS1980s_DEM.bin_equal_bin_size(bin_metric, sqrt.(sigmas), 14)
-            plot!(p_std, sig_bins.*xscl, mean.(sig_binned).- 0.35, color=:cyan2, marker=:x, z_order=1, label="") #, alpha=0.4)
-            # plot!(p_std, sig_bins.*xscl, max.(mean.(sig_binned).- 2 .*std.(sig_binned).- 0.35, 0.0), fillrange=mean.(sig_binned).+ 2 .*std.(sig_binned).-0.35, color=:deepskyblue2, alpha=0.4)
-            # histogram2d!(p_std, bin_metric.*xscl, sigmas .- std(dh_binned[1]), bins=180, cmap=:dense, colorbar=false)
+            plot!(p_std, sig_bins.*xscl, mean.(sig_binned).- 0.35, color=:cyan2, marker=:x, z_order=1, label="")
             bar!(p_std, bin_centers.*xscl, length.(dh_binned)./75000, alpha=0.3, label=""; color)
         else
             p_tw_m = twinx(p_mean)
@@ -112,7 +109,7 @@ savefig(joinpath(fig_dir_main, "f04.png"))
 scalefontsizes()
 scalefontsizes(1.6)
 attr = (; grid=false, aspect_ratio=1, size=(500,900), xlims=(-7e5,8e5).*1e-3, ylims=(-3.32e6, -0.78e6).*1e-3, xaxis=false, yaxis=false, margin=10mm)
-std_GP_std = NCDataset("output/reconstructions/interpolated_dh_std_GP.nc")["sigma_std"][:,:]
+std_GP_std = NCDataset(joinpath("output","reconstructions","interpolated_dh_std_GP.nc"))["sigma_std"][:,:]
 p1 = heatmap(x.*1e-3, y.*1e-3, std_GP_std', cmap=cgrad(:lapaz,rev=true), colorbar_title="\n(-)"; attr...)
 GrIS1980s_DEM.panel_annotate!(p1, "a")
 annotate!(p1, (xlims(p1)[1]+(xlims(p1)[2]-xlims(p1)[1])*0.55, ylims(p1)[1]+(ylims(p1)[2]-ylims(p1)[1])*1.07, text("STD of GP output \n(standardized)", 16)))
@@ -132,42 +129,6 @@ savefig(joinpath(fig_dir_main, "f05.png"))
 
 
 
-
-
-# ###################
-# # zoomed-in modes #
-# ###################
-
-# # Sermeq
-# yb = -2310000
-# xl = -227000
-# # Helheim
-# yb = -2600000
-# xl =  260000
-# ix = findall(xl.-10000 .< x .< xl+80000)
-# iy = findall(yb.-8000 .< y .< yb+80000)
-# slope_plot = zeros(size(dif))
-# slope_plot[idif] .= bfield_1_m[idif]
-# slope_plot[slope_plot .== 0] .= NaN
-# heatmap(x[ix], y[iy], slope_plot[ix,iy]')
-
-# d = load("output/reconstructions/SVD_components_g600_rec_without_W.jld2")
-# # d = load(joinpath("output", "reconstructions", "SVD_components_g$(grd)_rec.jld2"))
-# U = d["U"]
-
-# b = zeros(length(x),length(y))
-# ps = []
-# for k in [1,5,10,20,50,80,100,200,300,600,700,750]
-#     b[I_no_ocean] = U[:,k]
-#     b[b .== 0] .= NaN
-#     p_i = heatmap(x[ix], y[iy], b[ix,iy]', title="\n\n $k", cmap=:vik, clims=(-1e-2,1e-2), aspect_ratio=1, size=(900,800), margin=-20mm)
-#     push!(ps, p_i)
-# end
-# plot(ps..., layout=(3,4), size=(2300,2000))
-# savefig("modes_ii_Helheim.png")
-
-
-
 ##########################################
 # SVD with vs without weights, Figure S6 #
 ##########################################
@@ -175,7 +136,7 @@ savefig(joinpath(fig_dir_main, "f05.png"))
 scalefontsizes()
 scalefontsizes(GrIS1980s_DEM.font_scaling)
 
-fs_SVD = [get_cv_file_SVD(grd, 70, only_atm=false), "output/validation/SVD_with_W_onlyatm_false.jld2"]
+fs_SVD = [get_cv_file_SVD(grd, 70, only_atm=false), joinpath("output", "validation", "SVD_with_W_onlyatm_false.jld2")]
 p_mean = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_std = plot(wsize=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight))
 p_box = plot()
@@ -183,7 +144,6 @@ cols = Plots.palette(:batlow10)[[2, 7]]
 labels = ["no weights", "with weights"]
 xlabel = "Elevation of reference DEM (m)"
 attr = (; margin=10Plots.mm, size=(GrIS1980s_DEM.wwidth, GrIS1980s_DEM.wheight), lw=1.8, markerstrokewidth=0, marker=:circle, ls=:dot, markersize=6, markeralpha=1.0)
-# xticks = ([0.0, 50.,100.,150.], string.([0, 50,100,150]))
 for (f_SVD, color, label) in zip(fs_SVD, cols, labels)
     @unpack idx, m_difs, λs, rs, nfiles, norms_UΣ, Σ = load(f_SVD)
     iλ = findfirst(λs .== λ0)
@@ -251,8 +211,6 @@ cols = Plots.palette(:batlow10)[1:2:end]
 xlabel = "Elevation of reference DEM (m)"
 for (f_SVD, color) in zip(fs_SVD, cols)
     @unpack idx, m_difs, λs, rs, nfiles, Σ = load(f_SVD)
-    # m_B = zeros(size(h_ref_m))
-    # m_B[I_no_ocean] .= norms_UΣ ./ sqrt(length(Σ)-1)
     if nfiles == 10   # doesn't have 500 modes
         iλ = findfirst(λs .== 1e6)
         ir = findfirst(rs .== 300)
@@ -261,8 +219,6 @@ for (f_SVD, color) in zip(fs_SVD, cols)
         ir = findfirst(rs .== r0)
     end
     difs = m_difs[iλ, ir]
-    # ii = findall(m_B[idx] .< 200)
-    # dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(m_B[idx[ii]], difs[ii], 12)
     global dh_binned, bin_centers = GrIS1980s_DEM.bin_equal_bin_size(h_ref_m[idx], difs, 14)
     plot!(p_mean, bin_centers, mean.(dh_binned), legend_title=L"$m$", ylabel=L"Error mean $\mu_\epsilon$ (m)"; color, xlabel, attr...)
     hline!(p_mean, [0.0], color="grey", lw=3, z_order=1, label="", ls=:dash)

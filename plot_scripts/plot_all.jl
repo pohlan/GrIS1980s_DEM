@@ -11,7 +11,7 @@ const mm = Plots.mm
 
 # for running the script interactively
 # ARGS = [
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
 #         "--grid_size", "600.0"]
 
 parsed_args         = parse_commandline(ARGS)
@@ -38,12 +38,12 @@ outl   = df.geometry
 # scale coords of outl to km
 outl = GeometryOps.transform(p -> p .*1e-3, outl)
 
-# chosen parameters for GP and SVD
+# chosen parameters for SVD
 const r0    = 1000
 const λ0    = 1e7
 const logλ = Int(round(log(10, λ0)))
 
 include("plot_preprocessing.jl")
-include("plot_eigenmodes.jl")
+# include("plot_eigenmodes.jl")         # intermediate results not published because 50 GB large; also a lot of memory necessary to run this script (>64GB)
 include("plot_validation_results.jl")
 include("plot_glacier_flowlines.jl")

@@ -7,11 +7,11 @@ mkpath(main_output_dir)
 
 # for running the script interactively
 # ARGS = [
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
-#         "--training_data", readdir("data/training_data_it2_600", join=true)...]
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
+#         "--model_realizations", readdir("data/model_realizations", join=true)...]
 
 parsed_args = parse_commandline(ARGS)
-model_files = parsed_args["training_data"]
+model_files = parsed_args["model_realizations"]
 outline_shp_file = parsed_args["shp_file"]
 use_arpack  = parsed_args["use_arpack"]
 

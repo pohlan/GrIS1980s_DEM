@@ -36,7 +36,7 @@ function parse_commandline(args)
             help     = "truncation of SVD, default is a full SVD"
             arg_type = Int
             default  = 10^30  # numbers close to the maximum or larger will give a full SVD
-        "--training_data"
+        "--model_realizations"
             help     = "model-generated realizations of ice sheet elevation as netcdf files, e.g. train_folder/usurf*.nc"
             nargs    = '*'
             arg_type = String
@@ -48,7 +48,7 @@ function parse_commandline(args)
             arg_type = Bool
             default  = false
         "--grid_size"
-            help     = "cell size of grid, same in x and y direction; not needed for svd reconstruction where training_data is provided"
+            help     = "cell size of grid, same in x and y direction; not needed for svd reconstruction where model realizations are provided"
             arg_type = Int
             default  = 600.0
     end

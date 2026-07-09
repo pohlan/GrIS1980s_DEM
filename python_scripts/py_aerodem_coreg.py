@@ -36,13 +36,6 @@ nuth_kaab.fit(reference_dem, dem_not_aligned, inlier_mask)
 print(nuth_kaab._meta)
 aligned_dem = nuth_kaab.apply(dem_not_aligned)
 # calculate dh after co-registration
-diff_after = reference_dem - aligned_dem
-# make a zoomed-in plot to show the difference
-diff_before.plot
-# p1 = heatmap(diff_before_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="before co-registration", aspect_ratio=1, size=(700,900))
-# p2 = heatmap(diff_after_jl[1600:2150,3500:4300], cmap=:coolwarm, clims=(-50,50), title="after co-registration", aspect_ratio=1, size=(700,900))
-# plot(p1,p2,size=(1500,900))
-# savefig(fig_name)
-# save aligned dem
+# diff_after = reference_dem - aligned_dem
 dem_xa = aligned_dem.to_xarray("surface")
 dem_xa.to_netcdf(dest_file_aligned)
