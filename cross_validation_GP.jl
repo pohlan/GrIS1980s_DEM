@@ -8,7 +8,7 @@ mkpath(fig_dir)
 
 # for running the script interactively
 # ARGS = [
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
 #         "--grid_size", 600.0]
 
 parsed_args         = parse_commandline(ARGS)
@@ -66,7 +66,7 @@ function evaluate_fun(i_train, i_test)
     m_pred, σ_pred = GrIS1980s_DEM.do_GP(coords_obs[i_train], GrIS1980s_DEM.F.(df_all.dh_detrend[i_train]), coords_obs[i_test], kernel_signal, kernel_error, df_all.sigma_obs[i_train], var=true)
     return m_pred, σ_pred
 end
-difs, sigmas = GrIS1980s_DEM.step_through_folds(ids_train[1:2], ids_test[1:2], evaluate_fun, df_all.dh_detrend)
+difs, sigmas = GrIS1980s_DEM.step_through_folds(ids_train, ids_test, evaluate_fun, df_all.dh_detrend)
 
 # calculate distance to closest observation
 dists = nearest_neighb_distance_from_cv(ids_train, ids_test, df_all.x, df_all.y)
@@ -77,16 +77,3 @@ logℓ = round(log10(ℓ),digits=1)
 dest = get_cv_file_GP(grd; logℓ, only_atm)
 cv_dict = (; difs, sigmas, dists, idx, binfield1=df_all.bfield_1[idx], h_ref=df_all.h_ref[idx], grd, method="GP")
 jldsave(dest; cv_dict...)
-
-# # make map of distances to closest observation (for uncertainty estimation)
-# ir_sim      = setdiff(I_no_ocean, idx_aero)
-# x           = NCDataset(href_file)["x"][:]; nx = length(x)
-# y           = NCDataset(href_file)["y"][:]
-# x_sim       = x[get_ix.(ir_sim, nx)]
-# y_sim       = y[get_iy.(ir_sim, nx)]
-# coords_sim  = [GrIS1980s_DEM.F.([x,y]) for (x,y) in zip(x_sim, y_sim)]
-
-# min_dists = zeros(length(x),length(y)) .+ GrIS1980s_DEM.no_data_value
-# min_dists[ir_sim] = nearest_neighb_distance_raster(ir_sim, coords_sim, geotable_all)
-# dest_file = get_distance_file()
-# GrIS1980s_DEM.save_netcdf(dest_file, href_file, [min_dists], ["distance"], Dict("distance" => Dict{String,Any}()))

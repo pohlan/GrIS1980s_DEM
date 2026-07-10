@@ -1,4 +1,4 @@
-function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, nbins2=18, coreg_grid=150, r_aero_varg=0.2)
+function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, nbins2=18, min_n_sample=500, coreg_grid=150, r_aero_varg=0.2)
     # define names of output directories
     main_output_dir  = joinpath("output","data_preprocessing")
     fig_path         = joinpath(main_output_dir, "figures")
@@ -76,7 +76,7 @@ function prepare_obs(target_grid, outline_shp_file; blockspacing=400, nbins1=5, 
     df_all = vcat(df_aero, df_atm, cols=:union)
 
     # standardization
-    df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, fig_path);
+    df_all, interp_data = standardizing_2D(df_all; nbins1, nbins2, min_n_sample, fig_path);
 
     # variogram (use only a ratio --r_aero_varg-- of the aerodme data) otherwise variogram is dominated by aerodem
     i_aero = findall(df_all.source .== :aerodem)

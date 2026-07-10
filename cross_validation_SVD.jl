@@ -7,11 +7,11 @@ mkpath(main_output_dir)
 
 # for running the script interactively
 # ARGS = [
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
-#         "--training_data", readdir("data/training_data_it2_600", join=true)...]
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
+#         "--model_realizations", readdir("data/model_realizations", join=true)...]
 
 parsed_args = parse_commandline(ARGS)
-model_files = parsed_args["training_data"]
+model_files = parsed_args["model_realizations"]
 outline_shp_file = parsed_args["shp_file"]
 use_arpack  = parsed_args["use_arpack"]
 
@@ -72,8 +72,8 @@ end
 dists = nearest_neighb_distance_from_cv(ids_train, ids_test, x_Iobs, y_Iobs)
 
 # give λ and r values to loop through
-λs        = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10, 1e11]
-rs        = [10, 50, 100, 300, 500, 700]
+λs        = [1e5, 1e6, 1e7, 1e8, 1e9, 1e10]
+rs        = [50, 100, 300, 500, 700, 1000]
 function do_validation_and_save(f)
     # load data
     @unpack U, Σ, data_mean, nfiles = load(f)

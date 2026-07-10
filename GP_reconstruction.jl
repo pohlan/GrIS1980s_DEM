@@ -9,10 +9,10 @@ csv_preprocessing, jld2_preprocessing = GrIS1980s_DEM.prepare_obs(grd, outline_s
 
 # interpolation
 tic = Base.time()
-rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2_preprocessing, ℓ_block=1e5, δl=1.4e5)
+rec_file = geostats_interpolation(grd, outline_shp_file, csv_preprocessing, jld2_preprocessing, ℓ_block=7e4, δl=1.4e5)
 toc = Base.time() - tic
 dys = round(toc ./ (3600*24), digits=1); println("GP took $dys days.")
 
 # calculate the floating mask and create nc file according to the bedmachine template
-dest = joinpath("output", "reconstructions", "GP_reconstruction_1980_g$(Int(grd)).nc")
+dest = joinpath("output", "reconstructions", "rec_GP_with_bedmachine_g$(Int(grd)).nc")
 create_reconstructed_bedmachine(rec_file, dest, uncertainty=true)

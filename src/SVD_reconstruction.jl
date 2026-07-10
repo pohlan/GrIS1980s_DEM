@@ -15,10 +15,14 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     # determine total number of time steps
     nts = []
     for f in files_out
-        ds   = NCDataset(f)
-        nt_f = size(ds["usurf"], 3)
-        push!(nts, nt_f)
-        close(ds)
+        try
+            ds   = NCDataset(f)
+            nt_f = size(ds["usurf"], 3)
+            push!(nts, nt_f)
+            close(ds)
+        catch
+            continue
+        end
     end
     if isnothing(tsteps)
         nttot = sum(nts)
@@ -34,18 +38,22 @@ function read_model_data(;which_files=nothing,       # indices of files used for
     Data = zeros(F, length(I_no_ocean), nttot)
     ntcount = 0
     @showprogress for (k, file) in enumerate(files_out)
-        d = ncread(file, "usurf")
-        if isnothing(tsteps)
-            ts = 1:size(d,3)
-        elseif minimum(tsteps) > size(d,3)
+        try
+            d = ncread(file, "usurf")
+            if isnothing(tsteps)
+                ts = 1:size(d,3)
+            elseif minimum(tsteps) > size(d,3)
+                continue
+            else
+                ts = tsteps[1]:min(tsteps[end], size(d, 3))
+            end
+            nt_out = length(ts)
+            data = reshape(d[:,:,ts], ny*nx, nt_out)
+            @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
+            ntcount += nt_out
+        catch
             continue
-        else
-            ts = tsteps[1]:min(tsteps[end], size(d, 3))
         end
-        nt_out = length(ts)
-        data = reshape(d[:,:,ts], ny*nx, nt_out)
-        @views Data[:, ntcount+1 : ntcount+nt_out] = data[I_no_ocean,:]
-        ntcount += nt_out
     end
     return Data
 end
@@ -135,13 +143,11 @@ function SVD_reconstruction(λ::Real, r::Int, grd::Int, model_files::Vector{Stri
     @unpack I_no_ocean, href_file = dict
 
     h_ref        = NCDataset(href_file)["surface"]
-    # rel_mask     = nomissing(NCDataset("data/aerodem/rm_g$(grd).nc")["Band1"][:,:], 1)
 
     saved_file       = joinpath(main_output_dir, "SVD_components_g$(grd)_rec.jld2")
     UΣ, data_mean, _ = prepare_model(model_files, I_no_ocean, saved_file, r; use_arpack) # read in model data and take svd to derive "eigen ice sheets"
     x_data, I_obs    = prepare_obs_SVD(grd, csv_preproc, I_no_ocean, data_mean, main_output_dir)
     r                = min(size(UΣ,2), r)                                                                         # truncation of SVD cannot be higher than the second dimension of U*Σ
-    # W = Diagonal(rel_mask[I_no_ocean[I_obs]])
     v_rec, x_rec                           = solve_optim(UΣ, I_obs, r, λ, x_data)                                                       # derive analytical solution of regularized least squares
 
     # ad v_rec to output and save

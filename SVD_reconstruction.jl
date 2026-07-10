@@ -4,21 +4,21 @@ using GrIS1980s_DEM, NCDatasets, UnPack, JLD2
 # ARGS = [
 #         "--lambda", "1e7",
 #         "--r", "300",
-#         "--shp_file", "data/gris-imbie-1980/gris-outline-imbie-1980_updated.shp",
-#         "--training_data", readdir("data/training_data/", join=true)...]
+#         "--shp_file", "data/outline/gris-outline-imbie-1980_updated.shp",
+#         "--model_realizations", readdir("data/model_realizations/", join=true)...]
 
 # retrieve command line arguments
 parsed_args         = parse_commandline(ARGS)
-training_data_files = parsed_args["training_data"]
+model_realization_files = parsed_args["model_realizations"]
 outline_shp_file    = parsed_args["shp_file"]
 use_arpack          = parsed_args["use_arpack"]
 λ                   = parsed_args["λ"]
 r                   = parsed_args["r"]
 
 # make sure the training data set is not empty
-@assert !isempty(training_data_files)
+@assert !isempty(model_realization_files)
 ## choose a template file to make saving of netcdf files easier
-template_file      = training_data_files[1]
+template_file      = model_realization_files[1]
 ## derive grid size in m from training data
 x = NCDataset(template_file)["x"][:]
 const grd = Int(x[2] - x[1])   # assumes same grid size in both x and y direction
@@ -30,11 +30,10 @@ end
 
 # Pre-process and standardize data #
 csv_preprocessing, jld2_preprocessing, = prepare_obs(grd, outline_shp_file)
-@unpack href_file = load(jld2_preprocessing)
 
 # reconstruction
-rec_file, dict_file = SVD_reconstruction(λ, r, grd, training_data_files, csv_preprocessing, jld2_preprocessing; use_arpack)
+rec_file, dict_file = SVD_reconstruction(λ, r, grd, model_realization_files, csv_preprocessing, jld2_preprocessing; use_arpack)
 
 # calculate the floating mask and create nc file according to the bedmachine template
-dest        = joinpath("output", "reconstructions", "SVD_reconstruction_1980_g$(Int(grd)).nc")
+dest        = joinpath("output", "reconstructions", "rec_SVD_with_bedmachine_g$(Int(grd)).nc")
 create_reconstructed_bedmachine(rec_file, dest)

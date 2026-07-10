@@ -187,7 +187,7 @@ function save_netcdf(dest::String, spatial_template_file::String, layers::Vector
 end
 
 function create_bedmachine_grid(grd)
-    bedmachine_path = joinpath("data", "bedmachine")
+    bedmachine_path = joinpath(pkgdir(GrIS1980s_DEM), "data", "bedmachine")
     dest_file = joinpath(bedmachine_path, "bedmachine_g$(grd).nc")
     bedmachine_original = joinpath(bedmachine_path, "BedMachineGreenland-v5.nc")
     # if file exists already, do nothing
@@ -195,13 +195,14 @@ function create_bedmachine_grid(grd)
         return bedmachine_original, dest_file
     end
 
-    # check if the original bedmachine is there already, otherwise download
-    mkpath(bedmachine_path)
-    if !isfile(bedmachine_original)
-        println("Downloading bedmachine..")
-        url_bedm = "https://n5eil01u.ecs.nsidc.org/ICEBRIDGE/IDBMG4.005/1993.01.01/BedMachineGreenland-v5.nc"
-        Downloads.download(url_bedm, bedmachine_original)
-    end
+    # note: bedmachine v5 was retired, so download below doesn't work anymore...
+    # # check if the original bedmachine is there already, otherwise download
+    # mkpath(bedmachine_path)
+    # if !isfile(bedmachine_original)
+    #     println("Downloading bedmachine..")
+    #     url_bedm = "https://n5eil01u.ecs.nsidc.org/ICEBRIDGE/IDBMG4.005/1993.01.01/BedMachineGreenland-v5.nc"
+    #     Downloads.download(url_bedm, bedmachine_original)
+    # end
 
     # gdalwarp
     println("Using gdalwarp to project bedmachine on model grid..")
@@ -223,7 +224,7 @@ function create_bedmachine_grid(grd)
 end
 
 function create_grimpv2(grd_target, grd_coreg=150, bedmachine_original=""; kw="")
-    data_path = joinpath("data","grimpv2")
+    data_path = joinpath(pkgdir(GrIS1980s_DEM), "data","grimpv2")
     get_dest_file(grd_target) = joinpath(data_path, "grimpv2_geoid_corrected_g$(Int(grd_target)).nc")
     dest_grd_coreg_file       = get_dest_file(grd_coreg)
     dest_grd_target_file      = get_dest_file(grd_target)
@@ -238,7 +239,7 @@ function create_grimpv2(grd_target, grd_coreg=150, bedmachine_original=""; kw=""
         mkpath(data_path)
         mkpath(raw_path)
 
-        # download
+        # download  ### NOTE: link is broken, this doesn't work anymore... ###
         if isempty(readdir(raw_path))
             println("Download grimp v2 surface DEM...")
             url_grimpv2 = "https://n5eil01u.ecs.nsidc.org/MEASURES/NSIDC-0715.002/2008.05.15/"
@@ -271,6 +272,7 @@ function create_grimpv2(grd_target, grd_coreg=150, bedmachine_original=""; kw=""
     end
 
     # gdalwarp to desired grid
+    println("Using gdalwarp to project grimpv2 onto model grid at $(grd_target) resolution..")
     gdalwarp(dest_grd_coreg_file; grd=grd_target, srcnodata=string(no_data_value), dest=dest_grd_target_file)
 
     return merged_grd_coreg, dest_grd_coreg_file, dest_grd_target_file
@@ -320,7 +322,7 @@ function get_table_from_html(input::AbstractString)
 end
 
 function create_aerodem(grd_target, grd_coreg=150, outline_shp_file="", bedmachine_original="", ref_coreg_file_geoid=""; kw="")
-    aerodem_path              = joinpath("data","aerodem")
+    aerodem_path              = joinpath(pkgdir(GrIS1980s_DEM), "data", "aerodem")
     get_aero_file(grd_target) = joinpath(aerodem_path, "aerodem_rm-filtered_geoid-corr_g$(Int(grd_target)).nc")
     # get_rm_file(grd_target)   = aerodem_path * "rm_g$(grd_target).nc"
     aerodem_highres_file      = get_aero_file(grd_coreg)
@@ -401,7 +403,7 @@ function create_aerodem(grd_target, grd_coreg=150, outline_shp_file="", bedmachi
 end
 
 function create_outline_mask(grd, outline_shp_file, sample_file)
-    outline_path = "data/gris-imbie-1980/"
+    outline_path = joinpath(pkgdir(GrIS1980s_DEM), "data", "outline")
     outline_mask_file = joinpath(outline_path, "outline_mask_g$(grd).nc")
     # if file exists already, do nothing
     if isfile(outline_mask_file)
@@ -428,13 +430,14 @@ function create_outline_mask(grd, outline_shp_file, sample_file)
 end
 
 function get_atm_raw_file(kw)
-    atm_path = "data/ATM/"
+    atm_path = joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM")
     atm_file = joinpath(atm_path,"ATM_nadir2seg_all.csv")
     # if file exists already, do nothing
     if isfile(atm_file)
         return atm_file
     end
 
+    ### NOTE: linke is broken, this doesn't work anymore ###
     # download files
     raw_path  = joinpath(atm_path,"raw/")
     mkpath(raw_path)
@@ -491,35 +494,38 @@ function get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_sh
     # co-registration
     GrISenv = parse_commandline(ARGS)["GrISenv"]
     atm_data_aligned  = splitext(raw_atm_data_file)[1]*"_aligned"*splitext(raw_atm_data_file)[2]
-    run(`$GrISenv python_scripts/py_coreg_points.py --reference_file $ref_coreg_file_ellips --point_data_file $raw_atm_data_file
+    script_coreg = joinpath(pkgdir(GrIS1980s_DEM), "python_scripts", "py_coreg_points.py")
+    run(`$GrISenv $script_coreg --reference_file $ref_coreg_file_ellips --point_data_file $raw_atm_data_file
                                                     --outline_shp_file $outline_shp_file --dest_file_aligned $atm_data_aligned`)
 
     # interpolate GrIMP DEM on ATM points and calculate difference
     dh_interpolated_file = joinpath(dirname(raw_atm_data_file), "atm_dh_interpolated.csv")
-    run(`$GrISenv python_scripts/py_point_interp.py --ref_file $ref_coreg_file_ellips --ref_file_geoid $ref_coreg_file_geoid
+    script_interp = joinpath(pkgdir(GrIS1980s_DEM), "python_scripts", "py_point_interp.py")
+    run(`$GrISenv $script_interp --ref_file $ref_coreg_file_ellips --ref_file_geoid $ref_coreg_file_geoid
                                                     --point_data_file $atm_data_aligned --dest_file $dh_interpolated_file`)
 
     # block reduce with python package verde; average data that is heavily oversampled in direction of flight
     println("Doing blockreduce...")
-    run(`$GrISenv python_scripts/py_block_reduce.py --fname_in $dh_interpolated_file --fname_out $atm_dh_dest_file
+    script_blockreduce = joinpath(pkgdir(GrIS1980s_DEM), "python_scripts", "py_block_reduce.py")
+    run(`$GrISenv $script_blockreduce --fname_in $dh_interpolated_file --fname_out $atm_dh_dest_file
                                                     --spacing $blockspacing`)
     return atm_dh_dest_file
 end
 
 function get_atm_aero_error_file(aero_g150_file, atm_file)
-    output_file = joinpath("data", "ATM", "aero_minus_ATM.csv")
+    output_file = joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "aero_minus_ATM.csv")
     if isfile(output_file)
         return output_file
     end
     # point interpolation and differencing in python
     GrISenv = parse_commandline(ARGS)["GrISenv"]
-    py_file = joinpath("python_scripts", "py_aero_atm_error.py")
+    py_file = joinpath(pkgdir(GrIS1980s_DEM), "python_scripts", "py_aero_atm_error.py")
     run(`$GrISenv $py_file --aerodem_file $aero_g150_file --atm_file $atm_file --output_file $output_file`)
     return output_file
 end
 
 function download_velocity()
-    vel_dir = joinpath("data", "velocity/")
+    vel_dir = joinpath(pkgdir(GrIS1980s_DEM), "data", "velocity")
     mkpath(vel_dir)
     # download
     vx_file_tif = joinpath(vel_dir, "ITS_LIVE_vx_120m.tif")
