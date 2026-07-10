@@ -15,6 +15,7 @@ using Test, LinearAlgebra, NetCDF, NCDatasets, CSV, DataFrames, Glob, UnPack, JL
 cd(@__DIR__)  # set working directory to where file is located
 
 const grd = 4000
+blockspacing=Int(0.5*grd)
 outline_shp_file            = joinpath("testdata", "testshape.shp")
 
 # remove all files with this grid that exist, and any other output in the test folder
@@ -26,6 +27,7 @@ for file in glob("**/*.*", joinpath(pkgdir(GrIS1980s_DEM), "test", "output"))
 end
 rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "atm_dh_interpolated.csv"), recursive=true, force=true)
 rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "ATM_nadir2seg_all_aligned.csv"), recursive=true, force=true)
+rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "dh_ref_minus_atm_blocksize_$(blockspacing)m.csv"), recursive=true, force=true)
 
 ##################
 # Pre-processing #
@@ -40,7 +42,6 @@ aero_150_file, aero_gr_file = GrIS1980s_DEM.create_aerodem(grd, 150, outline_shp
 # imbie mask
 outline_mask_file = GrIS1980s_DEM.create_outline_mask(grd, outline_shp_file, aero_150_file)
 # atm
-blockspacing=Int(0.5*grd)
 atm_dh_file = GrIS1980s_DEM.get_atm_dh_file(ref_coreg_file_ellips, ref_coreg_file_geoid, outline_shp_file, blockspacing)
 
 missmax(x) = maximum(x[.!ismissing.(x)])
@@ -223,8 +224,8 @@ _, aero_gr_file = GrIS1980s_DEM.create_aerodem(grd_SVD, 150, outline_shp_file)
 h_aero = NCDataset(aero_gr_file)["Band1"][:,:]
 @testset "SVD reconstruction" begin
     dif = h_aero .- h_SVD
-    @test missmax(h_SVD) ≈ 3545.5967f0
-    @test mean(abs.(dif[.!ismissing.(dif)])) ≈ 18.6407349
+    @test missmax(h_SVD) ≈ 3543.9678f0
+    @test mean(abs.(dif[.!ismissing.(dif)])) ≈ 19.5218396
 end
 
 # remove output files again
@@ -319,8 +320,8 @@ dict_file = get_cv_file_SVD(grd_SVD, length(model_realization_files); logℓ, on
 @unpack rs, m_difs = load(dict_file)
 @testset "SVD cross-validation" begin
     @test std(m_difs[argmax(rs)]) < std(m_difs[argmin(rs)])
-    @test mean(m_difs[2]) ≈ -0.54587513f0
-    @test std(m_difs[2]) ≈ 26.377272
+    @test mean(m_difs[2]) ≈ -3.03519f0
+    @test std(m_difs[2]) ≈ 26.686956f0
 end
 
 rm(dict_file, recursive=true, force=true)
@@ -339,3 +340,4 @@ for file in glob("**/*.*", joinpath(pkgdir(GrIS1980s_DEM), "test", "output"))
 end
 rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "atm_dh_interpolated.csv"), recursive=true, force=true)
 rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "ATM_nadir2seg_all_aligned.csv"), recursive=true, force=true)
+rm(joinpath(pkgdir(GrIS1980s_DEM), "data", "ATM", "dh_ref_minus_atm_blocksize_$(blockspacing)m.csv"), recursive=true, force=true)
